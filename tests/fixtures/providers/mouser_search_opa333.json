@@ -1,0 +1,56 @@
+{
+  "Errors": [],
+  "SearchResults": {
+    "NumberOfResult": 2,
+    "Parts": [
+      {
+        "Availability": "950 In Stock",
+        "AvailabilityInStock": 950,
+        "DataSheetUrl": "https://www.ti.com/lit/ds/symlink/opa333.pdf",
+        "Description": "Operational Amplifiers Zero-Drift Single",
+        "LifecycleStatus": "Active",
+        "IsDiscontinued": false,
+        "Manufacturer": "Texas Instruments",
+        "ActualMfrName": "Texas Instruments Incorporated",
+        "ManufacturerPartNumber": "OPA333AIDBVR",
+        "Min": "1",
+        "MouserPartNumber": "595-OPA333AIDBVR",
+        "ProductAttributes": [
+          {
+            "AttributeName": "Package / Case",
+            "AttributeValue": "SOT-23-5"
+          },
+          {
+            "AttributeName": "Packaging",
+            "AttributeValue": "Cut Tape"
+          }
+        ],
+        "PriceBreaks": [
+          {
+            "Quantity": 1,
+            "Price": "$2.21",
+            "Currency": "USD"
+          },
+          {
+            "Quantity": 10,
+            "Price": "$1.88",
+            "Currency": "USD"
+          }
+        ],
+        "ProductDetailUrl": "https://www.mouser.com/ProductDetail/Texas-Instruments/OPA333AIDBVR",
+        "Reeling": false,
+        "SuggestedReplacement": ""
+      },
+      {
+        "AvailabilityInStock": 12,
+        "Description": "Near ordering code that must not be accepted",
+        "Manufacturer": "Texas Instruments",
+        "ManufacturerPartNumber": "OPA333AIDBVRG4",
+        "Min": "1",
+        "MouserPartNumber": "595-OPA333AIDBVRG4",
+        "PriceBreaks": [],
+        "ProductDetailUrl": "https://www.mouser.com/example/opa333-similar"
+      }
+    ]
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "cad": {
+    "easyeda_component_id": "1bd905a6f3ea4e87a6e40a2eda954874",
+    "footprint_name": "SOT-23-5_L3.0-W1.7-P0.95-LS2.8-BR",
+    "footprint_path": "examples/project_parts.pretty/SOT-23-5_L3.0-W1.7-P0.95-LS2.8-BR.kicad_mod",
+    "lcsc_part_number": "C131103",
+    "model_3d": "SOT-23-5_L2.9-W1.6-H1.1-LS2.8-P0.95",
+    "model_3d_path": "examples/project_parts.3dshapes/SOT-23-5_L2.9-W1.6-H1.1-LS2.8-P0.95.step",
+    "source": "easyeda",
+    "symbol_name": "LM321MF/NOPB",
+    "symbol_path": "examples/project_parts.kicad_sym",
+    "verification_status": "VERIFIED"
+  },
+  "conflicts": [],
+  "distributor_records": [
+    {
+      "currency": null,
+      "datasheet_url": "https://www.lcsc.com/datasheet/lcsc_datasheet_1809251733_Texas-Instruments-LM321MF-NOPB_C131103.pdf",
+      "description": "-40℃~+85℃ 1 1MHz 2mV 30V 3V~30V 400V/ms 40mA 40nV/√Hz@1kHz 430uA 45nA 5nA 85dB 9uV/℃ SOT-23-5 Operational Amplifier ROHS",
+      "distributor_part_number": "C131103",
+      "lifecycle": null,
+      "manufacturer": "Texas Instruments",
+      "minimum_order_quantity": 1,
+      "mpn": "LM321MF/NOPB",
+      "package": "SOT-23-5",
+      "packaging": "Reel",
+      "price_breaks": [
+        {
+          "currency": null,
+          "quantity": 1,
+          "unit_price": 0.2398
+        },
+        {
+          "currency": null,
+          "quantity": 50,
+          "unit_price": 0.1996
+        },
+        {
+          "currency": null,
+          "quantity": 150,
+          "unit_price": 0.1825
+        },
+        {
+          "currency": null,
+          "quantity": 1000,
+          "unit_price": 0.161
+        },
+        {
+          "currency": null,
+          "quantity": 2000,
+          "unit_price": 0.1515
+        },
+        {
+          "currency": null,
+          "quantity": 5000,
+          "unit_price": 0.1457
+        }
+      ],
+      "product_url": "https://www.lcsc.com/product-detail/operational-amplifier_texas-instruments-lm321mf-nopb_C131103.html",
+      "provider": "lcsc",
+      "raw_response_cache_key": "e6b55a8c20845293fd8be36634f882863eaf3d0cc1afd1cf464ac90baa098832",
+      "retrieved_at": "2026-07-22T11:16:08.858243Z",
+      "stock": 599
+    }
+  ],
+  "identity": {
+    "lifecycle": null,
+    "manufacturer": "Texas Instruments",
+    "manufacturer_datasheet_url": "https://www.lcsc.com/datasheet/lcsc_datasheet_1809251733_Texas-Instruments-LM321MF-NOPB_C131103.pdf",
+    "manufacturer_normalized": "TEXASINSTRUMENTS",
+    "mpn": "LM321MF/NOPB",
+    "mpn_normalized": "LM321MF/NOPB",
+    "package": "SOT-23-5"
+  },
+  "provenance": {
+    "cad.easyeda_component_id": [
+      {
+        "provider": "easyeda",
+        "source_field": "easyeda_component_id"
+      }
+    ],
+    "cad.footprint_name": [
+      {
+        "provider": "easyeda",
+        "source_field": "footprint_name"
+      }
+    ],
+    "cad.footprint_path": [
+      {
+        "provider": "easyeda",
+        "source_field": "footprint_path"
+      }
+    ],
+    "cad.lcsc_part_number": [
+      {
+        "provider": "easyeda",
+        "source_field": "lcsc_part_number"
+      }
+    ],
+    "cad.model_3d": [
+      {
+        "provider": "easyeda",
+        "source_field": "model_3d"
+      }
+    ],
+    "cad.model_3d_path": [
+      {
+        "provider": "easyeda",
+        "source_field": "model_3d_path"
+      }
+    ],
+    "cad.symbol_name": [
+      {
+        "provider": "easyeda",
+        "source_field": "symbol_name"
+      }
+    ],
+    "cad.symbol_path": [
+      {
+        "provider": "easyeda",
+        "source_field": "symbol_path"
+      }
+    ],
+    "cad.verification_status": [
+      {
+        "provider": "easyeda",
+        "source_field": "verification_status"
+      }
+    ],
+    "identity.manufacturer": [
+      {
+        "provider": "lcsc",
+        "source_field": "manufacturer"
+      }
+    ],
+    "identity.manufacturer_datasheet_url": [
+      {
+        "provider": "lcsc",
+        "source_field": "datasheet_url"
+      }
+    ],
+    "identity.manufacturer_normalized": [
+      {
+        "provider": "lcsc",
+        "source_field": "normalized(manufacturer)"
+      }
+    ],
+    "identity.mpn": [
+      {
+        "provider": "user",
+        "source_field": "--mpn"
+      }
+    ],
+    "identity.mpn_normalized": [
+      {
+        "provider": "user",
+        "source_field": "normalized(mpn)"
+      }
+    ],
+    "identity.package": [
+      {
+        "provider": "lcsc",
+        "source_field": "package"
+      }
+    ]
+  },
+  "provider_diagnostics": {},
+  "provider_errors": {},
+  "verification_status": "VERIFIED"
+}

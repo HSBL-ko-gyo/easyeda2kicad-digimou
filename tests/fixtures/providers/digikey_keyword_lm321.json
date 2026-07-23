@@ -1,0 +1,69 @@
+{
+  "ExactMatches": [
+    {
+      "Description": {
+        "ProductDescription": "IC OPAMP GP 1 CIRCUIT SOT23-5",
+        "DetailedDescription": "Single general-purpose operational amplifier"
+      },
+      "Manufacturer": {
+        "Id": 2,
+        "Name": "Texas Instruments"
+      },
+      "ManufacturerProductNumber": "LM321MF/NOPB",
+      "ProductUrl": "https://www.digikey.com/en/products/detail/texas-instruments/LM321MF-NOPB/",
+      "DatasheetUrl": "https://www.ti.com/lit/ds/symlink/lm321.pdf",
+      "QuantityAvailable": 850,
+      "ProductStatus": {
+        "Status": "Active"
+      },
+      "Discontinued": false,
+      "EndOfLife": false,
+      "Parameters": [
+        {
+          "ParameterText": "Package / Case",
+          "ValueText": "SOT-23-5"
+        }
+      ],
+      "ProductVariations": [
+        {
+          "DigiKeyProductNumber": "296-LM321MF/NOPBCT-ND",
+          "PackageType": {
+            "Name": "Cut Tape (CT)"
+          },
+          "MinimumOrderQuantity": 1,
+          "QuantityAvailableforPackageType": 850,
+          "StandardPricing": [
+            {
+              "BreakQuantity": 1,
+              "UnitPrice": 1.36
+            },
+            {
+              "BreakQuantity": 10,
+              "UnitPrice": 1.11
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Products": [
+    {
+      "Description": {
+        "ProductDescription": "Near ordering code"
+      },
+      "Manufacturer": {
+        "Name": "Texas Instruments"
+      },
+      "ManufacturerProductNumber": "LM321MF/NOPBTR",
+      "ProductUrl": "https://www.digikey.com/example/lm321-similar",
+      "ProductVariations": [
+        {
+          "DigiKeyProductNumber": "SIMILAR-LM321-ND",
+          "MinimumOrderQuantity": 1,
+          "StandardPricing": []
+        }
+      ]
+    }
+  ],
+  "ProductsCount": 2
+}

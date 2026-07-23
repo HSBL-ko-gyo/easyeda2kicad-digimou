@@ -115,7 +115,20 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
+credentials.json
+credentials.yaml
+credentials.yml
+secrets.json
+secrets.yaml
+secrets.yml
+*.pem
+*.key
+*.p12
+*.pfx
 .venv
+.venv*/
 env/
 venv/
 ENV/

@@ -1,0 +1,56 @@
+-- easyeda2kicad.py v1.0.1 --
+usage: __main__.py [-h] [--lcsc_id LCSC_ID [LCSC_ID ...]] [--mpn MPN]
+                   [--manufacturer MANUFACTURER] [--providers PROVIDERS]
+                   [--datasheet-link {manufacturer,lcsc,digikey,mouser}]
+                   [--manifest-json MANIFEST_JSON]
+                   [--manifest-csv MANIFEST_CSV] [--require-cad] [--offline]
+                   [--refresh-metadata] [--show-conflicts] [--no-price]
+                   [--no-stock] [--symbol] [--footprint] [--3d] [--full]
+                   [--svg] [--output file.kicad_sym] [--overwrite]
+                   [--project-relative] [--debug] [--use-cache]
+                   [--custom-field KEY:VALUE [KEY:VALUE ...]]
+
+A Python script that convert any electronic components from LCSC or EasyEDA to
+a Kicad library
+
+options:
+  -h, --help            show this help message and exit
+  --lcsc_id LCSC_ID [LCSC_ID ...]
+                        LCSC id(s); optional when --mpn is provided
+  --mpn MPN             Exact manufacturer part number
+  --manufacturer MANUFACTURER
+                        Manufacturer name used to constrain exact MPN matching
+  --providers PROVIDERS
+                        Comma-separated metadata providers:
+                        lcsc,digikey,mouser
+  --datasheet-link {manufacturer,lcsc,digikey,mouser}
+                        Select the KiCad Datasheet property source
+  --manifest-json MANIFEST_JSON
+                        Write the merged part manifest as JSON
+  --manifest-csv MANIFEST_CSV
+                        Write a BOM-compatible merged part manifest as CSV
+  --require-cad         Return a non-zero status when exact EasyEDA CAD is
+                        unavailable
+  --offline             Forbid network access and use cache entries only
+  --refresh-metadata    Bypass distributor metadata cache without refreshing
+                        CAD
+  --show-conflicts      Print structured metadata conflicts
+  --no-price            Exclude volatile price breaks from manifest output
+  --no-stock            Exclude volatile stock values from manifest output
+  --symbol              Get symbol of this id
+  --footprint           Get footprint of this id
+  --3d                  Get the 3d model of this id
+  --full                Get the symbol, footprint and 3d model of this id
+  --svg                 Export symbol and footprint as SVG (from raw API data,
+                        no KiCad conversion)
+  --output file.kicad_sym
+                        Output file
+  --overwrite           overwrite symbol, footprint, and 3D model if there is
+                        already a component with this lcsc_id
+  --project-relative    Sets the 3D file path stored relative to the project
+  --debug               set the logging level to debug
+  --use-cache           cache API responses in .easyeda_cache/ to avoid
+                        repeated network requests
+  --custom-field KEY:VALUE [KEY:VALUE ...]
+                        Add custom symbol properties, e.g. --custom-field
+                        'Mfr:TI' 'Package:SOT-23'

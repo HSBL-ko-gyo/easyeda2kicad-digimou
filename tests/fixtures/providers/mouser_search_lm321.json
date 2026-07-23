@@ -1,0 +1,56 @@
+{
+  "Errors": [],
+  "SearchResults": {
+    "NumberOfResult": 2,
+    "Parts": [
+      {
+        "Availability": "1,824 In Stock",
+        "AvailabilityInStock": 1824,
+        "DataSheetUrl": "https://www.ti.com/lit/ds/symlink/lm321.pdf",
+        "Description": "Operational Amplifiers Single Low Power",
+        "LifecycleStatus": "Active",
+        "IsDiscontinued": false,
+        "Manufacturer": "Texas Instruments",
+        "ActualMfrName": "Texas Instruments Incorporated",
+        "ManufacturerPartNumber": "LM321MF/NOPB",
+        "Min": "1",
+        "MouserPartNumber": "926-LM321MF/NOPB",
+        "ProductAttributes": [
+          {
+            "AttributeName": "Package / Case",
+            "AttributeValue": "SOT-23-5"
+          },
+          {
+            "AttributeName": "Packaging",
+            "AttributeValue": "Cut Tape"
+          }
+        ],
+        "PriceBreaks": [
+          {
+            "Quantity": 1,
+            "Price": "$1.42",
+            "Currency": "USD"
+          },
+          {
+            "Quantity": 10,
+            "Price": "$1.17",
+            "Currency": "USD"
+          }
+        ],
+        "ProductDetailUrl": "https://www.mouser.com/ProductDetail/Texas-Instruments/LM321MF-NOPB",
+        "Reeling": false,
+        "SuggestedReplacement": ""
+      },
+      {
+        "AvailabilityInStock": 5,
+        "Description": "Near match that local validation must reject",
+        "Manufacturer": "Texas Instruments",
+        "ManufacturerPartNumber": "LM321MF/NOPBTR",
+        "Min": "1",
+        "MouserPartNumber": "926-LM321MF/NOPBTR",
+        "PriceBreaks": [],
+        "ProductDetailUrl": "https://www.mouser.com/example/similar"
+      }
+    ]
+  }
+}

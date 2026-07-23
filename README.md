@@ -1,11 +1,28 @@
-# easyeda2kicad
+# easyeda2kicad +DigiMou
 
-[![PyPI version](https://img.shields.io/pypi/v/easyeda2kicad.svg)](https://pypi.org/project/easyeda2kicad/)
-[![License](https://img.shields.io/github/license/upesy/easyeda2kicad.py.svg)](https://github.com/uPesy/easyeda2kicad.py/blob/master/LICENSE)
-[![Downloads](https://pepy.tech/badge/easyeda2kicad)](https://pepy.tech/project/easyeda2kicad)
-![Python versions](https://img.shields.io/pypi/pyversions/easyeda2kicad.svg)
+> **Public beta `1.1.0b1` — unofficial derivative.** This project modifies
+> [uPesy/easyeda2kicad.py](https://github.com/uPesy/easyeda2kicad.py) from
+> baseline `fff10a38619963d7cb1c57d779655a9ea4572e95`. The modifications and
+> attribution are described in [NOTICE](NOTICE); the entire work remains
+> licensed under GNU AGPL-3.0. It is not an official DigiKey, Mouser, LCSC,
+> EasyEDA, or upstream release and is not presented as their successor.
+
+[![Public beta](https://img.shields.io/badge/public_beta-1.1.0b1-orange)](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](setup.py)
 [![Git hook: pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
+This beta preserves the existing `easyeda2kicad` Python package, CLI command,
+public API, legacy `--lcsc_id` path, and legacy KiCad output while adding
+LCSC/DigiKey/Mouser distributor metadata. Exact MPN matching is fail-closed.
+JSON and CSV Manifests retain complete metadata; raw/normalized caches support
+`--offline` and `--refresh-metadata`. KiCad receives only stable native
+Manufacturer/MPN/LCSC/Datasheet identity properties—price, stock, provider
+state, provenance, diagnostics, and other volatile sales data remain
+Manifest-only. DigiKey and Mouser credentials are environment variables and
+are never written to logs, Manifests, cache keys, cache payloads, or KiCad
+properties.
 
 A Python script that converts any electronic components from [EasyEDA](https://easyeda.com/) or [LCSC](https://www.lcsc.com/) to a KiCad library including **3D model** in color. This tool will speed up your PCB design workflow especially when using [JLCPCB SMT assembly services](https://jlcpcb.com/caa). **It supports KiCad v6 and newer.**
 
@@ -18,11 +35,24 @@ A Python script that converts any electronic components from [EasyEDA](https://e
 
 ## 💾 Installation
 
-If you have Python installed on your system:
+The public beta is distributed only through its
+[GitHub pre-release](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases).
+Install the downloaded wheel in the environment that runs KiCad:
 
 ```bash
-pip install easyeda2kicad
+python -m pip install ./easyeda2kicad-1.1.0b1-py3-none-any.whl
 ```
+
+This beta is not published to PyPI. `pip install easyeda2kicad` installs the
+separate upstream release, not +DigiMou. For an editable checkout instead:
+
+```bash
+python -m pip install -e .
+```
+
+The KiCad-specific commands below likewise install the published package unless
+their final package name is replaced with the path to this checkout (for
+example, `python -m pip install -e C:\path\to\easyeda2kicad-fork`).
 
 ### Installation using the KiCad Command Prompt
 
@@ -59,6 +89,139 @@ easyeda2kicad --full --lcsc_id=C2040 --output ~/libs/my_lib
 easyeda2kicad --svg --lcsc_id=C2040 --output ~/libs/my_lib
 ```
 
+### Exact-MPN distributor metadata
+
+The extended CLI can resolve an exact manufacturer part number through LCSC,
+DigiKey, and Mouser while continuing to obtain CAD only from EasyEDA:
+
+Create the parent directory named by `--output` before conversion (for example,
+`mkdir -p ./libs` on Linux/macOS or `New-Item -ItemType Directory -Force ./libs`
+in PowerShell). Manifest writers create their own parent directories.
+
+```bash
+easyeda2kicad --full \
+  --mpn OPA333AIDBVR \
+  --providers lcsc,digikey,mouser \
+  --output ./libs/project_parts \
+  --manifest-json ./build/OPA333AIDBVR.json \
+  --manifest-csv ./build/OPA333AIDBVR.csv
+```
+
+The existing form remains valid and uses the unchanged legacy execution path
+when no metadata option is present:
+
+```bash
+easyeda2kicad --full --lcsc_id C30878 --output ./libs/project_parts
+```
+
+`--providers` is a comma-separated list of distributor metadata to return.
+Metadata mode defaults to `lcsc` when the option is omitted. In MPN-only mode,
+the LCSC resolver is still consulted to map the exact MPN to an LCSC ID for
+EasyEDA CAD, even when `lcsc` is omitted from `--providers`; this does not make
+LCSC a CAD provider. `--manufacturer` is an optional hard exact-match
+constraint at distributor boundaries. If the same part uses a different
+manufacturer display in EasyEDA CAD, the run succeeds only after an LCSC
+catalogue record proves the same canonical LCSC ID, exact MPN, and explicit
+manufacturer; missing or mismatching evidence fails closed. When both
+`--lcsc_id` and `--mpn` are supplied, the MPN embedded in the fetched EasyEDA
+CAD payload must match; neither input silently overrides the other. MPN
+comparison preserves ordering-code suffixes and the positions of `-`, `_`, and
+`/`, so similar parts are not substituted automatically.
+An explicit distributor choice in `--datasheet-link` automatically appends that
+source to the provider selection when necessary, while preserving the order
+given in `--providers`.
+
+Without `--manufacturer`, a DigiKey/Mouser manufacturer must still match exact
+same-part evidence from the reconciled EasyEDA/LCSC identity. A differing name
+is accepted only when that canonical LCSC record proves the alias (for example,
+localized `TI(德州仪器)` and `Texas Instruments`). Otherwise the distributor
+record is excluded from manifests, BOM rows, and KiCad fields as
+`MANUFACTURER_UNVERIFIED`, and the successful result is marked `PARTIAL` with a
+structured conflict diagnostic. No fuzzy or global manufacturer alias table is
+used.
+
+DigiKey and Mouser use their official APIs only. Configure credentials through
+environment variables; values and access tokens are never stored in manifests,
+cache keys, symbol properties, or logs:
+
+| Provider | Required environment variables | Optional public settings |
+| --- | --- | --- |
+| DigiKey | `DIGIKEY_CLIENT_ID`, `DIGIKEY_CLIENT_SECRET` | `DIGIKEY_LOCALE_SITE`, `DIGIKEY_LOCALE_LANGUAGE`, `DIGIKEY_LOCALE_CURRENCY` |
+| Mouser | `MOUSER_API_KEY` | none |
+| LCSC / EasyEDA | none | none |
+
+A missing distributor credential produces a visible provider error and a
+`PARTIAL` result while available metadata and CAD continue. It is not reported
+as product `NOT_FOUND`. JSON/CSV manifests retain the compatibility error code
+and a separate credential-safe diagnostic object containing only `code`,
+optional provider operation, and optional HTTP status.
+
+Useful metadata options include:
+
+- `--manifest-json PATH` and `--manifest-csv PATH` for full/BOM-compatible
+  output;
+- `--datasheet-link manufacturer|lcsc|digikey|mouser` to explicitly replace the
+  symbol Datasheet link (without it, the EasyEDA value is preserved). An
+  explicit choice must provide a valid public HTTP(S) datasheet URL and must not
+  resolve to that distributor's product page;
+- `--offline` to prohibit all network access and accept stale cache entries;
+  missing external-provider metadata is reported as a visible provider error,
+  while missing or corrupt LCSC/CAD cache needed to establish identity or CAD
+  can block the run;
+- `--refresh-metadata` to bypass distributor metadata cache without refreshing
+  CAD;
+- `--require-cad` to make confirmed `CAD_NOT_FOUND` return exit status 1;
+- `--no-price` and `--no-stock` to omit volatile values from manifests only;
+- `--show-conflicts` to print deterministic conflict/provider diagnostics.
+
+The UTF-8 JSON manifest is the complete merged model: `identity`,
+`distributor_records`, optional `cad`, `conflicts`, `verification_status`,
+`provenance`, `provider_errors`, and `provider_diagnostics`. The BOM-compatible
+UTF-8 CSV emits one row per distributor record (or one stable row when no
+distributor record exists), repeating merged identity/CAD columns on each row.
+`Price Breaks`, `Conflicts`, `Provenance`, `Provider Errors`, and
+`Provider Diagnostics` are deterministic compact JSON strings inside their CSV
+cells. CSV cells that spreadsheet programs could interpret as formulas are
+prefixed with an apostrophe; the JSON representation remains unchanged.
+Manifest paths must be distinct, must not contain one another, and must not be
+placed inside a selected `.pretty`, `.3dshapes`, or `.svgs` output tree.
+
+Provider product and datasheet URLs are normalized before cache or output:
+userinfo, fragments, and secret-bearing query parameters are removed while
+ordinary public query parameters are retained. Malformed or non-HTTP(S) public
+links are omitted, including on the first uncached run.
+
+Metadata cache entries are provider-scoped under
+`.easyeda_cache/metadata/<provider>/<sha256>/`, with a credential-stripped
+`redacted_raw` envelope and normalized JSON stored as one generation-bound
+pair. They are fresh for 24 hours online; offline mode accepts a stale pair only
+after its request/generation/hash binding validates and never falls through to
+HTTP.
+
+Generated symbols reuse only the existing native `Manufacturer`, `MPN`,
+`LCSC Part`, and `Datasheet` properties. Provider part numbers and URLs,
+manufacturer datasheet, package, lifecycle, CAD source/status, provenance,
+diagnostics, cache state, price, stock, MOQ, packaging, currency, and retrieval
+timestamps remain in JSON/CSV manifests. A differing non-empty CAD Manufacturer
+display is preserved rather than silently overwritten after exact same-part
+evidence; MPN or LCSC ID conflicts fail before export. The generated
+[OPA333AIDBVR manifest](docs/examples/OPA333AIDBVR.manifest.json) and
+[LM321MF/NOPB manifest](docs/examples/LM321MF-NOPB.manifest.json) are real public
+LCSC/EasyEDA runs; DigiKey and Mouser were not queried live because credentials
+were unavailable, although fixture tests and credential-conditioned live smoke
+tests cover those adapters. Their generated machine paths were normalized to
+portable repository-relative example paths after the runs; the referenced CAD
+binaries are not part of these manifest examples. A clearly labeled
+[mock CAD_NOT_FOUND manifest](docs/examples/CAD_NOT_FOUND.mock.manifest.json)
+documents metadata-only output when EasyEDA CAD cannot be confirmed.
+
+Metadata-mode exit status is `0` for non-blocking `VERIFIED`/`PARTIAL` results
+and for optional confirmed `CAD_NOT_FOUND`. Blocking partial failures such as an
+unresolved required LCSC/CAD identity, invalid cache or CAD, export errors,
+pin/pad mismatch, or CAD absence with `--require-cad` return `1`.
+Input-validation errors raised after parsing also return `1`; argparse syntax
+errors return `2`.
+
 By default, all libraries are saved in `~/Documents/Kicad/easyeda2kicad/` (Linux/macOS) or `C:/Users/your_name/Documents/Kicad/easyeda2kicad/` (Windows), with:
 
 - `easyeda2kicad.kicad_sym` file for symbol library (KiCad v6+)
@@ -85,13 +248,19 @@ easyeda2kicad --full --lcsc_id=C2040 --output ~/libs/my_lib --overwrite
 
 ### Project-relative 3D model paths
 
-When working in a KiCad project folder, use `--project-relative` together with `--output` to store 3D model paths relative to the project root (`${KIPRJMOD}`):
+When working in a KiCad project folder, run the command from that project root
+and use `--project-relative` together with `--output` to store 3D model paths
+relative to `${KIPRJMOD}`:
 
 ```bash
-easyeda2kicad --full --lcsc_id=C2040 --output ~/myproject/libs/my_lib --project-relative
+cd ~/myproject
+easyeda2kicad --full --lcsc_id=C2040 --output ./libs/my_lib --project-relative
 ```
 
-This stores the 3D path as `${KIPRJMOD}/libs/my_lib.3dshapes/...` instead of an absolute filesystem path, making the project portable.
+This stores the 3D path as `${KIPRJMOD}/libs/my_lib.3dshapes/...` instead of an
+absolute filesystem path, making the project portable. The resolved output must
+remain inside the current project directory; out-of-tree and different-drive
+paths are rejected before conversion.
 
 ### Multiple IDs at once
 
@@ -126,7 +295,12 @@ set HTTPS_PROXY=http://proxy.example.com:8080 && easyeda2kicad --full --lcsc_id=
 
 ### Caching and debug
 
-Use `--use-cache` to cache API responses in `.easyeda_cache/` for faster, offline-capable runs. Use `--debug` for verbose log output. Both flags can be combined:
+`--use-cache` enables the legacy EasyEDA resource cache (including CAD and 3D
+responses) and may still fall through to the network. Metadata-mode distributor
+caching is automatic and separate: `--refresh-metadata` bypasses metadata reads
+only, while `--offline` strictly prohibits both provider and CAD network access
+(and cannot be combined with `--refresh-metadata`). Use `--debug` for verbose
+log output. The legacy cache and debug flags can be combined:
 
 ```bash
 easyeda2kicad --full --lcsc_id=C2040 --use-cache --debug

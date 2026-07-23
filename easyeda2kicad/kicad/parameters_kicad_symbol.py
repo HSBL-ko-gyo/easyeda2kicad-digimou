@@ -93,6 +93,16 @@ def apply_pin_name_style(pin_name: str) -> str:
     return "/".join(apply_text_style(text=txt) for txt in pin_name.split("/"))
 
 
+def escape_kicad_string(value: str) -> str:
+    """Escape a value for use inside a quoted KiCad S-expression string."""
+    return (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+    )
+
+
 def _make_property(
     key: str,
     value: str,
@@ -126,8 +136,8 @@ def _make_property(
     return textwrap.indent(
         textwrap.dedent(f"""
         (property
-          "{key}"
-          "{value}"{id_part}
+          "{escape_kicad_string(key)}"
+          "{escape_kicad_string(value)}"{id_part}
           (at 0 {pos_y:.2f} 0){hide_token}
           {effects}
         )"""),

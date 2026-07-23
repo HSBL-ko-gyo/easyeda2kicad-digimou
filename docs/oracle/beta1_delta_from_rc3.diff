@@ -1,0 +1,1371 @@
+diff --git a/README.md b/README.md
+index 570493f9db4a64998ca9f540126c8fab783bfbff..0db09fade7a88bbc8ec99ea06c2efb1f58ec98c7 100644
+--- a/README.md
++++ b/README.md
+@@ -107,10 +107,14 @@ Metadata mode defaults to `lcsc` when the option is omitted. In MPN-only mode,
+ the LCSC resolver is still consulted to map the exact MPN to an LCSC ID for
+ EasyEDA CAD, even when `lcsc` is omitted from `--providers`; this does not make
+ LCSC a CAD provider. `--manufacturer` is an optional hard exact-match
+-constraint. When both `--lcsc_id` and `--mpn` are supplied, the MPN embedded in
+-the fetched EasyEDA CAD payload must match; neither input silently overrides the
+-other. MPN comparison preserves ordering-code suffixes and the positions of
+-`-`, `_`, and `/`, so similar parts are not substituted automatically.
++constraint at distributor boundaries. If the same part uses a different
++manufacturer display in EasyEDA CAD, the run succeeds only after an LCSC
++catalogue record proves the same canonical LCSC ID, exact MPN, and explicit
++manufacturer; missing or mismatching evidence fails closed. When both
++`--lcsc_id` and `--mpn` are supplied, the MPN embedded in the fetched EasyEDA
++CAD payload must match; neither input silently overrides the other. MPN
++comparison preserves ordering-code suffixes and the positions of `-`, `_`, and
++`/`, so similar parts are not substituted automatically.
+ An explicit distributor choice in `--datasheet-link` automatically appends that
+ source to the provider selection when necessary, while preserving the order
+ given in `--providers`.
+@@ -182,11 +186,13 @@ pair. They are fresh for 24 hours online; offline mode accepts a stale pair only
+ after its request/generation/hash binding validates and never falls through to
+ HTTP.
+ 
+-Stable metadata is written as hidden KiCad symbol properties. `Verification
+-Status` describes CAD verification only; distributor authentication or metadata
+-errors stay in diagnostics/manifests and do not change generated symbol bytes.
+-Price, stock, MOQ, currency, retrieval timestamps, cache keys, and provider
+-errors are never written into symbols. The generated
++Generated symbols reuse only the existing native `Manufacturer`, `MPN`,
++`LCSC Part`, and `Datasheet` properties. Provider part numbers and URLs,
++manufacturer datasheet, package, lifecycle, CAD source/status, provenance,
++diagnostics, cache state, price, stock, MOQ, packaging, currency, and retrieval
++timestamps remain in JSON/CSV manifests. A differing non-empty CAD Manufacturer
++display is preserved rather than silently overwritten after exact same-part
++evidence; MPN or LCSC ID conflicts fail before export. The generated
+ [OPA333AIDBVR manifest](docs/examples/OPA333AIDBVR.manifest.json) and
+ [LM321MF/NOPB manifest](docs/examples/LM321MF-NOPB.manifest.json) are real public
+ LCSC/EasyEDA runs; DigiKey and Mouser were not queried live because credentials
+diff --git a/docs/CODEX_RESULT.md b/docs/CODEX_RESULT.md
+index 5060a81ff306b57c0648cdc386bc6c89866e68d6..2190c9d861f281372bb3abff609bda50e555eb22 100644
+--- a/docs/CODEX_RESULT.md
++++ b/docs/CODEX_RESULT.md
+@@ -1,9 +1,10 @@
+-# Codex Release Candidate result — release approved
++# Codex public-beta corrective Release Candidate result — audit pending
+ 
+ Generated: 2026-07-23 (Asia/Tokyo)  
+ Upstream baseline: `fff10a38619963d7cb1c57d779655a9ea4572e95`  
+ Local branch: `feature/multi-distributor-metadata`  
+ Repository mutation policy: no commit, stash, push, or GitHub fork was created.
++Publication status: blocked until the new candidate passes Oracle audit.
+ 
+ ## 1. Architecture summary
+ 
+@@ -17,7 +18,7 @@ exact user/LCSC identity
+   -> conservative exact-MPN/manufacturer validation
+   -> one merged model with provenance, conflicts, and safe diagnostics
+   -> EasyEDA-only CAD identity verification and conversion
+-  -> full JSON / BOM-compatible CSV / stable hidden KiCad properties
++  -> full JSON / BOM-compatible CSV / existing native KiCad properties
+ ```
+ 
+ DigiKey and Mouser never supply CAD. LCSC catalogue metadata uses a dedicated
+@@ -45,6 +46,7 @@ README.md
+ setup.py
+ easyeda2kicad/__main__.py
+ easyeda2kicad/easyeda/easyeda_api.py
++easyeda2kicad/kicad/export_kicad_symbol.py
+ easyeda2kicad/kicad/parameters_kicad_symbol.py
+ easyeda2kicad/metadata/__init__.py
+ easyeda2kicad/metadata/cache.py
+@@ -65,6 +67,7 @@ docs/architecture.md
+ docs/CODEX_RESULT.md
+ docs/CURRENT_STATE.md
+ docs/DECISIONS.md
++docs/FIELD_TABLE_AUDIT.md
+ docs/PROVIDER_CONTRACT.md
+ docs/examples/CAD_NOT_FOUND.mock.manifest.json
+ docs/examples/LM321MF-NOPB.manifest.json
+@@ -104,13 +107,14 @@ tests/test_provider_identity_types.py
+ tests/test_provider_lcsc_easyeda.py
+ tests/test_provider_live.py
+ tests/test_provider_mouser.py
++tests/test_symbol_lib_helpers.py
+ ```
+ 
+ ## 3. Implemented features
+ 
+ - Exact MPN search with separator/suffix preservation and no fuzzy substitution.
+-- Exact optional manufacturer constraint and part-scoped manufacturer-alias
+-  evidence when the user omits a manufacturer.
++- Exact optional manufacturer constraint and mandatory part-scoped LCSC
++  evidence when an explicit or inferred label differs from EasyEDA CAD.
+ - Fatal LCSC-ID/MPN mismatch and ambiguous/truncated provider-result handling.
+ - Official DigiKey Product Information V4 OAuth/search and official Mouser
+   Search API V2 adapters with retry/rate-limit handling.
+@@ -122,8 +126,8 @@ tests/test_provider_mouser.py
+ - Provider-scoped 24-hour metadata cache with strict `--offline`, metadata-only
+   `--refresh-metadata`, corrupt-pair detection, and secret stripping.
+ - JSON manifest and BOM-compatible CSV with formula-injection protection.
+-- Stable hidden KiCad properties; volatile sales/cache/diagnostic fields stay
+-  manifest-only.
++- Existing native KiCad identity properties only; Provider, status,
++  sales/cache/diagnostic fields stay Manifest-only.
+ - Action-aware symbol/footprint/3D parsing, portable output validation, collision
+   prevention, and symbol-pin/footprint-pad comparison.
+ - AGPL-3.0 retention with a dated `NOTICE` packaged beside `LICENSE`.
+@@ -185,9 +189,9 @@ Final source-change matrix:
+ 
+ | Gate | Result |
+ | --- | --- |
+-| Python 3.9.25 pytest | `695 passed, 71 skipped` |
+-| Python 3.12.13 pytest | `695 passed, 71 skipped` |
+-| Python 3.14.3 pytest | `695 passed, 71 skipped` |
++| Python 3.9.25 pytest | `702 passed, 71 skipped` |
++| Python 3.12.13 pytest | `702 passed, 71 skipped` |
++| Python 3.14.3 pytest | `702 passed, 71 skipped` |
+ | Ruff format check | PASS, `59 files already formatted` |
+ | Ruff lint | PASS |
+ | Python 3.9 strict mypy | PASS, 59 source files |
+@@ -217,29 +221,19 @@ normal success and `--require-cad` exit 1 after manifest output.
+ All three checked-in examples pass lossless model/schema, exact-MPN, safe URL,
+ cache-key, portable-path, hidden-property-boundary, and CAD-semantics checks.
+ 
+-## 8. Hidden KiCad symbol properties
+-
+-Reference and Value retain existing display behavior. The metadata-mode
+-properties below are hidden in each supported KiCad syntax:
+-
+-- `Manufacturer`
+-- `MPN`
+-- `LCSC Part`
+-- `Datasheet`
+-- `LCSC Product URL`
+-- `DigiKey Part`
+-- `DigiKey Product URL`
+-- `Mouser Part`
+-- `Mouser Product URL`
+-- `Manufacturer Datasheet`
+-- `Package`
+-- `Lifecycle`
+-- `CAD Source`
+-- `Verification Status`
+-
+-`Datasheet` preserves the existing source value unless `--datasheet-link` is
+-explicitly selected. Price, stock, MOQ, currency, retrieved time, raw cache key,
+-conflicts, provider errors, and provider diagnostics are never projected.
++## 8. KiCad Symbol Fields Table boundary
++
++Reference and Value retain existing display behavior. Metadata mode reuses only
++the native `Manufacturer`, `MPN`, `LCSC Part`, and `Datasheet` properties and
++adds no Provider-specific or status custom property. `Datasheet` preserves the
++existing source value unless `--datasheet-link` is explicitly selected.
++
++Provider part numbers/URLs, manufacturer datasheet, package, lifecycle, CAD
++source/status, provenance, diagnostics, cache state, price, stock, MOQ,
++packaging, currency, and retrieval time remain Manifest-only. The real
++OPA333AIDBVR and LM321MF/NOPB audit found zero new symbol columns, byte-identical
++legacy/metadata symbols and footprints, and byte-identical repeated
++`--overwrite` output. Details are in `FIELD_TABLE_AUDIT.md`.
+ 
+ ## 9. DigiKey and Mouser authentication
+ 
+@@ -304,8 +298,8 @@ and invoking its `--help` succeeds. AGPL-3.0 remains unchanged.
+ 
+ ## 14. Human checks before publication
+ 
+-- Oracle's new-cycle audit gate is complete. Preserve its evidence and final
+-  candidate hashes when preparing any publication.
++- Complete the distinct public-beta corrective RC Oracle audit and preserve its
++  candidate/source-canary evidence before any publication.
+ - Run the opt-in DigiKey/Mouser live smoke tests with approved account
+   credentials, without capturing their values in CI logs.
+ - Run the full suite and representative legacy/metadata commands on native
+@@ -358,3 +352,10 @@ pointer is corrected, and all three full Python matrices were rerun at
+ `695 passed, 71 skipped`. Oracle explicitly required regenerated hashes,
+ diff/apply checks, and secret-document checks rather than another model
+ re-audit; the final evidence records those passes.
++
++That approval applies only to the preserved RC3 candidate. The subsequent
++public-beta field-table audit required runtime changes to the KiCad projection,
++explicit-manufacturer evidence path, and slash-bearing overwrite lookup.
++Publication is therefore blocked pending a new candidate, three-Python quality
++matrix, source canary, and Oracle browser/manual-login audit for this corrective
++tree.
+diff --git a/docs/CURRENT_STATE.md b/docs/CURRENT_STATE.md
+index 36f340fa6197c8af6ae421129658225eb0d8357e..a2cf05f9058a0ca84e7530cea4fdb7d6879d4312 100644
+--- a/docs/CURRENT_STATE.md
++++ b/docs/CURRENT_STATE.md
+@@ -1,13 +1,14 @@
+ # Current state
+ 
+-Last updated: 2026-07-23 16:07 JST (UTC+09:00)
++Last updated: 2026-07-23 (Asia/Tokyo)
+ 
+ ## Current phase
+ 
+ RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
+-limit unchanged. The distinct new RC re-audit 1 passed its canary, found no
+-release blocker, and approved release subject to one document pointer. The
+-pointer is fixed and the complete quality matrix passes.
++limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
++The subsequent public-beta field-table audit found runtime issues, so
++publication is blocked while a distinct corrective RC completes its quality
++matrix and Oracle browser/manual-login audit.
+ 
+ ## Completed
+ 
+@@ -17,7 +18,7 @@ pointer is fixed and the complete quality matrix passes.
+   push, or GitHub fork.
+ - Added separate distributor-metadata and EasyEDA-CAD provider boundaries,
+   exact-MPN models, provenance/conflicts, safe diagnostics, schema-v3 evidence
+-  cache, JSON/CSV manifests, and stable hidden KiCad-property projection.
++  cache, JSON/CSV manifests, and a native-only KiCad-property projection.
+ - Added official DigiKey Product Information V4/OAuth and Mouser Search API V2
+   clients with environment-only credentials, bounded retry, deterministic
+   exact-result validation, and credential-safe errors.
+@@ -47,6 +48,14 @@ pointer is fixed and the complete quality matrix passes.
+ - Adopted initial-audit `SF-RC3-1`: a manifest below the planned symbol output
+   file is rejected before metadata resolution or output. Child manifests remain
+   valid for selected CAD directories.
++- Completed the two-part public-beta Symbol Fields Table audit. Metadata mode
++  now adds zero custom columns for OPA333AIDBVR and LM321MF/NOPB; Provider,
++  status, provenance, cache, and sales data remain Manifest-only.
++- Added fail-closed part-scoped LCSC evidence for an explicit manufacturer that
++  differs from the same-part EasyEDA display, while preserving the existing CAD
++  Manufacturer property rather than silently overwriting it.
++- Fixed idempotent `--overwrite` for slash-bearing symbol names by using the
++  serialized KiCad ID for lookup and replacement.
+ - Added checked-in C2040 offline fixture/goldens and verified legacy exit code,
+   stdout/stderr, no-network behavior, and byte-for-byte symbol/footprint output.
+ - Completed real public LCSC/EasyEDA E2E on Windows:
+@@ -60,7 +69,7 @@ pointer is fixed and the complete quality matrix passes.
+   `easyeda2kicad-1.0.1-py3-none-any.whl`; both contain `LICENSE` and `NOTICE`.
+   The packaged wheel imports from the archive and its `--help` exits 0.
+ 
+-## Quality evidence
++## Preserved RC3 quality evidence
+ 
+ | Gate | Result |
+ | --- | --- |
+@@ -75,14 +84,25 @@ pointer is fixed and the complete quality matrix passes.
+ | `git diff --check` | PASS; Git emitted only working-tree LF/CRLF notices |
+ 
+ The 69 inherited skips are caused by the upstream checkout not containing
+-`tests/reference_outputs/`. The current suite adds two explicit live-provider
++`tests/reference_outputs/`. The preserved suite adds two explicit live-provider
+ skips because DigiKey and Mouser credentials are absent. The new checked-in
+ C2040 golden test is independent of the missing upstream reference directory
+ and passes.
+ 
+-## Currently failing tests
++## Current corrective-RC quality
+ 
+-None.
++| Gate | Result |
++| --- | --- |
++| Python 3.9.25 pytest | `702 passed, 71 skipped` |
++| Python 3.12.13 pytest | `702 passed, 71 skipped` |
++| Python 3.14.3 pytest | `702 passed, 71 skipped` |
++| Ruff format check | PASS, 59 files |
++| Ruff lint | PASS |
++| Python 3.9 strict mypy | PASS, 59 source files |
++| `git diff --check` | PASS |
++
++Focused field-table/manufacturer/overwrite regressions and the complete matrix
++pass. Secret and candidate-integrity evidence is generated next for Oracle.
+ 
+ The initial focused acceptance probe reported `22 passed, 192 deselected`.
+ After Oracle's initial audit, the new blocker probes report `8 passed` and the
+@@ -113,10 +133,10 @@ no partial output.
+ 
+ ## Oracle status and next action
+ 
+-Oracle CLI 0.16.0 completed re-audit 1 through the browser engine,
+-`--browser-manual-login`, a verified non-Pro `GPT-5.6 Sol`, a new conversation,
+-and ten individual attachments with no bundle. The result is `CANARY PASS`,
+-zero release blockers, and release approval after the now-complete document
+-pointer correction. The accepted risks remain unchanged: no credentialed
+-DigiKey/Mouser live run, no native Linux process E2E, and 69 inherited
+-reference-output skips.
++Oracle CLI 0.16.0 completed the preserved RC3 re-audit through the browser
++engine and `--browser-manual-login`. That answer cannot approve the later
++runtime changes. Generate a new candidate/source canary after the complete
++quality matrix, then run one new browser/manual-login Release Candidate audit
++with current files attached individually and no old bundle/cache. The accepted
++risks remain unchanged: no credentialed DigiKey/Mouser live run, no native
++Linux process E2E, and 69 inherited reference-output skips.
+diff --git a/docs/DECISIONS.md b/docs/DECISIONS.md
+index 80f361886baea3e5a0882fa215199bebf4ba3712..ba348cb5dc1eb2ffdaeefb0e3b1933c0791a9da0 100644
+--- a/docs/DECISIONS.md
++++ b/docs/DECISIONS.md
+@@ -219,11 +219,11 @@ query parameters, filenames, and in-project paths retain their meaning.
+ 
+ ## D017 — Keep CAD verification action-aware and symbol-stable
+ 
+-**Status:** Implemented  
++**Status:** Implemented; KiCad property sink narrowed by D030  
+ **Decision:** Parse only CAD artifacts required by requested actions and compare
+-pin/pad sets only when both symbol and footprint are requested. The KiCad
+-`Verification Status` property comes from `CadRecord`; distributor/auth errors
+-may change the overall manifest status but not the stable symbol projection.  
++pin/pad sets only when both symbol and footprint are requested. CAD verification
++status remains in the Manifest; distributor/auth errors may change the overall
++Manifest status but not the existing native symbol properties.  
+ **Reason:** An unrequested importer must not block an otherwise valid action,
+ and distributor availability is not a CAD property.  
+ **Compatibility:** Legacy mode and default Datasheet behavior are unchanged;
+@@ -514,3 +514,70 @@ full Python suites were rerun successfully. Oracle explicitly stated that this
+ document-only correction does not require another model re-audit; it requires
+ regenerated candidate/delta hashes plus diff/apply and secret-document checks.
+ Those checks are recorded in the final new-RC evidence.
++
++## D030 — Keep distributor metadata out of KiCad Symbol Fields Table columns
++
++**Status:** Implemented; public-beta corrective RC requires Oracle audit  
++**Decision:** Reuse only the exporter's existing native `Manufacturer`, `MPN`,
++`LCSC Part`, and `Datasheet` properties. `build_symbol_fields()` emits no
++metadata-mode custom properties. Provider part numbers/URLs, manufacturer
++datasheet, package, lifecycle, CAD source/status, provenance, diagnostics,
++cache state, and sales data remain in JSON/CSV Manifests.  
++**Reason:** A hidden KiCad custom property is still a Symbol Fields Table
++column. Real OPA333AIDBVR and LM321MF/NOPB generation showed that the previous
++projection added five unwanted columns even with LCSC alone. Both legacy
++symbols already contain Manufacturer and MPN, so aliases or additional custom
++fields add no stable BOM identity value.  
++**Compatibility:** In identical path contexts, audited legacy and metadata
++symbols and footprints are byte-identical for both parts. Manifest schemas are
++unchanged. Explicit user custom fields remain supported subject to the existing
++metadata reserved-name boundary.
++
++## D031 — Verify explicit manufacturer display aliases with same-part evidence
++
++**Status:** Implemented; public-beta corrective RC requires Oracle audit  
++**Decision:** Continue exact normalized manufacturer matching at every
++distributor boundary. Do not require the EasyEDA display label itself to equal
++the explicit distributor label when, and only when, a mandatory LCSC lookup
++proves the same canonical LCSC ID, exact MPN, and explicit manufacturer.
++Unavailable or mismatching evidence is fatal before external Provider calls.  
++**Reason:** The required real parts use `TI(德州仪器)` in EasyEDA and
++`Texas Instruments` in the LCSC catalogue. No single `--manufacturer` value
++could previously satisfy both boundaries. The canonical ID plus exact MPN and
++exact LCSC manufacturer prove the display alias without a fuzzy/global table.  
++**Alternatives:** Omit `--manufacturer`; rejected because the public-beta audit
++explicitly requires that CLI path. Accept every CAD display disagreement;
++rejected because MPN text need not be globally unique and would weaken
++fail-closed identity.  
++**Compatibility:** MPN and LCSC-ID reconciliation are unchanged. The explicit
++manufacturer remains the merged/Manifest identity. The existing non-empty CAD
++Manufacturer property is preserved with a warning rather than overwritten;
++non-empty MPN or LCSC property conflicts still fail.
++
++## D032 — Use the serialized KiCad symbol ID for overwrite lookup
++
++**Status:** Implemented; public-beta corrective RC requires Oracle audit  
++**Decision:** Apply the existing `sanitize_fields()` transformation to the
++component name before both symbol-library lookup/replacement and sub-unit
++integration.  
++**Reason:** KiCad serialized `LM321MF/NOPB` as `LM321MF_NOPB`, while the
++overwrite helper searched for the unsanitized name and appended another symbol
++on every run. The same identifier must govern detection and writing.  
++**Compatibility:** Names without spaces, slash, or colon are unchanged.
++Focused and real-output tests show one root symbol and byte-identical repeated
++`--overwrite` output for OPA333AIDBVR and LM321MF/NOPB.
++
++## D033 — Open a distinct public-beta corrective RC cycle
++
++**Status:** Accepted by the public-beta release instruction on 2026-07-23  
++**Decision:** Preserve the approved RC3 candidate, canary, and Oracle answer as
++historical evidence. Because the field-table audit required runtime changes,
++create a new candidate/source canary, rerun the three-Python quality matrix, and
++obtain a new Oracle browser/manual-login Release Candidate audit before any
++version/tag/GitHub publication work.  
++**Reason:** The approved RC3 cannot authorize source that it did not review.
++The public-beta instructions explicitly make a fresh RC mandatory after a
++runtime correction.  
++**Compatibility:** Publication remains blocked until this new cycle reports
++CANARY PASS with no release blocker. No commit, tag, push, fork, release, or
++PyPI action occurs before that gate.
+diff --git a/docs/FIELD_TABLE_AUDIT.md b/docs/FIELD_TABLE_AUDIT.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3cd9fa8f66d1a7d03960346ca2b5b62fdf9e8c6d
+--- /dev/null
++++ b/docs/FIELD_TABLE_AUDIT.md
+@@ -0,0 +1,122 @@
++# KiCad Symbol Fields Table audit
++
++Date: 2026-07-23 (Asia/Tokyo)  
++Parts: `OPA333AIDBVR` / `C30878`, `LM321MF/NOPB` / `C131103`  
++Result: **FIELD TABLE PASS after the documented runtime corrections**
++
++`kicad-cli` was not available in the audit environment. KiCad's Symbol Fields
++Table treats every distinct symbol property key as a possible column even when
++the property is hidden, so the audit used the complete property-key set from
++the generated KiCad S-expressions. Footprint properties were inspected
++separately.
++
++## Commands
++
++Each command ran in a fresh temporary directory with a relative `library`
++output, so the legacy and metadata artifacts had the same path context.
++
++```text
++python -m easyeda2kicad --lcsc_id C30878 --symbol --footprint --output library
++python -m easyeda2kicad --lcsc_id C30878 --mpn OPA333AIDBVR \
++  --manufacturer "Texas Instruments" --providers lcsc --symbol --footprint \
++  --manifest-json manifest.json --manifest-csv manifest.csv --output library
++
++python -m easyeda2kicad --lcsc_id C131103 --symbol --footprint --output library
++python -m easyeda2kicad --lcsc_id C131103 --mpn LM321MF/NOPB \
++  --manufacturer "Texas Instruments" --providers lcsc --symbol --footprint \
++  --manifest-json manifest.json --manifest-csv manifest.csv --output library
++```
++
++The first audit failed. Metadata mode added five hidden custom properties:
++`LCSC Product URL`, `Manufacturer Datasheet`, `Package`, `CAD Source`, and
++`Verification Status`. The explicit manufacturer also could not pass both the
++LCSC `Texas Instruments` display and the same-part EasyEDA
++`TI(德州仪器)` display. A separate repeat probe found that `--overwrite`
++duplicated `LM321MF/NOPB` because the library lookup used the unsanitized slash
++name while KiCad stored `LM321MF_NOPB`.
++
++The corrections keep Provider/CAD/sales information in manifests, accept the
++manufacturer display difference only after exact part-scoped LCSC evidence,
++preserve the existing non-empty CAD Manufacturer property, and use the same
++sanitized KiCad symbol ID for library lookup and writing.
++
++## Symbol properties
++
++### OPA333AIDBVR
++
++| Property | Value kind | Legacy | Metadata | New column | Hidden | Classification |
++| --- | --- | ---: | ---: | ---: | ---: | --- |
++| Reference | reference designator | Yes | Yes | No | No | KiCad standard |
++| Value | CAD symbol value | Yes | Yes | No | No | KiCad standard |
++| Footprint | library/footprint reference | Yes | Yes | No | Yes | KiCad standard |
++| Datasheet | existing EasyEDA/LCSC link | Yes | Yes | No | Yes | KiCad standard |
++| Manufacturer | existing CAD display | Yes | Yes | No | Yes | Stable native |
++| MPN | exact manufacturer part number | Yes | Yes | No | Yes | Stable native |
++| LCSC Part | exact LCSC ID | Yes | Yes | No | Yes | Existing legacy field |
++| ki_keywords | existing CAD keywords | Yes | Yes | No | Yes | Existing legacy field |
++
++### LM321MF/NOPB
++
++| Property | Value kind | Legacy | Metadata | New column | Hidden | Classification |
++| --- | --- | ---: | ---: | ---: | ---: | --- |
++| Reference | reference designator | Yes | Yes | No | No | KiCad standard |
++| Value | CAD symbol value | Yes | Yes | No | No | KiCad standard |
++| Footprint | library/footprint reference | Yes | Yes | No | Yes | KiCad standard |
++| Datasheet | existing EasyEDA/LCSC link | Yes | Yes | No | Yes | KiCad standard |
++| Manufacturer | existing CAD display | Yes | Yes | No | Yes | Stable native |
++| MPN | exact manufacturer part number | Yes | Yes | No | Yes | Stable native |
++| LCSC Part | exact LCSC ID | Yes | Yes | No | Yes | Existing legacy field |
++| ki_keywords | existing CAD keywords | Yes | Yes | No | Yes | Existing legacy field |
++| ki_description | existing CAD description | Yes | Yes | No | Yes | Existing legacy field |
++
++Metadata mode adds **zero** property keys for both audited parts. The exporter
++already supplies `Manufacturer` and `MPN` in the legacy artifacts, so adding
++aliases would be duplication rather than enrichment. There are no
++`Manufacturer_Name`, `Manufacturer_Part_Number`, `LCSC`, `LCSC_ID`,
++`Datasheet_URL`, Provider-specific, diagnostic, cache, or volatile sales
++properties.
++
++The matching legacy/metadata artifact hashes are:
++
++| Part | Artifact | SHA-256 |
++| --- | --- | --- |
++| OPA333AIDBVR | `library.kicad_sym` | `7c6987e3283d6439db20784392a937d84f039a87b5a831336b88642cad3e18aa` |
++| OPA333AIDBVR | `.kicad_mod` | `5cc7149d13f6364eb716222d534e614f42813a28f62a46136a423262ddd8b626` |
++| LM321MF/NOPB | `library.kicad_sym` | `dbaf992ced899d9166151d4cb5781569224bd48270791d4670ebd48879df5ccf` |
++| LM321MF/NOPB | `.kicad_mod` | `2fe093ab299a1405586b13dc2b9501b5cea63f48b0e2e6a57114ba40ec75bed7` |
++
++Each footprint contains only its existing `LCSC Part` property, with the same
++value and bytes in legacy and metadata mode.
++
++## Manifest-only data
++
++JSON and CSV retain the complete metadata model without projecting these
++categories into KiCad symbol properties:
++
++- Provider name, distributor part number, product URL, and Provider result;
++- package, lifecycle, manufacturer datasheet, and CAD source/status;
++- exact-match evidence, conflicts, provenance, operation/status diagnostics;
++- raw-cache linkage, refresh/offline state, and retrieval time;
++- price breaks, stock, MOQ, packaging, currency, and other volatile sales data.
++
++The two generated JSON manifests round-trip through `MergedPart`. Their CSV
++manifests each contain one LCSC row and the documented deterministic column
++set. The explicit Manifest manufacturer is `Texas Instruments`; the KiCad
++Manufacturer remains the existing CAD value `TI(德州仪器)` rather than being
++silently overwritten.
++
++## Collision and idempotency checks
++
++- Same-name/same-value native properties remain single entries.
++- Empty native properties are filled by verified values in a focused unit test.
++- A differing non-empty CAD Manufacturer is preserved with a safe warning.
++- Differing non-empty MPN or LCSC ID values fail before export.
++- A metadata `--custom-field Manufacturer:Override` request exits 1 before
++  creating a cache, manifest, or CAD artifact.
++- Re-running each real metadata command with `--overwrite` leaves every symbol,
++  footprint, JSON Manifest, and CSV Manifest byte-identical.
++- Root symbol count remains one for both `OPA333AIDBVR` and the slash-bearing
++  `LM321MF/NOPB`; property counts remain 8 and 9 respectively.
++
++These checks establish the required no-new-column, no-duplicate, no-silent
++overwrite, legacy-compatibility, and repeatability boundaries.
+diff --git a/docs/PROVIDER_CONTRACT.md b/docs/PROVIDER_CONTRACT.md
+index dc5637ed047bd5ed447fdd0946435b03d16dd804..bd7075a0471f92bbe876bad698bca73ff0ba24d6 100644
+--- a/docs/PROVIDER_CONTRACT.md
++++ b/docs/PROVIDER_CONTRACT.md
+@@ -1,8 +1,7 @@
+ # Provider contract
+ 
+-Status: new Release Candidate after the closed RC2 cycle; Oracle re-audit 1
+-passed its canary with no release blocker, and its one document correction is
+-complete
++Status: public-beta corrective Release Candidate; complete quality matrix
++passes and the new Oracle audit is pending
+ 
+ ## Interface
+ 
+@@ -61,9 +60,13 @@ complete record with the same normalized MPN; otherwise the response is also
+ uniqueness from silently dropped candidates. Mouser `SearchResults.Parts` must
+ be present and list-valued even when `NumberOfResult` is zero.
+ 
+-When a manufacturer is supplied, its normalized value must also match. The
+-manufacturer normalizer applies NFKC, uppercase conversion, and removes
+-whitespace and punctuation, but it has no fuzzy matching or alias table.
++When a manufacturer is supplied, its normalized value must match every
++distributor result. The manufacturer normalizer applies NFKC, uppercase
++conversion, and removes whitespace and punctuation, but it has no fuzzy
++matching or alias table. EasyEDA CAD may carry a different display label only
++when a catalogue record proves that the same canonical LCSC ID and exact MPN
++also match the explicit manufacturer. That mandatory part-scoped lookup fails
++closed when unavailable or mismatching.
+ 
+ When the user does not supply a manufacturer, DigiKey/Mouser manufacturer values
+ must match an exact, part-scoped evidence value obtained from EasyEDA CAD or an
+@@ -165,7 +168,8 @@ or match evidence.
+ 
+ - `MPN_MISMATCH`: explicit LCSC ID identity differs from `--mpn`.
+ - `LCSC_ID_MISMATCH`: fetched CAD identity differs from the explicit LCSC ID.
+-- `MANUFACTURER_MISMATCH`: an explicit user manufacturer constraint differs.
++- `MANUFACTURER_MISMATCH`: an explicit manufacturer differs from a distributor
++  result or the mandatory same-ID LCSC evidence.
+ - `MANUFACTURER_UNVERIFIED`: an inferred DigiKey/Mouser manufacturer has no
+   exact part-scoped EasyEDA/LCSC evidence; the record is excluded and the result
+   is nonfatally `PARTIAL`.
+@@ -193,6 +197,20 @@ camelCase names such as `oauthAccessToken`, `myClientSecret`, and
+ Malformed HTTP(S) strings are replaced by a fixed placeholder during diagnostic
+ scrubbing rather than passed through.
+ 
++## KiCad projection boundary
++
++The generated symbol reuses only the existing native `Manufacturer`, `MPN`,
++`LCSC Part`, and `Datasheet` properties. Metadata mode adds no Provider-specific
++or status custom property. Provider part numbers and URLs, package, lifecycle,
++CAD source/status, provenance, cache state, diagnostics, price, stock, MOQ,
++packaging, currency, and retrieval time are JSON/CSV Manifest data only.
++
++An empty native field may be filled from verified identity. A non-empty field is
++not silently replaced: an exact same-part Manufacturer display difference keeps
++the existing CAD value with a safe warning, while an MPN or LCSC ID difference
++fails before export. The exporter uses one sanitized KiCad symbol identifier for
++both existing-entry lookup and writing, including MPNs containing `/`.
++
+ ## Authentication
+ 
+ | Provider | Environment variables | Persistence |
+@@ -227,7 +245,8 @@ Normalized `product_url` and `datasheet_url` values use a common public-URL
+ boundary before both cache writes and returned records. Only HTTP(S) URLs with
+ an authority are accepted; userinfo, fragments, and secret query parameters are
+ removed, while non-secret query parameters are retained. The same boundary is
+-applied again at manifest and KiCad projection sinks.
++applied again at manifest and explicit Datasheet-selection sinks. Provider
++product URLs remain Manifest-only.
+ 
+ Pair writes prepare and flush both temporary files before replacement; a mixed
+ generation left by interruption or concurrent replacement fails the binding.
+@@ -318,4 +337,4 @@ exceeds the returned `Parts` count, the result is `AMBIGUOUS` rather than a
+ partial-page exact match. `SuggestedReplacement` is ignored. When multiple
+ records share one exact identity, the adapter chooses the lexically smallest
+ non-empty `MouserPartNumber`, using product URL only as a stable fallback. MOQ,
+-stock, and price never choose the record projected into hidden KiCad fields.
++stock, and price never choose record identity or KiCad fields.
+diff --git a/docs/architecture.md b/docs/architecture.md
+index 42c471873526795adaabdfad45c20d5f0b991f51..4cb6e9569f1eb1047b1baf554b10a24c67152012 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -1,8 +1,7 @@
+ # Multi-distributor metadata architecture
+ 
+-Status: new Release Candidate after the closed RC2 audit; Oracle re-audit 1
+-passed its canary with no release blocker, and its one document correction is
+-complete  
++Status: public-beta corrective Release Candidate; complete quality matrix
++passes and the new Oracle audit is pending  
+ Baseline: upstream commit `fff10a38619963d7cb1c57d779655a9ea4572e95`  
+ License: GNU AGPL-3.0 remains unchanged
+ 
+@@ -22,9 +21,10 @@ suffixes, or persist credentials and access tokens.
+ The upstream CLI is a small `argparse` application in
+ `easyeda2kicad/__main__.py`. `EasyedaApi` obtains CAD JSON and optional 3D data,
+ EasyEDA importers convert it to internal objects, and KiCad exporters serialize
+-symbols, footprints, and 3D models. The symbol exporter already accepts ordered
+-custom fields and writes them as hidden properties. The existing cache is
+-opt-in (`--use-cache`) and stores EasyEDA resources below `.easyeda_cache/`.
++symbols, footprints, and 3D models. The symbol exporter already supplies native
++Manufacturer, MPN, LCSC, and Datasheet properties and can accept explicit user
++custom fields. The existing cache is opt-in (`--use-cache`) and stores EasyEDA
++resources below `.easyeda_cache/`.
+ 
+ The unmodified baseline test result is 177 passed and 69 skipped on both the
+ original Python 3.12 run and the release-evidence Python 3.9.25 run. Most skips
+@@ -62,7 +62,7 @@ easyeda2kicad/
+     merge.py           exact identity merge, conflicts, provenance
+     manifest.py        JSON and BOM-compatible CSV output
+     service.py         cache/provider/CAD orchestration
+-    symbol_fields.py   stable hidden KiCad fields and datasheet selection
++    symbol_fields.py   native KiCad identity fields and datasheet selection
+   providers/
+     base.py            provider protocol, errors, exact-match helpers, retry
+     lcsc.py            LCSC metadata normalization/exact-match adapter
+@@ -85,7 +85,7 @@ CLI identity input
+   -> provider normalization
+   -> provider-side exact MPN/manufacturer validation
+   -> MergedPart (conflicts + field provenance)
+-  -> stable hidden symbol properties + selected Datasheet
++  -> existing native symbol properties + selected Datasheet
+   -> existing EasyEDA-to-KiCad exporters
+   -> JSON manifest and/or BOM-compatible CSV
+ ```
+@@ -117,16 +117,20 @@ exact matches. Descriptive fields retain their independent, more permissive
+ parsers.
+ 
+ Manufacturer names are NFKC/case/whitespace/punctuation normalized.
+-`--manufacturer` remains an exact hard filter. Without it, accepted aliases must
+-come from exact, part-scoped evidence: the reconciled EasyEDA CAD payload and an
+-LCSC catalogue record tied to the same canonical LCSC ID and exact MPN. An
+-explicit-ID run fetches that LCSC evidence lazily only when an external display
+-name differs from the EasyEDA evidence. Thus `TI(德州仪器)` and
+-`Texas Instruments` can coexist when the same exact part proves both values,
+-without a fuzzy or global alias table. An unproven DigiKey/Mouser manufacturer
+-is excluded as `MANUFACTURER_UNVERIFIED`, contributes no merged field, BOM row,
+-KiCad property, or positive provenance, remains visible in a structured
+-manufacturer conflict, and makes the result `PARTIAL`.
++`--manufacturer` remains an exact hard filter at every distributor boundary.
++EasyEDA and LCSC can use different display labels for the same part. When an
++explicit manufacturer differs from the CAD display, the service must obtain an
++LCSC catalogue record that matches the same canonical LCSC ID, exact MPN, and
++explicit manufacturer before accepting the CAD identity; unavailable or
++mismatching evidence fails closed. Without an explicit manufacturer, accepted
++aliases likewise come only from the reconciled EasyEDA CAD payload and an LCSC
++catalogue record tied to the same canonical LCSC ID and exact MPN. Thus
++`TI(德州仪器)` and `Texas Instruments` can coexist when exact same-part
++evidence proves both values, without a fuzzy or global alias table. An unproven
++DigiKey/Mouser manufacturer is excluded as `MANUFACTURER_UNVERIFIED`,
++contributes no merged field, BOM row, KiCad property, or positive provenance,
++remains visible in a structured manufacturer conflict, and makes the result
++`PARTIAL`.
+ 
+ A provider may use a remote API's exact option, but it must still validate the
+ returned `ManufacturerPartNumber`/equivalent field locally. Description text,
+@@ -136,7 +140,7 @@ exact identity is `AMBIGUOUS`. Multiple distributor packaging variations for the
+ same manufacturer and MPN remain auditable in the redacted-raw cache. DigiKey
+ and Mouser select the lexically smallest stable distributor part number, with
+ stable URL fallback, and preserve the selected record's sales fields. MOQ,
+-stock, and price never influence identity or hidden KiCad-field selection.
++stock, and price never influence identity or KiCad-field selection.
+ 
+ ## Authentication and HTTP boundary
+ 
+@@ -292,30 +296,21 @@ characters fail closed instead of escaping the selected output tree.
+ 
+ ## KiCad properties
+ 
+-The existing exporter is reused. `Reference` and `Value` are unchanged. Existing
+-native fields (`Manufacturer`, `MPN`, `LCSC Part`, `Datasheet`) are populated from
+-the verified identity, and the following ordered custom fields are added only in
+-metadata mode:
+-
+-- `LCSC Product URL`
+-- `DigiKey Part`
+-- `DigiKey Product URL`
+-- `Mouser Part`
+-- `Mouser Product URL`
+-- `Manufacturer Datasheet`
+-- `Package`
+-- `Lifecycle`
+-- `CAD Source`
+-- `Verification Status`
+-
+-The exporter already renders custom fields hidden across supported KiCad schema
+-versions. Empty fields are omitted. Stock, price, MOQ, currency, retrieval time,
+-raw cache keys, and provider errors are excluded.
+-
+-The symbol `Verification Status` field is copied from `CadRecord` and describes
+-CAD verification only. The top-level manifest status can still become `PARTIAL`
+-because of an unavailable distributor or another metadata diagnostic; that does
+-not alter the symbol projection or its bytes.
++The existing exporter is reused. `Reference` and `Value` are unchanged. The
++existing native fields (`Manufacturer`, `MPN`, `LCSC Part`, `Datasheet`) are the
++only metadata values eligible for projection into a generated symbol. Metadata
++mode adds no Provider-specific or status custom properties. Provider part
++numbers and URLs, manufacturer datasheet, package, lifecycle, CAD source/status,
++provenance, diagnostics, cache state, and all sales data remain in JSON/CSV
++manifests.
++
++Native identity reconciliation fills an empty CAD property, preserves an
++existing equivalent value, and never silently replaces a differing non-empty
++value. A differing CAD manufacturer display is preserved after exact
++part-scoped evidence and emits a safe warning; a differing MPN or LCSC ID fails
++before export. Library lookup and writing use the same KiCad-sanitized symbol
++name, so slash-bearing MPNs such as `LM321MF/NOPB` remain idempotent under
++`--overwrite`.
+ 
+ `--datasheet-link` selects `manufacturer`, `lcsc`, `digikey`, or `mouser`.
+ Without the option, the original EasyEDA/LCSC datasheet remains unchanged.
+@@ -388,7 +383,7 @@ contain no credentials. Coverage includes:
+ - raw/normalized cache separation, hit, stale refresh, corrupt entry, offline;
+ - LCSC ID plus MPN agreement and disagreement;
+ - conflicts and provenance;
+-- hidden KiCad fields, datasheet selection, and exclusion of volatile fields;
++- native KiCad fields, datasheet selection, and Manifest-only metadata;
+ - JSON and CSV manifests, Windows/POSIX path serialization;
+ - `CAD_NOT_FOUND`, `--require-cad`, and pin/pad mismatch;
+ - integration tests skipped explicitly when the documented credentials are
+diff --git a/docs/oracle/beta1_quality.md b/docs/oracle/beta1_quality.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c70043cd7a79cbb791bce7bb1be74828c55a9417
+--- /dev/null
++++ b/docs/oracle/beta1_quality.md
+@@ -0,0 +1,52 @@
++# Public-beta corrective RC quality evidence
++
++Generated: 2026-07-23 (Asia/Tokyo)
++
++This is a distinct RC after the preserved RC3 approval. The public-beta
++field-table audit required runtime changes, so no earlier Oracle approval is
++reused.
++
++## Quality matrix
++
++| Gate | Result |
++| --- | --- |
++| Focused field/manufacturer/overwrite regressions | `7 passed`, exit 0 |
++| Python 3.9.25 full pytest | `702 passed, 71 skipped`, exit 0 |
++| Python 3.12.13 full pytest | `702 passed, 71 skipped`, exit 0 |
++| Python 3.14.3 full pytest | `702 passed, 71 skipped`, exit 0 |
++| Ruff format check | PASS, `59 files already formatted` |
++| Ruff lint | PASS |
++| Python 3.9 strict mypy | PASS, 59 source files |
++| `git diff --check` | PASS; only Git LF/CRLF working-tree notices |
++
++The skip count is unchanged:
++
++- 69 inherited skips from the absent optional upstream reference-output bundle;
++- one DigiKey credentialed live test; and
++- one Mouser credentialed live test.
++
++## Real-output acceptance
++
++Both OPA333AIDBVR/C30878 and LM321MF/NOPB/C131103 succeeded through:
++
++- legacy `--lcsc_id` symbol/footprint generation;
++- metadata `LCSC ID + MPN + Manufacturer + JSON/CSV Manifest` generation;
++- exact Manufacturer verification using same-part LCSC evidence;
++- complete symbol/footprint property inspection; and
++- a second `--overwrite` run.
++
++For both parts, legacy and metadata symbol/footprint bytes match when generated
++with the same path context. Metadata adds zero property keys, no property is
++duplicated, and all four metadata artifacts remain byte-identical after
++`--overwrite`. `LM321MF/NOPB` retains one sanitized root symbol rather than
++growing another entry. Full evidence is in `docs/FIELD_TABLE_AUDIT.md`.
++
++## Compatibility and publication gate
++
++- CLI spellings, Python import/package name, manifest schemas, cache schema, and
++  dependencies are unchanged.
++- LCSC-ID/MPN mismatch remains fatal.
++- Provider/CAD responsibilities are unchanged.
++- No commit, tag, push, fork, release, or PyPI action has occurred.
++- Publication remains blocked until the new Oracle audit passes its canary and
++  reports no release blocker.
+diff --git a/easyeda2kicad/__main__.py b/easyeda2kicad/__main__.py
+index 4ec5dfaac82ba97d8dc47e7e8f46dbb587af0c17..6b255f40cb254cc5072adccc9a846d633c630323 100644
+--- a/easyeda2kicad/__main__.py
++++ b/easyeda2kicad/__main__.py
+@@ -32,7 +32,12 @@ from .metadata.merge import (
+     PARTIAL,
+     VERIFIED,
+ )
+-from .metadata.models import MergedPart, model_to_dict
++from .metadata.models import (
++    MergedPart,
++    model_to_dict,
++    normalize_manufacturer,
++    normalize_mpn,
++)
+ from .metadata.service import MetadataResolution, MetadataServiceError, resolve_metadata
+ from .metadata.symbol_fields import (
+     build_native_symbol_fields,
+@@ -642,6 +647,37 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
+     return True
+ 
+ 
++def _reconcile_symbol_identity(
++    symbol_info: Any, verified_identity: dict[str, str]
++) -> None:
++    """Fill empty native fields without replacing non-empty CAD properties."""
++
++    fields = (
++        ("manufacturer", "manufacturer", normalize_manufacturer),
++        ("mpn", "mpn", normalize_mpn),
++        ("lcsc_id", "lcsc_id", lambda value: str(value).strip().casefold()),
++    )
++    for identity_key, attribute, normalizer in fields:
++        incoming = verified_identity.get(identity_key, "")
++        if not incoming:
++            continue
++        existing = str(getattr(symbol_info, attribute, "") or "")
++        if not existing.strip():
++            setattr(symbol_info, attribute, incoming)
++            continue
++        if normalizer(existing) == normalizer(incoming):
++            continue
++        if identity_key == "manufacturer":
++            logging.warning(
++                "Verified manufacturer display differs from the existing CAD "
++                "property; preserving the CAD value"
++            )
++            continue
++        raise ValueError(
++            "verified {0} conflicts with the existing CAD property".format(identity_key)
++        )
++
++
+ def _process_component(
+     component_id: str,
+     arguments: dict[str, Any],
+@@ -669,12 +705,7 @@ def _process_component(
+             easyeda_cp_cad_data=cad_data
+         ).get_symbol()
+         if symbol_identity:
+-            if symbol_identity.get("manufacturer"):
+-                easyeda_symbol.info.manufacturer = symbol_identity["manufacturer"]
+-            if symbol_identity.get("mpn"):
+-                easyeda_symbol.info.mpn = symbol_identity["mpn"]
+-            if symbol_identity.get("lcsc_id"):
+-                easyeda_symbol.info.lcsc_id = symbol_identity["lcsc_id"]
++            _reconcile_symbol_identity(easyeda_symbol.info, symbol_identity)
+         if datasheet_url is not None:
+             easyeda_symbol.info.datasheet = datasheet_url
+ 
+diff --git a/easyeda2kicad/kicad/export_kicad_symbol.py b/easyeda2kicad/kicad/export_kicad_symbol.py
+index 5b5767ebf0cdb1c28426ab6d84609dbc3a67e7c7..e80225fe3ed298b862630d74025ba761924dc5bf 100644
+--- a/easyeda2kicad/kicad/export_kicad_symbol.py
++++ b/easyeda2kicad/kicad/export_kicad_symbol.py
+@@ -37,6 +37,7 @@ from .parameters_kicad_symbol import (
+     KiSymbolPolygon,
+     KiSymbolRectangle,
+     KiSymbolText,
++    sanitize_fields,
+ )
+ 
+ _SYM_LIB_REGEX = r'\n(\s*)\(symbol "{component_name}".*?\n\1\)(?=\n|$)'
+@@ -689,7 +690,7 @@ class ExporterSymbolKicad:
+         return integrate_sub_units(
+             main_symbol=main_content,
+             sub_symbols=sub_contents,
+-            component_name=self.input.info.name,
++            component_name=sanitize_fields(self.input.info.name),
+         )
+ 
+     def save_to_lib(
+@@ -699,8 +700,9 @@ class ExporterSymbolKicad:
+ 
+         Returns False if the symbol already exists and overwrite is False.
+         """
++        component_name = sanitize_fields(self.input.info.name)
+         already_exists = id_already_in_symbol_lib(
+-            lib_path=lib_path, component_name=self.input.info.name
++            lib_path=lib_path, component_name=component_name
+         )
+         if already_exists and not overwrite:
+             return False
+@@ -708,7 +710,7 @@ class ExporterSymbolKicad:
+         content = self.export(footprint_lib_name=footprint_lib_name)
+         write_component_in_symbol_lib_file(
+             lib_path=lib_path,
+-            component_name=self.input.info.name,
++            component_name=component_name,
+             component_content=content,
+             version=self.version,
+         )
+diff --git a/easyeda2kicad/metadata/service.py b/easyeda2kicad/metadata/service.py
+index 1890bfe826a7f74decd728370efd8c2c68c383cd..4b2223cb5c374d2e336761907d3c8f57c4cc379f 100644
+--- a/easyeda2kicad/metadata/service.py
++++ b/easyeda2kicad/metadata/service.py
+@@ -262,15 +262,6 @@ def resolve_metadata(
+                     cad_data,
+                     requested_lcsc_id=lcsc_id,
+                     requested_mpn=(result.trusted_mpn if identity.mpn else None),
+-                    # Only an explicit user constraint is authoritative here.
+-                    # LCSC and EasyEDA commonly use different display aliases
+-                    # for the same manufacturer (for example TI vs the full
+-                    # company name), so an inferred label is not exact evidence.
+-                    requested_manufacturer=(
+-                        _clean(requested_manufacturer)
+-                        if identity.manufacturer
+-                        else None
+-                    ),
+                 )
+             except CadIdentityError as error:
+                 raise MetadataServiceError(
+@@ -315,6 +306,15 @@ def resolve_metadata(
+     explicit_pair_lookup = bool(
+         _clean(requested_lcsc_id) and _clean(requested_mpn) and cad_identity_incomplete
+     )
++    explicit_manufacturer_lookup = bool(
++        lcsc_id
++        and _clean(requested_manufacturer)
++        and (
++            result.cad_identity is None
++            or normalize_manufacturer(result.cad_identity.manufacturer)
++            != normalize_manufacturer(requested_manufacturer)
++        )
++    )
+     external_provider_needs_identity = bool(
+         lcsc_id
+         and any(name != "lcsc" for name in selected)
+@@ -324,10 +324,16 @@ def resolve_metadata(
+             or result.cad_identity is not None
+         )
+     )
+-    mandatory_identity_lookup = explicit_pair_lookup or external_provider_needs_identity
++    mandatory_identity_lookup = (
++        explicit_pair_lookup
++        or explicit_manufacturer_lookup
++        or external_provider_needs_identity
++    )
+     mandatory_lookup_detail = (
+         "explicit LCSC ID and MPN could not be verified"
+         if explicit_pair_lookup
++        else "explicit manufacturer could not be verified for the LCSC ID"
++        if explicit_manufacturer_lookup
+         else "LCSC ID could not be resolved to an exact MPN"
+     )
+     should_lookup_lcsc = bool(
+diff --git a/easyeda2kicad/metadata/symbol_fields.py b/easyeda2kicad/metadata/symbol_fields.py
+index 77a08859252cfae150edcee946369776743cbbae..6de3c7e8eec39f88a58d66aea825a9fb98bc2c7b 100644
+--- a/easyeda2kicad/metadata/symbol_fields.py
++++ b/easyeda2kicad/metadata/symbol_fields.py
+@@ -1,4 +1,4 @@
+-"""Stable metadata projection for hidden KiCad symbol properties."""
++"""Stable metadata projection for KiCad symbol properties."""
+ 
+ from __future__ import annotations
+ 
+@@ -12,61 +12,22 @@ from .cache import sanitize_public_url
+ from .models import DistributorRecord, MergedPart
+ 
+ NATIVE_SYMBOL_FIELDS = ("Manufacturer", "MPN", "LCSC Part", "Datasheet")
+-CUSTOM_SYMBOL_FIELD_ORDER = (
+-    "LCSC Product URL",
+-    "DigiKey Part",
+-    "DigiKey Product URL",
+-    "Mouser Part",
+-    "Mouser Product URL",
+-    "Manufacturer Datasheet",
+-    "Package",
+-    "Lifecycle",
+-    "CAD Source",
+-    "Verification Status",
+-)
++CUSTOM_SYMBOL_FIELD_ORDER: tuple[str, ...] = ()
+ RESERVED_METADATA_FIELDS = frozenset(NATIVE_SYMBOL_FIELDS + CUSTOM_SYMBOL_FIELD_ORDER)
+ 
+ 
+ def build_symbol_fields(merged: MergedPart) -> Dict[str, str]:
+-    """Return ordered custom fields safe to persist in a KiCad symbol.
++    """Return metadata-only custom fields safe to persist in a KiCad symbol.
+ 
+-    Native Manufacturer/MPN/LCSC/Datasheet properties are intentionally not
+-    duplicated here.  Price, stock, MOQ, currency, retrieval timestamps, cache
+-    keys, conflicts, and provider errors never cross this boundary.
++    All supported stable identity values use the exporter's existing native
++    Manufacturer/MPN/LCSC/Datasheet properties. Provider, provenance, CAD
++    status, package/lifecycle, URL, and sales data remain manifest-only so a
++    metadata run cannot add hidden columns to KiCad's Symbol Fields Table.
+     """
+ 
+     if not isinstance(merged, MergedPart):
+         merged = MergedPart.from_dict(merged)
+-    providers = _provider_records(merged)
+-    lcsc = providers.get("lcsc")
+-    digikey = providers.get("digikey")
+-    mouser = providers.get("mouser")
+-    cad = merged.cad
+-    candidates = OrderedDict(
+-        (
+-            ("LCSC Product URL", _record_value(lcsc, "product_url")),
+-            ("DigiKey Part", _record_value(digikey, "distributor_part_number")),
+-            ("DigiKey Product URL", _record_value(digikey, "product_url")),
+-            ("Mouser Part", _record_value(mouser, "distributor_part_number")),
+-            ("Mouser Product URL", _record_value(mouser, "product_url")),
+-            (
+-                "Manufacturer Datasheet",
+-                sanitize_public_url(merged.identity.manufacturer_datasheet_url),
+-            ),
+-            ("Package", merged.identity.package),
+-            ("Lifecycle", merged.identity.lifecycle),
+-            ("CAD Source", cad.source if cad is not None else None),
+-            (
+-                "Verification Status",
+-                cad.verification_status if cad is not None else None,
+-            ),
+-        )
+-    )
+-    return OrderedDict(
+-        (key, str(value))
+-        for key, value in candidates.items()
+-        if value is not None and str(value) != ""
+-    )
++    return OrderedDict()
+ 
+ 
+ def build_native_symbol_fields(
+diff --git a/tests/test_cli_metadata_e2e.py b/tests/test_cli_metadata_e2e.py
+index c29fff08e789a55b8a7a59230de7b1b03e1ce66f..8526c7cedefc2f8d4e2768d5a36bc3eed4835b30 100644
+--- a/tests/test_cli_metadata_e2e.py
++++ b/tests/test_cli_metadata_e2e.py
+@@ -324,11 +324,12 @@ def test_metadata_cli_generates_manifests_and_stable_symbol_projection(
+         "mpn": "OPA333AIDBVR",
+         "lcsc_id": "C30878",
+     }
+-    stable_fields = captured["symbol_metadata"]
+-    assert stable_fields["DigiKey Part"] == "296-OPA333AIDBVRCT-ND"
+-    assert "Stock" not in stable_fields
+-    assert "Price" not in stable_fields
+-    assert "Retrieved At" not in stable_fields
++    assert captured["symbol_metadata"] == {}
++    document = json.loads(json_path.read_text(encoding="utf-8"))
++    assert {
++        record["provider"]: record["distributor_part_number"]
++        for record in document["distributor_records"]
++    }["digikey"] == "296-OPA333AIDBVRCT-ND"
+ 
+ 
+ def test_no_network_service_to_cli_combines_all_providers(
+@@ -428,8 +429,15 @@ def test_no_network_service_to_cli_combines_all_providers(
+     )
+     assert exported["component_id"] == "C30878"
+     assert exported["symbol_identity"]["lcsc_id"] == "C30878"
+-    assert exported["symbol_metadata"]["DigiKey Part"] == ("296-OPA333AIDBVRCT-ND")
+-    assert exported["symbol_metadata"]["Mouser Part"] == "595-OPA333AIDBVR"
++    assert exported["symbol_metadata"] == {}
++    assert {
++        item["provider"]: item["distributor_part_number"]
++        for item in document["distributor_records"]
++    } == {
++        "lcsc": "C30878",
++        "digikey": "296-OPA333AIDBVRCT-ND",
++        "mouser": "595-OPA333AIDBVR",
++    }
+ 
+ 
+ def test_explicit_datasheet_uses_provider_datasheet_not_product_url(
+diff --git a/tests/test_custom_fields.py b/tests/test_custom_fields.py
+index 33f2cf5624292d0c23876d29f910d0b6f084ac0c..4c8b41b7f56b8f96246eff2d1cc4bade55b5fba0 100644
+--- a/tests/test_custom_fields.py
++++ b/tests/test_custom_fields.py
+@@ -1,8 +1,11 @@
+ from __future__ import annotations
+ 
++import logging
++from types import SimpleNamespace
++
+ import pytest
+ 
+-from easyeda2kicad.__main__ import parse_custom_fields
++from easyeda2kicad.__main__ import _reconcile_symbol_identity, parse_custom_fields
+ from easyeda2kicad.kicad.parameters_kicad_symbol import (
+     KICAD_SYM_VERSION_20251024,
+     KiSymbolInfo,
+@@ -61,7 +64,7 @@ def test_symbol_export_includes_custom_fields() -> None:
+     ("version", "kicad_10"),
+     [(None, False), (KICAD_SYM_VERSION_20251024, True)],
+ )
+-def test_all_metadata_properties_are_hidden_in_supported_syntax(
++def test_only_native_metadata_properties_are_hidden_in_supported_syntax(
+     version: int | None,
+     kicad_10: bool,
+ ) -> None:
+@@ -91,6 +94,10 @@ def test_all_metadata_properties_are_hidden_in_supported_syntax(
+         else:
+             assert "(hide yes)" not in property_block, key
+             assert " hide)" in property_block, key
++    exported = "\n".join(properties)
++    assert "DigiKey" not in exported
++    assert "Mouser" not in exported
++    assert "Verification Status" not in exported
+ 
+ 
+ def test_kicad_property_strings_are_escaped() -> None:
+@@ -110,3 +117,76 @@ def test_kicad_property_strings_are_escaped() -> None:
+     exported = "\n".join(symbol.export())
+     assert '"Provider \\"Note\\""' in exported
+     assert '"line1\\nline2\\\\tail"' in exported
++
++
++def test_verified_identity_fills_only_empty_native_properties() -> None:
++    info = SimpleNamespace(manufacturer="", mpn="", lcsc_id="")
++
++    _reconcile_symbol_identity(
++        info,
++        {
++            "manufacturer": "Texas Instruments",
++            "mpn": "OPA333AIDBVR",
++            "lcsc_id": "C30878",
++        },
++    )
++
++    assert vars(info) == {
++        "manufacturer": "Texas Instruments",
++        "mpn": "OPA333AIDBVR",
++        "lcsc_id": "C30878",
++    }
++
++
++def test_verified_manufacturer_alias_preserves_nonempty_cad_property(
++    caplog: pytest.LogCaptureFixture,
++) -> None:
++    info = SimpleNamespace(
++        manufacturer="TI(德州仪器)",
++        mpn="OPA333AIDBVR",
++        lcsc_id="C30878",
++    )
++
++    with caplog.at_level(logging.WARNING):
++        _reconcile_symbol_identity(
++            info,
++            {
++                "manufacturer": "Texas Instruments",
++                "mpn": "OPA333AIDBVR",
++                "lcsc_id": "C30878",
++            },
++        )
++
++    assert info.manufacturer == "TI(德州仪器)"
++    assert "preserving the CAD value" in caplog.text
++
++
++@pytest.mark.parametrize(
++    ("field_name", "existing", "verified"),
++    (
++        ("mpn", "OPA333AIDBVR-T", "OPA333AIDBVR"),
++        ("lcsc_id", "C99999", "C30878"),
++    ),
++)
++def test_conflicting_nonempty_part_identity_fails_closed(
++    field_name: str,
++    existing: str,
++    verified: str,
++) -> None:
++    info = SimpleNamespace(
++        manufacturer="Texas Instruments",
++        mpn="OPA333AIDBVR",
++        lcsc_id="C30878",
++    )
++    setattr(info, field_name, existing)
++
++    with pytest.raises(ValueError, match=field_name):
++        _reconcile_symbol_identity(
++            info,
++            {
++                "manufacturer": "Texas Instruments",
++                "mpn": "OPA333AIDBVR",
++                "lcsc_id": "C30878",
++                field_name: verified,
++            },
++        )
+diff --git a/tests/test_metadata_manifest_fields.py b/tests/test_metadata_manifest_fields.py
+index 11bf8d622b5ad7c5ed6ef732b8515550f6c4373d..ad0cad7085ed954815a4d503877a47a326247f6f 100644
+--- a/tests/test_metadata_manifest_fields.py
++++ b/tests/test_metadata_manifest_fields.py
+@@ -162,13 +162,25 @@ def test_csv_redaction_and_stable_row_when_no_distributor_records() -> None:
+     assert empty_rows[0]["MPN"] == "NO-CAD"
+ 
+ 
+-def test_symbol_fields_are_ordered_and_exclude_volatile_metadata() -> None:
++def test_provider_and_volatile_metadata_are_manifest_only() -> None:
+     fields = build_symbol_fields(_merged())
++    payload = manifest_to_dict(_merged())
+ 
+-    assert tuple(fields) == CUSTOM_SYMBOL_FIELD_ORDER
+-    assert fields["DigiKey Part"] == "296-OPA333-ND"
+-    assert fields["Mouser Product URL"] == "https://mouser.example/part"
+-    prohibited = {
++    assert fields == {}
++    assert CUSTOM_SYMBOL_FIELD_ORDER == ()
++    assert payload["distributor_records"][1]["distributor_part_number"] == (
++        "296-OPA333-ND"
++    )
++    assert payload["distributor_records"][0]["product_url"] == (
++        "https://mouser.example/part"
++    )
++    manifest_only = {
++        "DigiKey Part",
++        "Mouser Product URL",
++        "Package",
++        "Lifecycle",
++        "CAD Source",
++        "Verification Status",
+         "Stock",
+         "Price",
+         "MOQ",
+@@ -177,12 +189,12 @@ def test_symbol_fields_are_ordered_and_exclude_volatile_metadata() -> None:
+         "Raw Response Cache Key",
+         "Provider Errors",
+     }
+-    assert prohibited.isdisjoint(fields)
++    assert manifest_only.isdisjoint(fields)
+     assert "Manufacturer" in RESERVED_METADATA_FIELDS
+     assert "Datasheet" in RESERVED_METADATA_FIELDS
+ 
+ 
+-def test_symbol_verification_status_is_cad_only_despite_provider_error() -> None:
++def test_symbol_projection_stays_empty_despite_status_and_provider_error() -> None:
+     merged = _merged()
+     baseline_fields = build_symbol_fields(merged)
+     merged.verification_status = "PARTIAL"
+@@ -192,7 +204,7 @@ def test_symbol_verification_status_is_cad_only_despite_provider_error() -> None
+ 
+     assert merged.cad is not None
+     assert merged.cad.verification_status == "VERIFIED"
+-    assert fields["Verification Status"] == "VERIFIED"
++    assert fields == {}
+     assert fields == baseline_fields
+ 
+ 
+@@ -308,7 +320,7 @@ def test_manifest_and_symbol_urls_remove_credentials_but_keep_public_query() ->
+     assert payload["identity"]["manufacturer_datasheet_url"] == (
+         "https://manufacturer.example/data.pdf?lang=en"
+     )
+-    assert fields["DigiKey Product URL"] == record["product_url"]
++    assert fields == {}
+     assert "fake-secret" not in json.dumps(payload, sort_keys=True)
+ 
+ 
+diff --git a/tests/test_metadata_service.py b/tests/test_metadata_service.py
+index 116e0fd437e62729d72c41f367f3544a8d94fd06..3a6b9f8cacb8eb7bad2102b48d8e640f04e77f67 100644
+--- a/tests/test_metadata_service.py
++++ b/tests/test_metadata_service.py
+@@ -206,6 +206,59 @@ def test_mpn_only_resolves_lcsc_before_other_metadata(tmp_path: Path) -> None:
+     assert merged.verification_status == VERIFIED
+ 
+ 
++def test_explicit_manufacturer_accepts_part_scoped_cad_display_alias(
++    tmp_path: Path,
++) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer="Texas Instruments",
++        requested_lcsc_id="C30878",
++        provider_names=("lcsc",),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc}),
++        cad_provider_factory=lambda api: FakeCadProvider(
++            cad_payload(manufacturer="TI(德州仪器)")
++        ),
++    )
++    merged = result.to_merged(VERIFIED)
++
++    assert lcsc.id_calls == 1
++    assert result.cad_identity is not None
++    assert result.cad_identity.manufacturer == "TI(德州仪器)"
++    assert merged.identity.manufacturer == "Texas Instruments"
++    assert [item.provider for item in merged.distributor_records] == ["lcsc"]
++
++
++def test_explicit_cad_manufacturer_alias_requires_lcsc_id_evidence(
++    tmp_path: Path,
++) -> None:
++    lcsc = FakeMetadataProvider(
++        "lcsc", error=NetworkError("lcsc", operation="id-lookup")
++    )
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer="Texas Instruments",
++            requested_lcsc_id="C30878",
++            provider_names=("digikey",),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++            cad_provider_factory=lambda api: FakeCadProvider(
++                cad_payload(manufacturer="TI(德州仪器)")
++            ),
++        )
++
++    assert exc_info.value.code == "NETWORK_ERROR"
++    assert lcsc.id_calls == 1
++    assert digikey.exact_calls == 0
++
++
+ def test_unproven_inferred_manufacturer_alias_is_rejected(
+     tmp_path: Path,
+ ) -> None:
+diff --git a/tests/test_symbol_lib_helpers.py b/tests/test_symbol_lib_helpers.py
+index 02361048f6d726e24bab6f41a8785eeda822db95..b2c84538c00c982f3bba7eea17e1f3c2406b8853 100644
+--- a/tests/test_symbol_lib_helpers.py
++++ b/tests/test_symbol_lib_helpers.py
+@@ -3,14 +3,18 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
++from types import SimpleNamespace
++from typing import Any, cast
+ 
+ import pytest
+ 
+ from easyeda2kicad.kicad.export_kicad_symbol import (
++    ExporterSymbolKicad,
+     id_already_in_symbol_lib,
+     read_symbol_lib_version,
+     write_component_in_symbol_lib_file,
+ )
++from easyeda2kicad.kicad.parameters_kicad_symbol import KICAD_SYM_VERSION_20211014
+ 
+ 
+ # ---- fixtures ----
+@@ -135,6 +139,27 @@ def test_write_two_then_overwrite_first_unchanged(v6_lib_with_a: Path) -> None:
+     assert content_before.strip() == content_after.strip()
+ 
+ 
++def test_exporter_overwrite_uses_sanitized_slash_name(tmp_path: Path) -> None:
++    lib = tmp_path / "slash.kicad_sym"
++    exporter = cast(Any, object.__new__(ExporterSymbolKicad))
++    exporter.input = SimpleNamespace(
++        info=SimpleNamespace(name="LM321MF/NOPB"),
++        sub_symbols=[],
++    )
++    exporter.version = KICAD_SYM_VERSION_20211014
++    exporter.export = lambda footprint_lib_name: V6_SYMBOL_A.replace(
++        "CompA", "LM321MF_NOPB"
++    )
++
++    assert exporter.save_to_lib(str(lib), "library", overwrite=True)
++    first = lib.read_bytes()
++    assert exporter.save_to_lib(str(lib), "library", overwrite=True)
++
++    content = lib.read_text(encoding="utf-8")
++    assert lib.read_bytes() == first
++    assert content.count('(symbol "LM321MF_NOPB"') == 1
++
++
+ # ---- read_symbol_lib_version ----
+ 
+ 

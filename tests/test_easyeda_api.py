@@ -161,6 +161,133 @@ class TestGetInfoCacheHit:
         result = api_with_cache.get_info_from_easyeda_api("C88888")
         assert result == {}
 
+    @pytest.mark.parametrize(
+        "invalid_envelope",
+        [{}, {"success": True, "result": {}}],
+    )
+    def test_semantically_invalid_cache_refetches_and_is_replaced_online(
+        self,
+        api_with_cache: EasyedaApi,
+        monkeypatch: pytest.MonkeyPatch,
+        invalid_envelope: object,
+    ) -> None:
+        path = api_with_cache._get_cache_path("C-REFETCH", "json")
+        path.write_text(json.dumps(invalid_envelope), encoding="utf-8")
+        valid = {"success": True, "result": {"dataStr": "fresh"}}
+        calls = 0
+
+        def fake_urlopen(*args: object, **kwargs: object) -> MagicMock:
+            nonlocal calls
+            calls += 1
+            return _fake_response(json.dumps(valid).encode("utf-8"))
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+        assert api_with_cache.get_info_from_easyeda_api("C-REFETCH") == valid
+        assert calls == 1
+        assert json.loads(path.read_text(encoding="utf-8")) == valid
+
+
+class TestOfflineMode:
+    def test_cached_component_is_available_offline(self, tmp_path: Path) -> None:
+        api = EasyedaApi(use_cache=True, offline=True)
+        api.cache_dir = tmp_path
+        payload = {"success": True, "result": {"title": "cached"}}
+        api._get_cache_path("C123", "json").write_text(json.dumps(payload))
+
+        assert api.get_info_from_easyeda_api("C123") == payload
+
+    def test_legacy_cp932_json_cache_is_available_offline(self, tmp_path: Path) -> None:
+        api = EasyedaApi(use_cache=True, offline=True)
+        api.cache_dir = tmp_path
+        payload = {
+            "success": True,
+            "result": {"manufacturer": "日本電気", "title": "旧キャッシュ"},
+        }
+        api._get_cache_path("C-CP932", "json").write_bytes(
+            json.dumps(payload, ensure_ascii=False).encode("cp932")
+        )
+
+        assert api.get_info_from_easyeda_api("C-CP932") == payload
+        assert api.last_error is None
+
+    def test_invalid_legacy_cp932_json_cache_is_rejected_offline(
+        self, tmp_path: Path
+    ) -> None:
+        api = EasyedaApi(use_cache=True, offline=True)
+        api.cache_dir = tmp_path
+        api._get_cache_path("C-CP932-BROKEN", "json").write_bytes(
+            "壊れたJSON{".encode("cp932")
+        )
+
+        assert api.get_info_from_easyeda_api("C-CP932-BROKEN") == {}
+        assert api.last_error == "cache_corrupt"
+
+    @pytest.mark.parametrize(
+        "invalid_envelope",
+        [{}, {"success": True, "result": {}}],
+    )
+    def test_semantically_invalid_component_cache_is_corrupt_offline(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        invalid_envelope: object,
+    ) -> None:
+        api = EasyedaApi(use_cache=True, offline=True)
+        api.cache_dir = tmp_path
+        api._get_cache_path("C-SEMANTIC", "json").write_text(
+            json.dumps(invalid_envelope), encoding="utf-8"
+        )
+
+        def unexpected_network(*args: object, **kwargs: object) -> None:
+            raise AssertionError("offline semantic cache failure attempted HTTP")
+
+        monkeypatch.setattr("urllib.request.urlopen", unexpected_network)
+
+        assert api.get_info_from_easyeda_api("C-SEMANTIC") == {}
+        assert api.last_error == "cache_corrupt"
+
+    def test_cache_misses_never_open_network(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = EasyedaApi(use_cache=True, offline=True)
+        api.cache_dir = tmp_path
+
+        def unexpected_network(*args: object, **kwargs: object) -> None:
+            raise AssertionError("offline mode attempted network access")
+
+        monkeypatch.setattr("urllib.request.urlopen", unexpected_network)
+
+        assert api.get_info_from_easyeda_api("C404") == {}
+        assert api.last_error == "offline_cache_miss"
+        assert api.get_raw_3d_model_obj("missing") is None
+        assert api.get_step_3d_model("missing") is None
+        assert api._get_v2_json("/missing") == {}
+        assert api.search_v2_component_uuids_by_lcsc(["C404"]) == {}
+        assert api.search_jlcpcb_components("NO-SUCH-PART") == {
+            "total": 0,
+            "results": [],
+        }
+        assert api.get_svg_from_api("C404") == {"symbol": "", "footprint": ""}
+        assert api.get_product_image_url("https://example.invalid/C404") is None
+
+    def test_corrupt_cached_component_preserves_diagnostic(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = EasyedaApi(use_cache=True, offline=True)
+        api.cache_dir = tmp_path
+        api._get_cache_path("C-BROKEN", "json").write_text(
+            "broken{{{", encoding="utf-8"
+        )
+
+        def unexpected_network(*args: object, **kwargs: object) -> None:
+            raise AssertionError("offline mode attempted network access")
+
+        monkeypatch.setattr("urllib.request.urlopen", unexpected_network)
+
+        assert api.get_cad_data_of_component("C-BROKEN") == {}
+        assert api.last_error == "cache_corrupt"
+
 
 # ---------------------------------------------------------------------------
 # get_raw_3d_model_obj — cache hit path
@@ -262,6 +389,7 @@ class TestGetInfoNetworkPath:
 
         monkeypatch.setattr("urllib.request.urlopen", raise_url_error)
         assert api.get_info_from_easyeda_api("C33333") == {}
+        assert api.last_error == "network_error"
 
     def test_writes_to_cache_on_success(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -277,14 +405,47 @@ class TestGetInfoNetworkPath:
         cache_file = api._get_cache_path("C44444", "json")
         assert cache_file.exists()
 
-    def test_success_false_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        api = EasyedaApi(use_cache=False)
+    @pytest.mark.parametrize(
+        "invalid_envelope",
+        [
+            {},
+            {"success": True, "result": {}},
+            {"success": True},
+            {"success": "true", "result": {"dataStr": "bad"}},
+            {"success": False, "result": {"dataStr": "contradiction"}},
+            [],
+        ],
+    )
+    def test_semantically_invalid_network_envelope_is_not_cached_or_not_found(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        invalid_envelope: object,
+    ) -> None:
+        api = EasyedaApi(use_cache=True)
+        api.cache_dir = tmp_path
+        body = json.dumps(invalid_envelope).encode("utf-8")
+        monkeypatch.setattr(
+            "urllib.request.urlopen", lambda *a, **kw: _fake_response(body)
+        )
+
+        assert api.get_info_from_easyeda_api("C-INVALID") == {}
+        assert api.last_error == "invalid_response"
+        assert not api._get_cache_path("C-INVALID", "json").exists()
+
+    def test_success_false_returns_explicit_not_found_without_caching(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = EasyedaApi(use_cache=True)
+        api.cache_dir = tmp_path
         payload = {"success": False, "message": "not found"}
         body = json.dumps(payload).encode()
         monkeypatch.setattr(
             "urllib.request.urlopen", lambda *a, **kw: _fake_response(body)
         )
         assert api.get_info_from_easyeda_api("C55555") == {}
+        assert api.last_error == "not_found"
+        assert not api._get_cache_path("C55555", "json").exists()
 
 
 # ---------------------------------------------------------------------------

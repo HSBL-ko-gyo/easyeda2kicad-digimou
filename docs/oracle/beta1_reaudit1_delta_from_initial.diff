@@ -1,0 +1,1148 @@
+diff --git a/.github/ISSUE_TEMPLATE/bug_report.yml b/.github/ISSUE_TEMPLATE/bug_report.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..56845fc82596fcebdde99db4942ddbb6720397dc
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/bug_report.yml
+@@ -0,0 +1,126 @@
++name: Bug report
++description: Report a reproducible easyeda2kicad +DigiMou beta defect
++title: "[Bug] "
++labels:
++  - bug
++body:
++  - type: markdown
++    attributes:
++      value: |
++        Thank you for testing the public beta. Remove all API keys, client
++        secrets, access tokens, Authorization headers, credential-bearing URLs,
++        and unsanitized cache content before submitting. Do not report security
++        vulnerabilities here; use the private route in SECURITY.md.
++  - type: input
++    id: os
++    attributes:
++      label: Operating system
++      placeholder: Windows 11 24H2, Ubuntu 24.04, macOS 15
++    validations:
++      required: true
++  - type: input
++    id: python
++    attributes:
++      label: Python version
++      placeholder: 3.12.13
++    validations:
++      required: true
++  - type: input
++    id: kicad
++    attributes:
++      label: KiCad version
++      placeholder: 9.0.3
++    validations:
++      required: true
++  - type: textarea
++    id: command
++    attributes:
++      label: CLI command
++      description: Remove credential values and credential-bearing URLs.
++      render: shell
++    validations:
++      required: true
++  - type: input
++    id: provider
++    attributes:
++      label: Provider
++      placeholder: lcsc, digikey, mouser
++    validations:
++      required: true
++  - type: input
++    id: mpn
++    attributes:
++      label: MPN
++      placeholder: OPA333AIDBVR
++    validations:
++      required: true
++  - type: input
++    id: lcsc_id
++    attributes:
++      label: LCSC ID
++      placeholder: C30878 or not supplied
++    validations:
++      required: true
++  - type: dropdown
++    id: mode
++    attributes:
++      label: Execution mode
++      options:
++        - Legacy mode
++        - Metadata mode
++    validations:
++      required: true
++  - type: dropdown
++    id: cache_mode
++    attributes:
++      label: Data source / cache mode
++      options:
++        - Live
++        - Raw cache replay
++        - Normalized cache
++        - Offline
++        - Refresh
++    validations:
++      required: true
++  - type: textarea
++    id: actual
++    attributes:
++      label: Actual result
++    validations:
++      required: true
++  - type: textarea
++    id: expected
++    attributes:
++      label: Expected result
++    validations:
++      required: true
++  - type: textarea
++    id: manifest
++    attributes:
++      label: Sanitized Manifest
++      description: |
++        Paste only the minimum relevant, sanitized JSON/CSV fragment. Never
++        attach a raw cache or a Manifest containing credentials.
++      render: json
++  - type: textarea
++    id: diagnostic
++    attributes:
++      label: Sanitized diagnostic
++      description: Remove secrets, tokens, Authorization headers, and private URLs.
++      render: text
++  - type: textarea
++    id: reproduction
++    attributes:
++      label: Minimal reproduction
++      description: List the smallest deterministic sequence that reproduces the issue.
++    validations:
++      required: true
++  - type: checkboxes
++    id: sanitization
++    attributes:
++      label: Sanitization confirmation
++      options:
++        - label: I removed API keys, client secrets, access tokens, Authorization headers, credential-bearing URLs, and unsanitized cache content.
++          required: true
++        - label: This is not a security vulnerability report.
++          required: true
+diff --git a/.github/ISSUE_TEMPLATE/config.yml b/.github/ISSUE_TEMPLATE/config.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..16c9337f5c2ceb7a9b1d154bd2b3877b97220f8d
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/config.yml
+@@ -0,0 +1,5 @@
++blank_issues_enabled: false
++contact_links:
++  - name: Report a security vulnerability privately
++    url: https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/security/advisories/new
++    about: Do not disclose security-sensitive details in a public issue.
+diff --git a/NOTICE b/NOTICE
+index eed76dcca4a96dc791bbd62b04a925de29f1286f..779c822900ae3bf07c5969f157d7855ae2cef1b1 100644
+--- a/NOTICE
++++ b/NOTICE
+@@ -5,14 +5,19 @@ This source tree is a modified version of uPesy/easyeda2kicad.py:
+ 
+ - Upstream project: https://github.com/uPesy/easyeda2kicad.py
+ - Upstream baseline: fff10a38619963d7cb1c57d779655a9ea4572e95
+-- Modification date: 2026-07-22
++- Modification period: 2026-07-22 through 2026-07-23
+ - Modification scope: exact-MPN distributor metadata integration for LCSC,
+   DigiKey, and Mouser; metadata caching and manifests; additive CLI options;
+   and related compatibility, security, documentation, and test work.
+ 
+-The modifications were produced in this local source tree under the user's
+-direction with assistance from OpenAI Codex. No public fork or release URL has
+-been assigned. Preserve this notice and the upstream copyright and attribution
+-when conveying modified copies.
++The modifications were produced under the user's direction with assistance
++from OpenAI Codex and are published as the unofficial public beta
++"easyeda2kicad +DigiMou" at:
++
++https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou
++
++This project is not an official DigiKey, Mouser, LCSC, EasyEDA, or upstream
++release. Preserve this notice and the upstream copyright and attribution when
++conveying modified copies.
+ 
+ The entire modified work remains licensed under GNU AGPL-3.0. See LICENSE.
+diff --git a/README.md b/README.md
+index 0db09fade7a88bbc8ec99ea06c2efb1f58ec98c7..1517c49a8d8d6423881630d96592c2ca71679295 100644
+--- a/README.md
++++ b/README.md
+@@ -1,18 +1,29 @@
+-# easyeda2kicad
++# easyeda2kicad +DigiMou
+ 
+-> **Modified source notice (2026-07-22):** This checkout modifies
++> **Public beta `1.1.0b1` — unofficial derivative.** This project modifies
+ > [uPesy/easyeda2kicad.py](https://github.com/uPesy/easyeda2kicad.py) from
+ > baseline `fff10a38619963d7cb1c57d779655a9ea4572e95`. The modifications and
+ > attribution are described in [NOTICE](NOTICE); the entire work remains
+-> licensed under GNU AGPL-3.0. No public fork or release URL has been assigned.
++> licensed under GNU AGPL-3.0. It is not an official DigiKey, Mouser, LCSC,
++> EasyEDA, or upstream release and is not presented as their successor.
+ 
+-[![PyPI version](https://img.shields.io/pypi/v/easyeda2kicad.svg)](https://pypi.org/project/easyeda2kicad/)
+-[![License](https://img.shields.io/github/license/upesy/easyeda2kicad.py.svg)](https://github.com/uPesy/easyeda2kicad.py/blob/master/LICENSE)
+-[![Downloads](https://pepy.tech/badge/easyeda2kicad)](https://pepy.tech/project/easyeda2kicad)
+-![Python versions](https://img.shields.io/pypi/pyversions/easyeda2kicad.svg)
++[![Public beta](https://img.shields.io/badge/public_beta-1.1.0b1-orange)](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases)
++[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
++[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](setup.py)
+ [![Git hook: pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+ [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+ 
++This beta preserves the existing `easyeda2kicad` Python package, CLI command,
++public API, legacy `--lcsc_id` path, and legacy KiCad output while adding
++LCSC/DigiKey/Mouser distributor metadata. Exact MPN matching is fail-closed.
++JSON and CSV Manifests retain complete metadata; raw/normalized caches support
++`--offline` and `--refresh-metadata`. KiCad receives only stable native
++Manufacturer/MPN/LCSC/Datasheet identity properties—price, stock, provider
++state, provenance, diagnostics, and other volatile sales data remain
++Manifest-only. DigiKey and Mouser credentials are environment variables and
++are never written to logs, Manifests, cache keys, cache payloads, or KiCad
++properties.
++
+ A Python script that converts any electronic components from [EasyEDA](https://easyeda.com/) or [LCSC](https://www.lcsc.com/) to a KiCad library including **3D model** in color. This tool will speed up your PCB design workflow especially when using [JLCPCB SMT assembly services](https://jlcpcb.com/caa). **It supports KiCad v6 and newer.**
+ 
+ <p align="center">
+@@ -24,15 +35,16 @@ A Python script that converts any electronic components from [EasyEDA](https://e
+ 
+ ## 💾 Installation
+ 
+-If you have Python installed on your system:
++The public beta is distributed only through its
++[GitHub pre-release](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases).
++Install the downloaded wheel in the environment that runs KiCad:
+ 
+ ```bash
+-pip install easyeda2kicad
++python -m pip install ./easyeda2kicad-1.1.0b1-py3-none-any.whl
+ ```
+ 
+-That command installs the published upstream package from PyPI. To use the
+-exact-MPN and distributor-metadata extension in this checkout, run the following
+-from the repository root instead:
++This beta is not published to PyPI. `pip install easyeda2kicad` installs the
++separate upstream release, not +DigiMou. For an editable checkout instead:
+ 
+ ```bash
+ python -m pip install -e .
+diff --git a/SECURITY.md b/SECURITY.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..75ba95688c751f5fb3697126cacfed8ea3800870
+--- /dev/null
++++ b/SECURITY.md
+@@ -0,0 +1,17 @@
++# Security policy
++
++Do not put security vulnerabilities, API keys, client secrets, access tokens,
++Authorization headers, credential-bearing URLs, or raw cache archives in a
++public issue.
++
++Use GitHub private vulnerability reporting:
++
++<https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/security/advisories/new>
++
++If GitHub does not show the private reporting form, open a public issue that
++contains no vulnerability details or secrets and asks the maintainer to provide
++a private contact route. Wait for that route before sharing technical details.
++
++When reporting privately, include only the minimum sanitized reproduction.
++Credential rotation remains the reporter's responsibility if a real credential
++was exposed before sanitization.
+diff --git a/docs/CODEX_RESULT.md b/docs/CODEX_RESULT.md
+index 2190c9d861f281372bb3abff609bda50e555eb22..9e00f9f1c8796ae2ea5e3ca2804b02e0ee150a9e 100644
+--- a/docs/CODEX_RESULT.md
++++ b/docs/CODEX_RESULT.md
+@@ -1,10 +1,11 @@
+-# Codex public-beta corrective Release Candidate result — audit pending
++# Codex public-beta Release Candidate result — release-prep re-audit pending
+ 
+ Generated: 2026-07-23 (Asia/Tokyo)  
+ Upstream baseline: `fff10a38619963d7cb1c57d779655a9ea4572e95`  
+ Local branch: `feature/multi-distributor-metadata`  
+ Repository mutation policy: no commit, stash, push, or GitHub fork was created.
+-Publication status: blocked until the new candidate passes Oracle audit.
++Publication status: field-table RC approved; revised release-prep candidate
++blocked pending Oracle re-audit 1.
+ 
+ ## 1. Architecture summary
+ 
+@@ -321,7 +322,38 @@ and invoking its `--help` succeeds. AGPL-3.0 remains unchanged.
+ - Bulk metadata enrichment of existing KiCad project parts.
+ - Scheduled stock/lifecycle monitoring.
+ 
+-## 16. Oracle review status
++## 16. Public-beta release preparation
++
++- Current upstream/package version: `1.0.1`.
++- Selected PEP 440 beta version: `1.1.0b1`.
++- Planned annotated tag: `v1.1.0b1`.
++- Display name: `easyeda2kicad +DigiMou`.
++- Planned fork: `HSBL-ko-gyo/easyeda2kicad-digimou`.
++- Python distribution/import/CLI name: unchanged as `easyeda2kicad`.
++- PyPI: explicitly out of scope and not used.
++
++The README, NOTICE, setup metadata, release notes, issue form, and security
++reporting route were prepared without changing dependencies or CLI spellings.
++The real final-tree quality matrix is `702 passed, 71 skipped` on Python
++3.9.25, 3.12.13, and 3.14.3. Ruff format/lint, strict mypy over 59 files,
++`git diff --check`, explicit legacy/metadata/Manifest fixtures, and release
++artifact secret scans pass.
++
++A clean temporary Git-tree snapshot produced:
++
++- `easyeda2kicad-1.1.0b1.tar.gz`;
++- `easyeda2kicad-1.1.0b1-py3-none-any.whl`;
++- `RELEASE_NOTES.md`;
++- `CLI_HELP.txt`; and
++- `SHA256SUMS.txt`.
++
++The wheel and sdist each contain LICENSE, NOTICE, and required package modules,
++contain no tests/cache/Oracle bundle/credential files, install into separate
++new Python 3.9 venvs, report version `1.1.0b1`, and run installed CLI help.
++The installed metadata CLI reaches the expected typed offline/cache failure
++path without network access. Artifacts remain outside the repository.
++
++## 17. Oracle review status
+ 
+ Architecture Review and consultation 001 are complete, recorded, and
+ dispositioned. RC2's valid final re-audit remains closed as
+@@ -356,6 +388,16 @@ re-audit; the final evidence records those passes.
+ That approval applies only to the preserved RC3 candidate. The subsequent
+ public-beta field-table audit required runtime changes to the KiCad projection,
+ explicit-manufacturer evidence path, and slash-bearing overwrite lookup.
+-Publication is therefore blocked pending a new candidate, three-Python quality
+-matrix, source canary, and Oracle browser/manual-login audit for this corrective
+-tree.
++
++The distinct public-beta corrective initial audit is now preserved in
++`docs/oracle/release_candidate_audit_beta1.md`. Oracle CLI 0.16.0 used browser
++foreground mode, `--browser-manual-login`, GPT-5.6 Sol, and ten individual
++attachments with no bundle/cache. It reported CANARY PASS, no RELEASE BLOCKER,
++no SHOULD FIX, and RELEASE APPROVED; post-answer canaries matched 10/10 direct
++attachments and 17/17 source-table entries.
++
++Release preparation subsequently changed the version and package/repository
++metadata and added release documentation/templates. No dependency, runtime
++behavior, test, CLI spelling, API, cache schema, or output format changed.
++Publication remains blocked until revised-candidate re-audit 1 verifies those
++changes and its post-answer source canary matches.
+diff --git a/docs/CURRENT_STATE.md b/docs/CURRENT_STATE.md
+index a2cf05f9058a0ca84e7530cea4fdb7d6879d4312..d25377165ba2cafb2fecc4bfb58c55d5c7065a58 100644
+--- a/docs/CURRENT_STATE.md
++++ b/docs/CURRENT_STATE.md
+@@ -6,9 +6,10 @@ Last updated: 2026-07-23 (Asia/Tokyo)
+ 
+ RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
+ limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
+-The subsequent public-beta field-table audit found runtime issues, so
+-publication is blocked while a distinct corrective RC completes its quality
+-matrix and Oracle browser/manual-login audit.
++The subsequent public-beta field-table audit found and fixed runtime issues.
++Its distinct corrective RC passed Oracle with no release blocker. Version and
++package/release metadata were then prepared for `1.1.0b1`, so publication is
++blocked only until revised-candidate re-audit 1 and the final commit/tag gates.
+ 
+ ## Completed
+ 
+@@ -65,9 +66,20 @@ matrix and Oracle browser/manual-login audit.
+     root/CAD status `VERIFIED`.
+ - Validated the two real manifests and the explicit mocked `CAD_NOT_FOUND`
+   manifest with `tests/test_documented_examples.py`: `4 passed`.
+-- Built `easyeda2kicad-1.0.1.tar.gz` and
+-  `easyeda2kicad-1.0.1-py3-none-any.whl`; both contain `LICENSE` and `NOTICE`.
+-  The packaged wheel imports from the archive and its `--help` exits 0.
++- The field-table corrective initial Oracle audit used ten individual files,
++  no bundle/cache, and passed post-answer canaries 10/10 and 17/17. Oracle
++  reported no RELEASE BLOCKER, SHOULD FIX, or OPTIONAL item.
++- Selected PEP 440 version `1.1.0b1` and tag `v1.1.0b1` because upstream
++  `1.0.1` is already stable; kept distribution/import/CLI name unchanged.
++- Prepared README, NOTICE, setup metadata, GitHub issue form, private security
++  route, and beta release notes for `easyeda2kicad +DigiMou`.
++- Built `easyeda2kicad-1.1.0b1.tar.gz` and
++  `easyeda2kicad-1.1.0b1-py3-none-any.whl` from a clean external Git snapshot.
++  Both contain `LICENSE`, `NOTICE`, and all package modules while excluding
++  tests, caches, Oracle material, and credentials.
++- Installed the wheel and sdist into separate fresh Python 3.9 venvs. Both
++  report `1.1.0b1`, their console CLI help exposes legacy and metadata options,
++  and the metadata smoke reaches a typed offline/cache failure without network.
+ 
+ ## Preserved RC3 quality evidence
+ 
+@@ -102,7 +114,8 @@ and passes.
+ | `git diff --check` | PASS |
+ 
+ Focused field-table/manufacturer/overwrite regressions and the complete matrix
+-pass. Secret and candidate-integrity evidence is generated next for Oracle.
++pass. The explicit release-fixture subset adds `7 passed`; build, dual-install,
++archive-content, worktree-leak, and artifact-secret gates also pass.
+ 
+ The initial focused acceptance probe reported `22 passed, 192 deselected`.
+ After Oracle's initial audit, the new blocker probes report `8 passed` and the
+@@ -133,10 +146,11 @@ no partial output.
+ 
+ ## Oracle status and next action
+ 
+-Oracle CLI 0.16.0 completed the preserved RC3 re-audit through the browser
+-engine and `--browser-manual-login`. That answer cannot approve the later
+-runtime changes. Generate a new candidate/source canary after the complete
+-quality matrix, then run one new browser/manual-login Release Candidate audit
+-with current files attached individually and no old bundle/cache. The accepted
+-risks remain unchanged: no credentialed DigiKey/Mouser live run, no native
+-Linux process E2E, and 69 inherited reference-output skips.
++Oracle CLI 0.16.0 completed the public-beta corrective initial audit through
++the browser engine and `--browser-manual-login`. It reported CANARY PASS, no
++release blocker, and RELEASE APPROVED; all post-answer canaries matched.
++Because release preparation then changed version/package metadata, generate a
++revised candidate/source canary and run re-audit 1 with current files attached
++individually and no old bundle/cache. The accepted risks remain unchanged: no
++credentialed DigiKey/Mouser live run, no native Linux process E2E, and 69
++inherited reference-output skips.
+diff --git a/docs/DECISIONS.md b/docs/DECISIONS.md
+index ba348cb5dc1eb2ffdaeefb0e3b1933c0791a9da0..bff4e65c512a00cd22c48e327f9d5ef666283242 100644
+--- a/docs/DECISIONS.md
++++ b/docs/DECISIONS.md
+@@ -517,7 +517,7 @@ Those checks are recorded in the final new-RC evidence.
+ 
+ ## D030 — Keep distributor metadata out of KiCad Symbol Fields Table columns
+ 
+-**Status:** Implemented; public-beta corrective RC requires Oracle audit  
++**Status:** Implemented; initial public-beta corrective audit approved  
+ **Decision:** Reuse only the exporter's existing native `Manufacturer`, `MPN`,
+ `LCSC Part`, and `Datasheet` properties. `build_symbol_fields()` emits no
+ metadata-mode custom properties. Provider part numbers/URLs, manufacturer
+@@ -535,7 +535,7 @@ metadata reserved-name boundary.
+ 
+ ## D031 — Verify explicit manufacturer display aliases with same-part evidence
+ 
+-**Status:** Implemented; public-beta corrective RC requires Oracle audit  
++**Status:** Implemented; initial public-beta corrective audit approved  
+ **Decision:** Continue exact normalized manufacturer matching at every
+ distributor boundary. Do not require the EasyEDA display label itself to equal
+ the explicit distributor label when, and only when, a mandatory LCSC lookup
+@@ -556,7 +556,7 @@ non-empty MPN or LCSC property conflicts still fail.
+ 
+ ## D032 — Use the serialized KiCad symbol ID for overwrite lookup
+ 
+-**Status:** Implemented; public-beta corrective RC requires Oracle audit  
++**Status:** Implemented; initial public-beta corrective audit approved  
+ **Decision:** Apply the existing `sanitize_fields()` transformation to the
+ component name before both symbol-library lookup/replacement and sub-unit
+ integration.  
+@@ -578,6 +578,60 @@ version/tag/GitHub publication work.
+ **Reason:** The approved RC3 cannot authorize source that it did not review.
+ The public-beta instructions explicitly make a fresh RC mandatory after a
+ runtime correction.  
+-**Compatibility:** Publication remains blocked until this new cycle reports
+-CANARY PASS with no release blocker. No commit, tag, push, fork, release, or
+-PyPI action occurs before that gate.
++**Compatibility:** The initial corrective audit reported CANARY PASS and no
++release blocker. Release preparation then changed version/package metadata, so
++the revised tag candidate requires re-audit 1 before commit, tag, fork, release,
++or any other publication. PyPI publication remains excluded.
++
++## Public-beta corrective initial-audit disposition — 2026-07-23
++
++The authoritative answer is
++`docs/oracle/release_candidate_audit_beta1.md`. Oracle received ten individual
++current files with `bundled: null`, verified both candidate hashes and every
++source canary, and reported **CANARY PASS / no RELEASE BLOCKER / RELEASE
++APPROVED**. Codex then recomputed the direct-attachment canary 10/10 and the
++complete source table 17/17.
++
++| Finding | Decision and evidence |
++| --- | --- |
++| `B1-FT-01` / `B1-FT-02` | **RESOLVED.** Native-only KiCad projection and complete Manifest-only distributor metadata match code, tests, and real artifact evidence. |
++| `B1-MAN-01` | **RESOLVED.** The part-scoped LCSC proof remains mandatory and fail-closed before external Provider calls. |
++| `B1-ID-01` | **RESOLVED.** Empty/equivalent native values are reconciled; nonempty Manufacturer is preserved; MPN/LCSC conflicts fail before export. |
++| `B1-SYM-01` | **RESOLVED.** Sanitized lookup/write identity prevents slash-bearing duplicate symbols. |
++| `B1-BYTE-01` | **RESOLVED.** OPA333AIDBVR and LM321MF/NOPB legacy/metadata artifacts and repeat runs match byte-for-byte. |
++| `B1-COMP-01` / `B1-QA-01` | **RESOLVED.** Scope, compatibility, secrets, and the 702/71 matrix passed. |
++| `B1-AR-01` through `B1-AR-03` | **Accepted risks retained.** |
++| SHOULD FIX / OPTIONAL | None. |
++
++No Oracle finding was rejected. This approval establishes the field-table
++runtime boundary. It does not silently approve later version/package/release
++metadata changes; those are placed in the revised candidate for re-audit 1.
++
++## D034 — Version the additive derivative as 1.1.0b1
++
++**Status:** Implemented; revised candidate requires re-audit 1  
++**Decision:** Change the single package version source from stable `1.0.1` to
++PEP 440 version `1.1.0b1` and use annotated tag `v1.1.0b1`. Keep the Python
++distribution name, import package, console command, CLI options, public API, and
++legacy formats named `easyeda2kicad`. Use `easyeda2kicad +DigiMou` only as the
++public display name and `easyeda2kicad-digimou` as the GitHub repository slug.
++**Reason:** A `1.0.1b1` prerelease sorts before the already released `1.0.1`
++stable version. Exact-MPN multi-distributor metadata is an additive feature
++appropriate for the next minor beta; renaming internal/public Python surfaces
++would add compatibility risk without helping the first beta.
++**Compatibility:** Setup metadata and the release URL change, but dependency
++requirements, entrypoint, import paths, and runtime behavior do not.
++
++## D035 — Publish the first beta only as a GitHub pre-release
++
++**Status:** Prepared; publication awaits re-audit and final commit/tag gates  
++**Decision:** Build sdist, wheel, release notes, CLI help, and checksums from an
++external clean snapshot; publish only through a GitHub fork and pre-release.
++Do not upload to PyPI. Push the existing feature branch rather than upstream
++`master`, and create the annotated tag only after the audited tree is committed.
++**Reason:** The user explicitly excluded PyPI and required fork-network
++preservation. The inherited upstream workflow publishes only on a `master`
++branch push that changes `_version.py`; the controlled beta flow does neither.
++**Compatibility:** Build/cache/venv/output directories remain ignored and are
++not committed. The release assets contain LICENSE, NOTICE, and all package
++modules, while excluding tests, caches, Oracle material, and credentials.
+diff --git a/docs/oracle/README.md b/docs/oracle/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2e1746902fea396e41d76b004e67a85b8a61cc54
+--- /dev/null
++++ b/docs/oracle/README.md
+@@ -0,0 +1,528 @@
++# Oracle review log
++
++Oracle is used as an independent second designer/reviewer. Its responses are
++advisory and are checked against code, official API behavior, and tests before
++adoption. No Oracle browser profile, session cache, cookie, API key, client
++secret, or access token is copied into this repository.
++
++## Tool discovery
++
++- Command run before first use: `npx -y @steipete/oracle --help`
++- Oracle CLI version: `0.16.0`
++- Date: 2026-07-22 (Asia/Tokyo)
++- Available engines reported: `api`, `browser`
++- Selected execution for all successful reviews: `browser`, foreground,
++  `--browser-manual-login`
++- Model policy: verified non-Pro/standard model only; the historical failed Pro
++  attempts below predate this repository rule and were not reused.
++
++## Architecture Review
++
++Status: **completed, saved, and dispositioned**.
++
++### Execution
++
++The complete review used one ChatGPT conversation in two Oracle captures:
++
++1. `easyeda-architectu-full-review`
++   - 2026-07-22 20:27:26–21:08:01 JST
++   - engine/mode: browser foreground with manual login
++   - Oracle model ID: `gpt-5.5`
++   - browser picker evidence: requested and resolved `Thinking 5.5`, verified
++     `yes`
++   - input: 20 selectors expanded and packed as 40 files, approximately
++     139,498 tokens
++   - result: the browser response outlived Oracle's capture timeout; only a
++     preamble was captured, so no answer was accepted from this attempt
++2. `easyeda-architectu-review-followup`
++   - 2026-07-22 21:08:55–21:44:25 JST
++   - same browser conversation and the same already-attached 40-file bundle
++   - Oracle model ID: `gpt-5.5`
++   - final capture: 6.97k answer tokens
++   - model-picker evidence on the follow-up itself reports requested
++     `Thinking 5.5`, resolved unavailable, verified `no`; this is recorded
++     rather than overstated. The parent attachment turn had already verified
++     `Thinking 5.5`, and Oracle still reports the completed session model as
++     `gpt-5.5`.
++
++Answer: `docs/oracle/architecture_review.md`
++
++### Files passed
++
++The parent session packed exactly these 40 files:
++
++- `README.md`
++- `pyproject.toml`
++- `setup.py`
++- `LICENSE`
++- `easyeda2kicad/__main__.py`
++- `easyeda2kicad/easyeda/easyeda_api.py`
++- `easyeda2kicad/easyeda/easyeda_importer.py`
++- `easyeda2kicad/kicad/parameters_kicad_symbol.py`
++- `easyeda2kicad/metadata/__init__.py`
++- `easyeda2kicad/metadata/cache.py`
++- `easyeda2kicad/metadata/cad_identity.py`
++- `easyeda2kicad/metadata/manifest.py`
++- `easyeda2kicad/metadata/merge.py`
++- `easyeda2kicad/metadata/models.py`
++- `easyeda2kicad/metadata/service.py`
++- `easyeda2kicad/metadata/symbol_fields.py`
++- `easyeda2kicad/providers/__init__.py`
++- `easyeda2kicad/providers/base.py`
++- `easyeda2kicad/providers/digikey.py`
++- `easyeda2kicad/providers/easyeda.py`
++- `easyeda2kicad/providers/lcsc.py`
++- `easyeda2kicad/providers/mouser.py`
++- `docs/architecture.md`
++- `docs/PROVIDER_CONTRACT.md`
++- `docs/DECISIONS.md`
++- `tests/test_cli_metadata.py`
++- `tests/test_cli_metadata_e2e.py`
++- `tests/test_easyeda_identity.py`
++- `tests/test_metadata_cache.py`
++- `tests/test_metadata_manifest_fields.py`
++- `tests/test_metadata_merge.py`
++- `tests/test_metadata_models.py`
++- `tests/test_metadata_service.py`
++- `tests/test_provider_base.py`
++- `tests/test_provider_digikey.py`
++- `tests/test_provider_lcsc_easyeda.py`
++- `tests/test_provider_mouser.py`
++- `tests/test_custom_fields.py`
++- `tests/test_easyeda_api.py`
++- `tests/test_regression.py`
++
++### Prompts sent
++
++Parent prompt:
++
++> Act as the independent second designer for this AGPL-3.0 Python 3.9+
++> extension of uPesy/easyeda2kicad.py baseline
++> fff10a38619963d7cb1c57d779655a9ea4572e95. Review the attached upstream
++> architecture, CLI compatibility, Provider boundaries, common models,
++> conservative exact MPN matching, LCSC ID and MPN mismatch behavior, DigiKey
++> and Mouser authentication and secret boundaries, provider-scoped raw and
++> normalized caching, offline and refresh semantics, EasyEDA-only CAD
++> responsibility, hidden stable KiCad properties without volatile sales
++> fields, manifests and provenance, Windows/Linux paths, AGPL preservation,
++> and tests. Find unnecessary refactoring, weak or excessive abstractions,
++> false matches, mixed CAD/sales responsibilities, secret leakage, legacy CLI
++> or KiCad output breakage, and missing tests. The exact MPN rule is NFKC plus
++> uppercase plus outer/internal whitespace handling plus Unicode-dash
++> conversion while preserving hyphen underscore slash suffixes and separator
++> positions. Classify every actual finding under BLOCKER, SHOULD FIX, or
++> OPTIONAL; give affected files, reasoning, smallest compatible fix, and
++> distinguish fix-now items from post-implementation checks.
++
++Follow-up prompt:
++
++> Continue the Architecture Review now using the files already attached in
++> this ChatGPT conversation. Your previous assistant turn only stated an
++> intention to trace the implementation and did not provide the requested
++> review. Return the complete review in this response with no process preamble.
++> Classify every concrete finding under BLOCKER, SHOULD FIX, or OPTIONAL; for
++> each give affected files, reasoning, the smallest backward-compatible fix,
++> and whether it must be fixed now or checked after implementation. Explicitly
++> cover legacy CLI and KiCad compatibility, Provider and CAD responsibilities,
++> exact MPN and LCSC ID verification, DigiKey and Mouser authentication and
++> result truncation, raw and normalized cache plus offline and refresh,
++> secrets, hidden stable properties without volatile sales data, manifest
++> provenance and paths, AGPL-3.0, and test gaps.
++
++### Disposition
++
++The detailed B1–B9, S1–S9, and O1–O3 decision table is in
++`docs/DECISIONS.md`.
++
++- Adopted: B1–B7, B9, and S1–S9.
++- B8: checked-in C2040 offline goldens plus baseline/current Python 3.9 and
++  current-Python Windows evidence were added. Native Linux execution was not
++  available and is disclosed to the RC audit as a residual risk.
++- O1: deferred; the service cache has one authority while provider methods
++  remain compatibility wrappers.
++- O2: adopted as documentation cleanup.
++- O3: not changed because the image helper predates this extension and the new
++  metadata path never calls it.
++
++## Stuck Consultation 001 — manufacturer alias identity
++
++Status: **completed, implemented, and verified**.
++
++- Session: `manufactur-alias-identity-consultati`
++- Time: 2026-07-22 21:50:32–21:58:02 JST
++- Mode: browser foreground with `--browser-manual-login`
++- Oracle model ID: `gpt-5.6`
++- Browser picker: requested/resolved `GPT-5.6 Sol`, verified `yes`
++- Tokens: 44.64k input, 2.23k output
++- Files:
++  - `docs/oracle/consultations/001-manufacturer-alias.diff`
++  - `docs/oracle/architecture_review.md`
++  - `docs/PROVIDER_CONTRACT.md`
++  - `docs/architecture.md`
++- Answer: `docs/oracle/consultations/001-manufacturer-alias-identity.md`
++
++Prompt sent:
++
++> Stuck Consultation: resolve Architecture Review B1 only. Symptom: with no
++> explicit --manufacturer, EasyEDA/LCSC may establish manufacturer display
++> `TI(Chinese localized name)` while DigiKey/Mouser return
++> `Texas Instruments`; normalize_manufacturer intentionally has no alias table,
++> so the same exact MPN produces a manufacturer conflict. Expected: prevent a
++> distributor record for a genuinely different manufacturer from being
++> attached to the wrong EasyEDA CAD, while still supporting the required
++> OPA333AIDBVR and LM321MF/NOPB integrations despite common distributor display
++> aliases. Actual current behavior: user-supplied manufacturer is a hard exact
++> filter; inferred manufacturer disagreement is retained as a structured
++> conflict and the exact-MPN distributor record remains in manifests/symbol
++> projection. Architecture Review B1 says exclude every differing inferred
++> manufacturer record as MANUFACTURER_UNVERIFIED; doing that also excludes
++> legitimate TI alias records and there is no way for the user to provide a
++> manufacturer spelling that matches both LCSC/EasyEDA and DigiKey. Tried:
++> exact NFKC/punctuation normalization, no fuzzy matching, no alias table,
++> structured conflict/provenance, provider-local exact MPN validation,
++> conservative ambiguity/truncation handling. Tests cover TI localized display
++> versus Texas Instruments and genuine disagreements. There is no runtime error
++> log; the design ambiguity is the blocker. Review the scoped diff and
++> contracts. Recommend one smallest backward-compatible algorithm, state
++> whether the record may appear in distributor_records, BOM, KiCad properties,
++> and provenance, and identify any additional evidence that can safely
++> distinguish alias from different manufacturer without fuzzy matching.
++> Classify as BLOCKER / SHOULD FIX / OPTIONAL and explain whether Architecture
++> B1 should stand or be narrowed.
++
++Adopted: Oracle's narrowed B1 rule. Only exact manufacturer names from EasyEDA
++and the exact same canonical LCSC catalogue record form the part-scoped evidence
++set. Unverified external records are excluded and reported as
++`MANUFACTURER_UNVERIFIED`. No fuzzy/global alias table was added. Optional
++datasheet hashes/global identifiers were not implemented because they are not
++needed for this scope.
++
++## Historical unavailable/stalled attempts
++
++The initial uninitialized-profile failure and subsequent stalled captures are
++preserved in `docs/oracle/UNAVAILABLE.md`. They are historical; the Architecture
++Review was later recovered. The active failure policy remains: record an Oracle
++failure and continue before RC, but do not pass the RC boundary without the
++required review.
++
++## Release Candidate Audit
++
++Status: **completed; CANARY PASS / RELEASE BLOCKED**.
++
++The valid answer is stored in
++`docs/oracle/release_candidate_audit.md`. It reports one RELEASE BLOCKER, two
++SHOULD FIX items, three ACCEPTABLE RISK items, and no required OPTIONAL item.
++This was the second and final permitted re-audit, so the current RC cycle stops
++for human direction.
++
++### Execution record
++
++- Oracle CLI version: `0.16.0`
++- Valid audit session: `easyeda-rc-final-reaudit-2-2`
++- Time: 2026-07-23 00:14:00–00:34:52 JST (UTC+09:00)
++- Elapsed: 20 minutes 51 seconds
++- Engine/mode: browser foreground with `--browser-manual-login`
++- Oracle model ID: `gpt-5.6`
++- Browser picker: requested/resolved `GPT-5.6 Sol`, verified `yes`
++- Usage reported by Oracle: 315,452 input tokens and 2,809 output tokens
++- Files received: 20; Oracle created a transient browser attachment bundle,
++  which was not copied into the repository
++- Candidate snapshot: 62 files, 16,977 lines, 678,259 bytes; SHA-256
++  `cf4527f61101258a14cfff487f987a86111da87e453f06760eadb156066a421b`
++- Candidate validation: `git apply --cached --check` exit 0 and zero
++  high-confidence secret findings
++- Source-canary result: **PASS**, including the current cache schema, URL
++  sanitizer, MPN-minus set, manufacturer rejection path, truncation errors, and
++  dedicated JLCPCB client
++
++### Transport attempts and re-audit count
++
++1. Initial audit, `easyeda-release-candidate-audit`, ran 2026-07-22
++   23:06:22–23:46:41 JST. The picker verified `GPT-5.6 Sol`, but Windows `npx`
++   did not forward the long `--file` arguments and split the multiline prompt.
++   Oracle metadata records zero files and only this transmitted prompt:
++
++   > このeasyeda2kicad拡張のRelease Candidateを監査してください。
++
++   The resulting answer followed stale Architecture context and is preserved
++   verbatim in `docs/oracle/release_candidate_audit_attempt1_stale.md`; Codex's
++   source-by-source rejection is in
++   `docs/oracle/release_candidate_audit_attempt1_disposition.md`.
++2. Re-audit 1, `easyeda-rc-audit-reaudit-1`, ran 2026-07-22 23:50:52–2026-07-23
++   00:11:47 JST. The same long-option transport defect again produced zero
++   files and truncated the actual transmitted prompt to:
++
++   > Release Candidate re-audit 1です。前回回答は、candidate diff内に保存されていた過去のArchitecture Review／consultation diffを最新版と誤認し、既に修正済みのB0-B9/S1-S8を再掲しました。前回回答は release_candidate_audit_attempt1_stale.md に保存し、Codexの現行照合結果は release_candidate_audit_attempt1_disposition.md にあります。
++
++   Oracle correctly declined to classify the current RC without current input.
++   The response is saved in
++   `docs/oracle/release_candidate_audit_attempt2_input_mismatch.md`.
++3. A second-re-audit transport preflight,
++   `easyeda-rc-final-reaudit-2`, started at 2026-07-23 00:12:21 JST. Verbose
++   evidence immediately showed zero files and a truncated prompt, so it was
++   cancelled before an audit answer. It is recorded as a transport failure,
++   not counted as a completed review.
++4. Re-audit 2/final, `easyeda-rc-final-reaudit-2-2`, used individual short
++   `-f` arguments and a single-line prompt in a new conversation. Oracle
++   received all 20 files, passed the canary, and completed the valid audit.
++
++Thus the completed review sequence is the initial audit plus re-audits 1 and 2.
++The preflight cancellation did not produce a review, and no third re-audit is
++being hidden or requested.
++
++### Files passed to the valid final audit
++
++1. `docs/oracle/release_candidate.diff`
++2. `docs/oracle/rc2_current_source_canary.md`
++3. `docs/oracle/release_candidate_audit_attempt1_disposition.md`
++4. `docs/CODEX_RESULT.md`
++5. `docs/architecture.md`
++6. `docs/PROVIDER_CONTRACT.md`
++7. `docs/DECISIONS.md`
++8. `docs/oracle/cli_help.txt`
++9. `docs/oracle/legacy_compatibility.md`
++10. `docs/oracle/secret_audit.md`
++11. `docs/oracle/example_validation.md`
++12. `docs/examples/OPA333AIDBVR.manifest.json`
++13. `docs/examples/LM321MF-NOPB.manifest.json`
++14. `docs/examples/CAD_NOT_FOUND.mock.manifest.json`
++15. `easyeda2kicad/metadata/cache.py`
++16. `easyeda2kicad/metadata/models.py`
++17. `easyeda2kicad/metadata/service.py`
++18. `easyeda2kicad/providers/digikey.py`
++19. `easyeda2kicad/providers/mouser.py`
++20. `easyeda2kicad/providers/lcsc.py`
++
++The historical Oracle answers and the consultation diff were intentionally not
++part of the authoritative candidate source. The separately named
++`docs/oracle/rc2_current_cf4527f6.diff` is a line-equivalent cache-avoidance
++copy retained only as transport evidence; the authoritative snapshot is
++`docs/oracle/release_candidate.diff`.
++
++### Prompt sent to the valid final audit
++
++> これは規定上2回目かつ最終のRelease Candidate re-auditです。Windows npxで長い--fileがOracleへ渡らない送信障害を特定したため、今回は短い-fで個別添付します。権威入力はrelease_candidate.diff（SHA-256 cf4527f61101258a14cfff487f987a86111da87e453f06760eadb156066a421b）と直接添付した現行ソースです。最初にrc2_current_source_canary.mdを照合し、sanitize_public_url、CACHE_SCHEMA_VERSION = 2、_MPN_MINUS_EQUIVALENTSとMINUS SIGN、MANUFACTURER_UNVERIFIED直後のcontinue、keyword-search-truncated、part-search-truncated、JlcpcbCatalogueClientが全て読める場合だけCANARY PASSとして監査してください。一つでも読めなければORACLE INPUT UNAVAILABLEとして監査しないでください。過去のattachments-bundleやarchitecture_reviewは今回の添付ではないため無視してください。目的は既存CLIとEasyEDA→KiCad変換を壊さずexact MPNを軸にDigiKey・Mouserの販売店メタデータを追加することです。既存CLI互換性、偽exact MPN、LCSC ID/MPN不一致、Provider責務、cache/offline/refresh、秘密漏洩、KiCadへの価格在庫混入、カスタムproperty互換、CAD_NOT_FOUND/--require-cad、Windows/Linux path、テストと文書、侵襲性を確認してください。回答はCANARY CHECKの後、RELEASE BLOCKER / SHOULD FIX / ACCEPTABLE RISK / OPTIONAL / RESOLVEDに分類し、各未解決指摘へ現行ファイル行、最小修正、再監査要否を示してください。前回B0-B9/S1-S8を根拠なく再掲せず、この応答で監査を完結してください。
++
++### Answer files
++
++- Valid final answer: `docs/oracle/release_candidate_audit.md`
++- Initial stale-input answer:
++  `docs/oracle/release_candidate_audit_attempt1_stale.md`
++- Codex validation of that stale answer:
++  `docs/oracle/release_candidate_audit_attempt1_disposition.md`
++- Re-audit 1 input-mismatch answer:
++  `docs/oracle/release_candidate_audit_attempt2_input_mismatch.md`
++
++### Disposition
++
++| Oracle item | Codex decision |
++| --- | --- |
++| RB-RC2-1: malformed candidates can be discarded before exact selection | **Adopted, unresolved RELEASE BLOCKER.** Source inspection and read-only probes reproduced mixed-candidate acceptance for DigiKey/Mouser and missing/null Mouser `Parts`; LCSC has the same skip structure. A new RC cycle must fail the entire response on any unparseable candidate and add three-provider regression tests. |
++| SF-RC2-1: manifest can be an ancestor of CAD output | **Adopted, unresolved SHOULD FIX.** A read-only probe confirmed preflight accepts the reverse containment case. A new RC cycle must reject both directions and test no partial writes. |
++| SF-RC2-2: Provider-contract status was stale | **Adopted and corrected.** The status and current conformance gap are now explicit in `docs/PROVIDER_CONTRACT.md`. |
++| AR-RC2-1: no credentialed DigiKey/Mouser live run | **Accepted risk.** Credentials were absent; fixture coverage and explicit skips remain documented. |
++| AR-RC2-2: no native Linux process E2E | **Accepted risk.** Windows E2E and POSIX unit coverage are recorded without claiming equivalence. |
++| AR-RC2-3: 69 inherited reference-output skips | **Accepted risk.** The upstream bundle is absent; the focused checked-in legacy golden remains the available substitute. |
++| OPTIONAL | Oracle required none. Future fork/version naming is recorded as possible later work only. |
++
++No finding from the valid final answer was rejected. The initial stale answer was
++not adopted because it received no current files and contradicted direct source
++and passing tests; the first re-audit made no finding because it detected input
++mismatch. Those are transport-invalid attempts, not silently discarded review
++opinions. Per D025, the confirmed blocker plus the maximum re-audit count ends
++this RC cycle.
++
++## Distinct new RC cycle — 2026-07-23
++
++This section does not reopen or alter the historical RC2 cycle above. The user
++authorized a new candidate from RC2's verified source-canary state, with one
++initial audit and at most two re-audits.
++
++### Initial audit
++
++- Oracle CLI: `0.16.0`
++- Session: `easyeda-new-rc-initial-audit`
++- Time: 2026-07-23 16:16:03–16:50:19 JST (UTC+09:00)
++- Engine/mode: browser foreground with `--browser-manual-login`
++- Requested/resolved model: `GPT-5.6 Sol` / `GPT-5.6 Sol`
++- Model picker verification: yes
++- Files: 4 individual uploads; bundle mode was not used
++- Usage: 201,240 input tokens; 3,790 output tokens
++- Candidate: 62 files, 708,139 bytes, SHA-256
++  `64b95ce3b63cd281c51e1bb200c8519d769503d69451bcd0b02d7336901a4ecb`
++- Pre/post source canary: 20/20 matched
++- Answer: `docs/oracle/release_candidate_audit_rc3.md`, SHA-256
++  `2a2c63dcbe6c21597bcaaaee42242dd81a2887a1eaef1187ed6efca6135edebb`
++- Verdict: **CANARY PASS / RELEASE BLOCKED**
++
++Files:
++
++1. `docs/oracle/rc3_release_candidate.diff`
++2. `docs/oracle/rc3_source_canary.md`
++3. `docs/oracle/rc3_quality.md`
++4. `docs/oracle/rc3_secret_audit.md`
++
++A 21-file dry-run was rejected before submission because Oracle would have
++converted it to `attachments-bundle.txt`. The four-file dry-run reported
++`bundled: null`, and the complete candidate diff contained all source, tests,
++contracts, CLI help, and examples. No bundle or Oracle session cache was copied
++to the repository.
++
++Prompt sent:
++
++> This is the INITIAL audit of a newly authorized easyeda2kicad Release Candidate cycle, not a third re-audit of the historical RC2 cycle. RC2 remains permanently closed as CANARY PASS / RELEASE BLOCKED. Use only the four files individually attached to this new conversation; do not use any old Oracle bundle, bundle cache, prior conversation, or stale snapshot. First inspect rc3_source_canary.md, verify candidate SHA-256 64b95ce3b63cd281c51e1bb200c8519d769503d69451bcd0b02d7336901a4ecb and locate every listed invariant in rc3_release_candidate.diff; if the current input is missing or inconsistent, answer ORACLE INPUT UNAVAILABLE and do not audit. The 62-file candidate diff is the complete current candidate and includes source, tests, architecture/contracts/decisions/CODEX_RESULT, CLI help, manifests, and examples. The authorized change scope is only RB-RC2-1, SF-RC2-1, required regression tests, new-RC audit/state/decision records, and preservation of the already-fixed SF-RC2-2 documentation; flag any unrelated refactor, API change, CLI change, output-format change, or dependency update. For RB-RC2-1, verify that DigiKey, Mouser, and LCSC classify each raw candidate MPN before full model conversion; only a provably nonmatching MPN may be excluded; a missing/inaccessible/empty/unnormalizable MPN or a raw exact-MPN candidate that cannot be fully parsed must produce a typed Provider/parse failure and must not degrade to exact success or simple not-found; a provably mismatching candidate with unrelated malformed fields must not unnecessarily reject a valid exact candidate; LCSC ID/MPN validation must remain strict. Verify identical fail-closed semantics for live response, raw-cache replay, normalized cache, offline, and refresh; schema 3 must invalidate unsafe schema-2 normalized entries and invalid exact responses must not be cached. For SF-RC2-1, verify normalized relative/absolute/dot/dot-dot and Windows-aware path comparison rejects a manifest file path equal to or ancestral to the CAD output directory before CAD, manifest, cache, or other persistent output begins; a normal manifest child and adjacent same-prefix path must remain allowed; collision must leave no partial output. Also audit existing CLI compatibility, EasyEDA-to-KiCad behavior, exact-MPN false positives, Provider responsibility separation, credential leakage, absence of price/stock in KiCad symbols, custom-property compatibility, CAD_NOT_FOUND/--require-cad behavior, Windows/Linux paths, test sufficiency, documentation/code agreement, and invasiveness. Quality evidence reports focused 22 passed, related 252 passed, and Python 3.9/3.12/3.14 each 687 passed and 71 skipped, plus Ruff, strict mypy, diff/apply checks, and secret audit PASS. Preserve as existing ACCEPTABLE RISK unless new concrete evidence changes them: 69 inherited reference-output skips, unrun credentialed DigiKey/Mouser real APIs, and unrun native Linux E2E. Begin with CANARY PASS or ORACLE INPUT UNAVAILABLE. Then classify every finding as RELEASE BLOCKER / SHOULD FIX / ACCEPTABLE RISK / OPTIONAL / RESOLVED, with stable IDs, exact file/evidence references, the smallest required fix, and the re-audit requirement. Do not silently carry forward an old finding: re-establish it from this candidate. End with a single release verdict.
++
++Disposition:
++
++| Finding | Codex decision |
++| --- | --- |
++| `RB-RC3-1` untyped numeric overflow | **Adopted and fixed.** Common Provider/model/cache/service boundaries now preserve typed failure semantics; three-Provider and cache-mode tests were added. |
++| `SF-RC3-1` manifest below symbol file | **Adopted and fixed.** The symbol output is an explicit file and rejects both containment directions before output. |
++| `DOC-RC3-1` historical rows labelled current | **Adopted and fixed.** Rows are labelled `RC2 pre-RC3 tree`. |
++| `AR-RC3-1` through `AR-RC3-3` | **Accepted risks retained.** No new evidence changed the inherited skips, credentialed live-run, or Linux E2E limitations. |
++| OPTIONAL | None. |
++
++### Re-audit 1
++
++- Oracle CLI: `0.16.0`
++- Session: `easyeda-new-rc-reaudit-one`
++- Time: 2026-07-23 17:08:00–17:22:34 JST (UTC+09:00)
++- Engine/mode: browser foreground with `--browser-manual-login`
++- Requested/resolved model: `GPT-5.6 Sol` / `GPT-5.6 Sol`
++- Model picker verification: yes
++- Files: 10 individual uploads; bundle mode was not used
++- Usage: 46,480 input tokens; 1,890 output tokens
++- Revised audited candidate: 63 files, 723,055 bytes, SHA-256
++  `2c25cedc3f3720a3c9b54bc8563688b993d988e5ab75ba6791dc9c24dc23e6c5`
++- Initial-to-revised delta: 19 files, 37,269 bytes, SHA-256
++  `695245d3ddde1a8607af0d17ac887170b7c8de0eb7b6861fa113201260a62b68`
++- Pre/post source canary: 20/20 matched
++- Answer: `docs/oracle/release_candidate_audit_rc3_reaudit1.md`, SHA-256
++  `5fcc6f18d4f6f204e28ac82953cffa1592303f44a0b64d009a4e1935bf05e720`
++- Verdict: **CANARY PASS / no RELEASE BLOCKER / RELEASE APPROVED**, subject
++  only to the non-blocking `DOC-RC3-1` pointer correction
++
++Files:
++
++1. `docs/oracle/rc3_reaudit1_source_canary.md`
++2. `docs/oracle/rc3_reaudit1_delta_from_initial.diff`
++3. `docs/oracle/release_candidate_audit_rc3.md`
++4. `docs/oracle/rc3_reaudit1_quality.md`
++5. `docs/oracle/rc3_reaudit1_secret_audit.md`
++6. `easyeda2kicad/providers/base.py`
++7. `easyeda2kicad/metadata/cache.py`
++8. `easyeda2kicad/metadata/service.py`
++9. `easyeda2kicad/__main__.py`
++10. `tests/test_cli_metadata.py`
++
++A 21-file dry-run again detected automatic bundle conversion and was not sent.
++The ten-file dry-run reported `bundled: null` and approximately 45,731 tokens.
++The delta contained every Provider/model/test/contract change not attached as
++an individual current file.
++
++Prompt sent:
++
++> This is RE-AUDIT 1 of the separately authorized new easyeda2kicad RC cycle. It is not RC2 and not a third RC2 re-audit; historical RC2 remains closed as CANARY PASS / RELEASE BLOCKED. Use only the ten files individually attached to this new conversation and do not use an old Oracle bundle, bundle cache, prior conversation, or stale snapshot. Begin by verifying rc3_reaudit1_source_canary.md, the delta SHA-256 695245d3ddde1a8607af0d17ac887170b7c8de0eb7b6861fa113201260a62b68, the revised full-candidate SHA-256 2c25cedc3f3720a3c9b54bc8563688b993d988e5ab75ba6791dc9c24dc23e6c5 recorded there, and every listed fix invariant against the attached current source and delta; if current input is absent or inconsistent, answer ORACLE INPUT UNAVAILABLE and do not audit. The initial new-RC answer is attached and must be used only to identify RB-RC3-1, SF-RC3-1, DOC-RC3-1, and the unchanged accepted risks. Re-establish each disposition from the revised source and tests. For RB-RC3-1, verify overflowing or non-finite numeric data cannot escape as untyped OverflowError at raw exact candidate parsing, model reconstruction, cache validation, service reconstruction, live-shaped execution, raw replay, normalized online/offline, or refresh; failures must retain typed Provider/cache semantics and publish no invalid cache success. Verify DigiKey, Mouser, and LCSC coverage in the attached delta. For SF-RC3-1, verify symbol output is treated as a file and a manifest equal to, ancestral to, or below that file is rejected before metadata, CAD, manifest, cache, or parent output; verify normal manifest children of footprint/3D/SVG directories and adjacent prefixes remain allowed, and JSON/CSV tests leave no partial output. For DOC-RC3-1, verify 666-pass rows are labelled historical RC2 and current quality points to 695 passed. Check that the changes remain limited to the authorized RB-RC2-1/SF-RC2-1 scope and introduce no API, CLI spelling, output-format, dependency, cache-schema, Provider/CAD responsibility, exact-MPN, LCSC-ID/MPN, or legacy conversion regression. The authoritative quality evidence is 8 blocker probes, 280 related tests, and Python 3.9/3.12/3.14 each 695 passed and 71 skipped, plus Ruff, strict mypy, diff/apply, and secret audit PASS. Preserve AR-RC3-1 through AR-RC3-3 as ACCEPTABLE RISK unless new concrete evidence changes them: 69 inherited reference-output skips, unrun credentialed DigiKey/Mouser APIs, and unrun native Linux process E2E. Begin with CANARY PASS or ORACLE INPUT UNAVAILABLE. Then classify all items as RELEASE BLOCKER / SHOULD FIX / ACCEPTABLE RISK / OPTIONAL / RESOLVED with stable IDs and exact evidence. If no release blocker remains, state that explicitly and end with one release verdict. If a blocker remains, give the smallest in-scope fix and re-audit requirement.
++
++Disposition:
++
++| Finding | Codex decision |
++| --- | --- |
++| `RB-RC3-1` | **RESOLVED.** Accepted after current source/test verification. |
++| `SF-RC3-1` | **RESOLVED.** Accepted after current preflight and no-output test verification. |
++| `COMP-RC3-1` | **RESOLVED.** No public API, CLI, output-format, dependency, schema, or Provider/CAD-boundary change was found. |
++| `QG-RC3-1` | **RESOLVED.** Quality and integrity evidence matched. |
++| `DOC-RC3-1` stale quality pointer | **Adopted and corrected.** The pointer now names `rc3_reaudit1_quality.md`; all three full suites were rerun. Oracle explicitly required regenerated diff/apply and secret checks, not another model re-audit. |
++| `AR-RC3-1` through `AR-RC3-3` | **Accepted risks retained.** |
++| OPTIONAL | None. |
++
++No Oracle finding in either valid new-cycle answer was rejected. Re-audit 2 was
++not used because re-audit 1 found no release blocker and explicitly made the
++only remaining document correction non-blocking and non-re-audit-requiring.
++
++## Public-beta corrective RC cycle — 2026-07-23
++
++This is a distinct cycle after the preserved RC3 approval. The real Symbol
++Fields Table audit required runtime changes, so the RC3 approval was not reused.
++The cycle allows one initial audit and, if needed, at most two re-audits.
++
++### Initial audit
++
++- Oracle CLI: `0.16.0`
++- Session: `easyeda-beta-corrective-audit`
++- Time: 2026-07-23 18:49:12–19:12:25 JST (UTC+09:00)
++- Elapsed: 23 minutes 13 seconds
++- Engine/mode: browser foreground with `--browser-manual-login`
++- Requested/resolved model: `GPT-5.6 Sol` / `GPT-5.6 Sol`
++- Model picker verification: yes
++- Files: 10 individual uploads; bundle mode was not used
++- Dry-run transport: `inlineFileCount: 0`, `bundled: null`
++- Usage: approximately 252,010 input tokens and 2,150 output tokens
++- Candidate: 68 files, 750,327 bytes, SHA-256
++  `5c848efe9e3dcbbb4dcc632f150cca0e7e824384230de250a18e644a907945d3`
++- RC3-to-candidate delta: 17 files, 64,625 bytes, SHA-256
++  `04004f17a6a90cf0c308acb3d3a11696163bbe98c96cf9100dab000a7420c3d7`
++- Candidate tree: `0c7b7f01e3389ef7efbecec40574619d292bdf78`
++- Pre/post canary: 10/10 direct attachments and 17/17 source-table entries
++- Answer: `docs/oracle/release_candidate_audit_beta1.md`, SHA-256
++  `b81d034ac0579294cc13a901320823e9b917f2a78b97ba905ac2573abebb65f7`
++- Verdict: **CANARY PASS / no RELEASE BLOCKER / RELEASE APPROVED**
++
++Files:
++
++1. `docs/oracle/beta1_source_canary.md`
++2. `docs/oracle/beta1_release_candidate.diff`
++3. `docs/oracle/beta1_delta_from_rc3.diff`
++4. `docs/oracle/beta1_quality.md`
++5. `docs/oracle/beta1_secret_audit.md`
++6. `docs/FIELD_TABLE_AUDIT.md`
++7. `easyeda2kicad/metadata/symbol_fields.py`
++8. `easyeda2kicad/metadata/service.py`
++9. `easyeda2kicad/__main__.py`
++10. `easyeda2kicad/kicad/export_kicad_symbol.py`
++
++The Oracle answer was first written to a temporary path outside the repository.
++Only the final assistant response was preserved. No Oracle profile, session
++cache, authentication material, or bundle was copied into the source tree.
++
++Prompt sent:
++
++> This is the INITIAL Release Candidate audit of a distinct public-beta
++> corrective cycle for easyeda2kicad +DigiMou. Historical RC2 remains closed
++> CANARY PASS / RELEASE BLOCKED and preserved RC3 remains unchanged; this is
++> not another audit of either old cycle. Use only the ten current files
++> individually attached to this new conversation. Do not use bundle mode, any
++> old bundle cache, prior conversation, or stale snapshot. First verify
++> beta1_source_canary.md, full candidate SHA-256
++> 5c848efe9e3dcbbb4dcc632f150cca0e7e824384230de250a18e644a907945d3,
++> delta SHA-256
++> 04004f17a6a90cf0c308acb3d3a11696163bbe98c96cf9100dab000a7420c3d7,
++> candidate tree 0c7b7f01e3389ef7efbecec40574619d292bdf78, and every
++> listed invariant against the attached files. If input is absent or
++> inconsistent, begin ORACLE INPUT UNAVAILABLE and do not audit. Audit the
++> native-only KiCad field projection, Manifest-only Provider/volatile data,
++> actual OPA333AIDBVR and LM321MF/NOPB byte/idempotency evidence, fail-closed
++> part-scoped manufacturer proof, native collision policy, slash-bearing
++> overwrite identity, compatibility, cache/path/secret boundaries, the
++> 702-passed/71-skipped quality matrix, and the three unchanged accepted risks.
++> Begin with CANARY PASS or ORACLE INPUT UNAVAILABLE; classify RELEASE BLOCKER /
++> SHOULD FIX / ACCEPTABLE RISK / OPTIONAL / RESOLVED with stable IDs and finish
++> with one explicit release verdict.
++
++Disposition:
++
++| Finding | Codex decision |
++| --- | --- |
++| `B1-FT-01`, `B1-FT-02` | **RESOLVED.** Native-only KiCad fields and Manifest completeness were verified. |
++| `B1-MAN-01` | **RESOLVED.** Same-ID/exact-MPN/exact-manufacturer LCSC proof is mandatory and fail-closed. |
++| `B1-ID-01` | **RESOLVED.** Existing nonempty identity is never silently replaced. |
++| `B1-SYM-01` | **RESOLVED.** Sanitized serialized symbol identity is used consistently. |
++| `B1-BYTE-01` | **RESOLVED.** Real legacy/metadata and repeated-output hashes match. |
++| `B1-COMP-01`, `B1-QA-01` | **RESOLVED.** Scope, compatibility, secrets, and quality evidence matched. |
++| `B1-AR-01` through `B1-AR-03` | **Accepted risks retained.** |
++| RELEASE BLOCKER / SHOULD FIX / OPTIONAL | None. |
++
++No initial-audit finding was rejected. Release preparation later changed
++version/package metadata and added release documentation/templates, so the
++revised tag candidate is sent as re-audit 1 rather than silently inheriting
++this approval.
+diff --git a/docs/releases/v1.1.0b1.md b/docs/releases/v1.1.0b1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0c458331dfae59deb68c469ec440b6db9ecaa83d
+--- /dev/null
++++ b/docs/releases/v1.1.0b1.md
+@@ -0,0 +1,60 @@
++# easyeda2kicad +DigiMou 1.1.0b1 Beta
++
++This is the first public beta of an unofficial derivative of
++[uPesy/easyeda2kicad.py](https://github.com/uPesy/easyeda2kicad.py), based on
++upstream commit `fff10a38619963d7cb1c57d779655a9ea4572e95`. The complete work
++remains licensed under GNU AGPL-3.0. It is not an official DigiKey, Mouser,
++LCSC, EasyEDA, or upstream release.
++
++## What is included
++
++- The existing `easyeda2kicad` import package, CLI command, public Python API,
++  legacy `--lcsc_id` path, and legacy KiCad output remain in place.
++- Exact-MPN, fail-closed metadata resolution for LCSC, DigiKey, and Mouser.
++- JSON and CSV Manifests with deterministic provenance and diagnostics.
++- Credential-safe raw and normalized metadata cache with offline and refresh
++  modes.
++- Stable native Manufacturer/MPN/LCSC/Datasheet projection into KiCad.
++  Provider-specific and volatile sales metadata, including price and stock,
++  remains Manifest-only.
++- Typed `CAD_NOT_FOUND` handling and optional `--require-cad` failure.
++
++## Field-table and real-service evidence
++
++Unauthenticated LCSC/EasyEDA end-to-end conversion passed for:
++
++- OPA333AIDBVR / C30878
++- LM321MF/NOPB / C131103
++
++For both parts, legacy and metadata modes produced byte-identical symbol and
++footprint artifacts in equivalent path contexts. Metadata added zero new
++property keys, Provider/volatile fields stayed Manifest-only, and a repeated
++metadata overwrite remained byte-identical with one root symbol.
++
++## Beta feedback requested
++
++The following are accepted beta risks rather than known release failures:
++
++- DigiKey live API E2E with real credentials was not run.
++- Mouser live API E2E with real credentials was not run.
++- Native Linux process-level E2E was not run.
++- 69 inherited upstream reference-output tests are skipped because the optional
++  external reference bundle is absent.
++
++Please report real-environment results using the bug template. Never attach API
++keys, secrets, access tokens, Authorization headers, credential-bearing URLs,
++or an unsanitized cache. Use the private reporting route in `SECURITY.md` for
++security issues.
++
++## Installation
++
++Download the wheel from this GitHub pre-release and install it directly:
++
++```text
++python -m pip install ./easyeda2kicad-1.1.0b1-py3-none-any.whl
++```
++
++This beta is not published to PyPI. The distribution/import/CLI name remains
++`easyeda2kicad`; the public display name is `easyeda2kicad +DigiMou`.
++
++Verify downloaded files against `SHA256SUMS.txt` attached to the release.
+diff --git a/easyeda2kicad/_version.py b/easyeda2kicad/_version.py
+index e0cf846c522cf3ddd4fe01f470500af6937e616d..c95a145ca13f764a4da261d72b5a9ed338f197e0 100644
+--- a/easyeda2kicad/_version.py
++++ b/easyeda2kicad/_version.py
+@@ -1,2 +1,2 @@
+-__version__ = "1.0.1"
++__version__ = "1.1.0b1"
+ GENERATOR_URL = "https://github.com/uPesy/easyeda2kicad.py"
+diff --git a/setup.py b/setup.py
+index 87420c9299191488e1fbcfdbdc1430fecc57d2fb..302a30a9cdb96d1d0a9f147c5c1c51e8c934e3b7 100644
+--- a/setup.py
++++ b/setup.py
+@@ -17,8 +17,8 @@ with open("easyeda2kicad/_version.py", encoding="utf-8") as fh:
+ setup(
+     name="easyeda2kicad",
+     description=(
+-        "A Python script that convert any electronic components from LCSC or EasyEDA to"
+-        " a Kicad library"
++        "Unofficial EasyEDA-to-KiCad converter with exact-MPN LCSC, DigiKey, and"
++        " Mouser metadata"
+     ),
+     long_description=long_description,
+     long_description_content_type="text/markdown",
+@@ -26,9 +26,11 @@ setup(
+     author="uPesy",
+     author_email="contact@upesy.com",
+     maintainer="Modified-work contributors (see NOTICE)",
+-    url="https://github.com/uPesy/easyeda2kicad.py",
++    url="https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou",
+     project_urls={
+-        "Code": "https://github.com/uPesy/easyeda2kicad.py",
++        "Code": "https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou",
++        "Upstream": "https://github.com/uPesy/easyeda2kicad.py",
++        "Issues": "https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/issues",
+     },
+     license="AGPL-3.0",
+     license_files=["LICENSE", "NOTICE"],
+@@ -44,7 +46,7 @@ setup(
+         ]
+     },
+     zip_safe=False,
+-    keywords="easyeda kicad library conversion",
++    keywords="easyeda kicad library conversion lcsc digikey mouser metadata",
+     classifiers=[
+         "Intended Audience :: Developers",
+         "License :: OSI Approved :: GNU Affero General Public License v3",

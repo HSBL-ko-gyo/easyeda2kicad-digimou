@@ -1,0 +1,2508 @@
+diff --git a/easyeda2kicad/metadata/service.py b/easyeda2kicad/metadata/service.py
+new file mode 100644
+index 0000000..fae2a95
+--- /dev/null
++++ b/easyeda2kicad/metadata/service.py
+@@ -0,0 +1,691 @@
++"""Metadata orchestration kept separate from the legacy conversion path."""
++
++from __future__ import annotations
++
++# Global imports
++import re
++from dataclasses import dataclass, field, replace
++from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
++
++# Local imports
++from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
++from easyeda2kicad.providers import (
++    AmbiguousMatchError,
++    CadProvider,
++    DigiKeyProvider,
++    EasyedaProvider,
++    LcscProvider,
++    MetadataProvider,
++    MouserProvider,
++    MpnMismatchError,
++    NotFoundError,
++    ProviderError,
++)
++
++from .cache import CacheCorruptError as MetadataCacheCorruptError
++from .cache import CacheError, MetadataCache, sanitize_public_url
++from .cad_identity import CadIdentity, CadIdentityError, extract_cad_identity
++from .merge import CAD_NOT_FOUND, PARTIAL, VERIFIED, merge_records
++from .models import (
++    CadRecord,
++    Conflict,
++    DistributorRecord,
++    MergedPart,
++    PartIdentity,
++    ProvenanceEntry,
++    normalize_manufacturer,
++    normalize_mpn,
++)
++
++
++MetadataProviderFactory = Callable[[str, EasyedaApi], MetadataProvider]
++CadProviderFactory = Callable[[EasyedaApi], CadProvider]
++
++
++class MetadataServiceError(RuntimeError):
++    """A fatal, credential-safe orchestration error."""
++
++    def __init__(self, code: str, detail: str, provider: Optional[str] = None) -> None:
++        self.code = code
++        self.provider = provider
++        self.detail = detail
++        label = "metadata"
++        if provider:
++            label = provider
++        super().__init__("{0}: {1}: {2}".format(label, code, detail))
++
++
++@dataclass
++class MetadataResolution:
++    distributor_records: List[DistributorRecord] = field(default_factory=list)
++    cad: Optional[CadRecord] = None
++    cad_data: Optional[Dict[str, Any]] = None
++    cad_identity: Optional[CadIdentity] = None
++    trusted_mpn: Optional[str] = None
++    trusted_manufacturer: Optional[str] = None
++    requested_mpn: Optional[str] = None
++    requested_manufacturer: Optional[str] = None
++    mpn_source: Optional[str] = None
++    manufacturer_source: Optional[str] = None
++    provider_errors: Dict[str, str] = field(default_factory=dict)
++    blocking_error: Optional[str] = None
++
++    def to_merged(self, verification_status: Optional[str] = None) -> MergedPart:
++        """Build the public result after the caller has checked CAD pins/pads."""
++
++        if verification_status is None:
++            if self.blocking_error:
++                verification_status = PARTIAL
++            elif self.cad is not None:
++                verification_status = self.cad.verification_status
++            else:
++                verification_status = PARTIAL
++        merged_cad = (
++            replace(self.cad, verification_status=verification_status)
++            if self.cad is not None
++            else None
++        )
++        if self.trusted_mpn and normalize_mpn(self.trusted_mpn):
++            explicit_status: Optional[str] = verification_status
++            if verification_status == VERIFIED:
++                # Let merge_records downgrade VERIFIED to PARTIAL if a requested
++                # metadata provider failed.
++                explicit_status = None
++            merged = merge_records(
++                self.distributor_records,
++                mpn=self.trusted_mpn,
++                manufacturer=self.requested_manufacturer,
++                cad=merged_cad,
++                provider_errors=self.provider_errors,
++                verification_status=explicit_status,
++            )
++            if self.trusted_manufacturer and not self.requested_manufacturer:
++                merged.identity.manufacturer = self.trusted_manufacturer
++                merged.identity.manufacturer_normalized = normalize_manufacturer(
++                    self.trusted_manufacturer
++                )
++                _retain_inferred_manufacturer_conflict(
++                    merged,
++                    self.trusted_manufacturer,
++                    self.manufacturer_source,
++                )
++            _set_identity_provenance(merged, "mpn", self.mpn_source)
++            _set_identity_provenance(merged, "manufacturer", self.manufacturer_source)
++            return merged
++
++        # An ID-only confirmed CAD miss can legitimately lack any MPN evidence.
++        status = verification_status or PARTIAL
++        merged = MergedPart(
++            identity=PartIdentity(
++                manufacturer=self.trusted_manufacturer,
++                mpn=self.trusted_mpn or "",
++            ),
++            distributor_records=list(self.distributor_records),
++            cad=merged_cad,
++            verification_status=status,
++            provider_errors=dict(sorted(self.provider_errors.items())),
++        )
++        _set_identity_provenance(merged, "mpn", self.mpn_source)
++        _set_identity_provenance(merged, "manufacturer", self.manufacturer_source)
++        return merged
++
++
++def create_metadata_provider(name: str, api: EasyedaApi) -> MetadataProvider:
++    """Create one official/public-API-backed metadata adapter."""
++
++    if name == "lcsc":
++        return LcscProvider(api=api)
++    if name == "digikey":
++        return DigiKeyProvider()
++    if name == "mouser":
++        return MouserProvider()
++    raise ValueError("unsupported metadata provider: {0}".format(name))
++
++
++def create_cad_provider(api: EasyedaApi) -> CadProvider:
++    return EasyedaProvider(api=api)
++
++
++def resolve_metadata(
++    *,
++    requested_mpn: Optional[str],
++    requested_manufacturer: Optional[str],
++    requested_lcsc_id: Optional[str],
++    provider_names: Sequence[str],
++    cad_api: EasyedaApi,
++    metadata_api: Optional[EasyedaApi] = None,
++    cache: Optional[MetadataCache] = None,
++    offline: bool = False,
++    refresh_metadata: bool = False,
++    provider_factory: MetadataProviderFactory = create_metadata_provider,
++    cad_provider_factory: CadProviderFactory = create_cad_provider,
++) -> MetadataResolution:
++    """Resolve exact distributor metadata and EasyEDA-only CAD identity."""
++
++    if offline and refresh_metadata:
++        raise ValueError("offline and refresh_metadata are mutually exclusive")
++    if offline:
++        # Enforce strict offline behavior for direct service callers too.
++        cad_api.offline = True
++        cad_api.use_cache = True
++        if metadata_api is not None:
++            metadata_api.offline = True
++    cache = cache or MetadataCache()
++    metadata_api = metadata_api or cad_api
++    selected = tuple(dict.fromkeys(name.strip().lower() for name in provider_names))
++    result = MetadataResolution(
++        trusted_mpn=_clean(requested_mpn),
++        trusted_manufacturer=_clean(requested_manufacturer),
++        requested_mpn=_clean(requested_mpn),
++        requested_manufacturer=_clean(requested_manufacturer),
++        mpn_source="user" if _clean(requested_mpn) else None,
++        manufacturer_source="user" if _clean(requested_manufacturer) else None,
++    )
++
++    lcsc_provider = provider_factory("lcsc", metadata_api)
++    lcsc_record: Optional[DistributorRecord] = None
++    lcsc_id = _clean(requested_lcsc_id)
++
++    # MPN-only requests need a conservative LCSC exact match to identify the
++    # sole permitted CAD source.  A provider/network failure is not CAD_NOT_FOUND.
++    if lcsc_id is None and result.trusted_mpn:
++        try:
++            lcsc_record = _cached_exact_lookup(
++                lcsc_provider,
++                cache,
++                result.trusted_manufacturer,
++                result.trusted_mpn,
++                offline=offline,
++                refresh=refresh_metadata,
++            )
++            lcsc_id = _clean(lcsc_record.distributor_part_number)
++            if not lcsc_id or not re.fullmatch(r"C[1-9][0-9]*", lcsc_id):
++                raise MetadataServiceError(
++                    "INVALID_RESPONSE",
++                    "exact result omitted a canonical LCSC ID",
++                    "lcsc",
++                )
++            result.trusted_manufacturer = result.trusted_manufacturer or _clean(
++                lcsc_record.manufacturer
++            )
++            if result.manufacturer_source is None and result.trusted_manufacturer:
++                result.manufacturer_source = "lcsc"
++        except NotFoundError:
++            result.cad = CadRecord(source="easyeda", verification_status=CAD_NOT_FOUND)
++        except (AmbiguousMatchError, MpnMismatchError) as error:
++            raise _fatal_provider_error(error) from None
++        except (ProviderError, CacheError) as error:
++            code = _error_code(error)
++            result.provider_errors["lcsc"] = code
++            result.blocking_error = code
++
++    # Fetch CAD before contacting DigiKey/Mouser so an explicit LCSC/MPN
++    # mismatch stops without creating files or making unnecessary requests.
++    if lcsc_id is not None and result.blocking_error is None:
++        cad_provider = cad_provider_factory(cad_api)
++        try:
++            cad_record, cad_data = cad_provider.get_cad_data(lcsc_id)
++            try:
++                # The CAD payload itself must prove the requested LCSC ID and
++                # reconcile any identity fields it does contain.  Missing MPN
++                # or manufacturer evidence can be completed by the mandatory
++                # LCSC ID lookup below; contradictory evidence cannot.
++                identity = extract_cad_identity(
++                    cad_data,
++                    requested_lcsc_id=lcsc_id,
++                )
++                identity = extract_cad_identity(
++                    cad_data,
++                    requested_lcsc_id=lcsc_id,
++                    requested_mpn=(result.trusted_mpn if identity.mpn else None),
++                    # Only an explicit user constraint is authoritative here.
++                    # LCSC and EasyEDA commonly use different display aliases
++                    # for the same manufacturer (for example TI vs the full
++                    # company name), so an inferred label is not exact evidence.
++                    requested_manufacturer=(
++                        _clean(requested_manufacturer)
++                        if identity.manufacturer
++                        else None
++                    ),
++                )
++            except CadIdentityError as error:
++                raise MetadataServiceError(
++                    error.code, error.detail, "easyeda"
++                ) from None
++            cad_record.lcsc_part_number = identity.lcsc_id
++            cad_record.easyeda_component_id = identity.easyeda_component_id
++            cad_record.verification_status = PARTIAL
++            result.cad = cad_record
++            result.cad_data = cad_data
++            result.cad_identity = identity
++            result.trusted_mpn = result.trusted_mpn or identity.mpn
++            if result.mpn_source is None and result.trusted_mpn:
++                result.mpn_source = "easyeda"
++            result.trusted_manufacturer = (
++                result.trusted_manufacturer or identity.manufacturer
++            )
++            if result.manufacturer_source is None and result.trusted_manufacturer:
++                result.manufacturer_source = "easyeda"
++        except NotFoundError:
++            result.cad = CadRecord(
++                source="easyeda",
++                lcsc_part_number=lcsc_id,
++                verification_status=CAD_NOT_FOUND,
++            )
++        except (ProviderError, CacheError) as error:
++            code = _error_code(error)
++            result.provider_errors["easyeda"] = code
++            result.blocking_error = code
++
++    # A complete CAD identity already verifies an explicit LCSC/MPN pair and
++    # supplies the MPN needed by external providers. If CAD is unavailable or
++    # omits required MPN/manufacturer evidence, complete that proof through the
++    # LCSC identity endpoint regardless of manifest output selection. The
++    # fetched LCSC record is still emitted only when selected.
++    cad_identity_incomplete = bool(
++        result.cad_identity is None
++        or result.cad_identity.mpn is None
++        or (_clean(requested_manufacturer) and result.cad_identity.manufacturer is None)
++    )
++    explicit_pair_lookup = bool(
++        _clean(requested_lcsc_id) and _clean(requested_mpn) and cad_identity_incomplete
++    )
++    external_provider_needs_identity = bool(
++        lcsc_id
++        and any(name != "lcsc" for name in selected)
++        and not result.trusted_mpn
++        and (
++            (result.cad is not None and result.cad.verification_status == CAD_NOT_FOUND)
++            or result.cad_identity is not None
++        )
++    )
++    mandatory_identity_lookup = explicit_pair_lookup or external_provider_needs_identity
++    mandatory_lookup_detail = (
++        "explicit LCSC ID and MPN could not be verified"
++        if explicit_pair_lookup
++        else "LCSC ID could not be resolved to an exact MPN"
++    )
++    should_lookup_lcsc = bool(
++        lcsc_record is None
++        and lcsc_id is not None
++        and ("lcsc" in selected or mandatory_identity_lookup)
++    )
++    if should_lookup_lcsc and lcsc_id is not None:
++        try:
++            lcsc_record = _cached_id_lookup(
++                lcsc_provider,
++                cache,
++                lcsc_id,
++                offline=offline,
++                refresh=refresh_metadata,
++            )
++            _validate_record_identity(
++                lcsc_record,
++                result.trusted_mpn,
++                _clean(requested_manufacturer),
++            )
++            result.trusted_mpn = result.trusted_mpn or _clean(lcsc_record.mpn)
++            if result.mpn_source is None and result.trusted_mpn:
++                result.mpn_source = "lcsc"
++            result.trusted_manufacturer = result.trusted_manufacturer or _clean(
++                lcsc_record.manufacturer
++            )
++            if result.manufacturer_source is None and result.trusted_manufacturer:
++                result.manufacturer_source = "lcsc"
++        except NotFoundError as error:
++            if mandatory_identity_lookup:
++                raise MetadataServiceError(
++                    error.code,
++                    mandatory_lookup_detail,
++                    "lcsc",
++                ) from None
++            result.provider_errors["lcsc"] = error.code
++        except (AmbiguousMatchError, MpnMismatchError) as error:
++            raise _fatal_provider_error(error) from None
++        except (ProviderError, CacheError) as error:
++            if mandatory_identity_lookup:
++                raise MetadataServiceError(
++                    _error_code(error),
++                    mandatory_lookup_detail,
++                    "lcsc",
++                ) from None
++            result.provider_errors["lcsc"] = _error_code(error)
++
++    if "lcsc" in selected and lcsc_record is not None:
++        _append_once(result.distributor_records, lcsc_record)
++
++    # Other providers are metadata-only and are independent of CAD success.
++    for name in selected:
++        if name == "lcsc":
++            continue
++        if not result.trusted_mpn:
++            result.provider_errors[name] = "IDENTITY_UNRESOLVED"
++            continue
++        provider = provider_factory(name, metadata_api)
++        try:
++            record = _cached_exact_lookup(
++                provider,
++                cache,
++                _clean(requested_manufacturer),
++                result.trusted_mpn,
++                offline=offline,
++                refresh=refresh_metadata,
++            )
++            _validate_record_identity(
++                record, result.trusted_mpn, _clean(requested_manufacturer)
++            )
++            result.distributor_records.append(record)
++        except (AmbiguousMatchError, MpnMismatchError) as error:
++            raise _fatal_provider_error(error) from None
++        except (ProviderError, CacheError) as error:
++            result.provider_errors[name] = _error_code(error)
++
++    return result
++
++
++def _cached_exact_lookup(
++    provider: MetadataProvider,
++    cache: MetadataCache,
++    manufacturer: Optional[str],
++    mpn: str,
++    *,
++    offline: bool,
++    refresh: bool,
++) -> DistributorRecord:
++    request = cache.canonical_request(
++        provider.name,
++        "search_exact_mpn",
++        mpn=mpn,
++        manufacturer=manufacturer,
++        options={"provider_context": _provider_cache_context(provider)},
++    )
++    return _cached_lookup(
++        provider,
++        cache,
++        request,
++        lambda: provider.search_exact_mpn(manufacturer, mpn),
++        validator=lambda record: _validate_cached_record(
++            record,
++            provider.name,
++            expected_mpn=mpn,
++            expected_manufacturer=manufacturer,
++        ),
++        offline=offline,
++        refresh=refresh,
++    )
++
++
++def _cached_id_lookup(
++    provider: MetadataProvider,
++    cache: MetadataCache,
++    part_id: str,
++    *,
++    offline: bool,
++    refresh: bool,
++) -> DistributorRecord:
++    request = cache.canonical_request(
++        provider.name,
++        "get_part_by_distributor_id",
++        options={
++            "part_id": part_id,
++            "provider_context": _provider_cache_context(provider),
++        },
++    )
++    return _cached_lookup(
++        provider,
++        cache,
++        request,
++        lambda: provider.get_part_by_distributor_id(part_id),
++        validator=lambda record: _validate_cached_record(
++            record,
++            provider.name,
++            expected_distributor_id=part_id,
++        ),
++        offline=offline,
++        refresh=refresh,
++    )
++
++
++def _cached_lookup(
++    provider: MetadataProvider,
++    cache: MetadataCache,
++    request: Mapping[str, Any],
++    fetch: Callable[[], DistributorRecord],
++    validator: Callable[[DistributorRecord], None],
++    *,
++    offline: bool,
++    refresh: bool,
++) -> DistributorRecord:
++    key = cache.get_cache_key(provider.name, request)
++    cached = cache.read_normalized(provider.name, key, offline=offline, refresh=refresh)
++    if cached is not None:
++        try:
++            cached_record = DistributorRecord.from_dict(cached)
++            if cached_record.raw_response_cache_key != key:
++                raise ValueError("cached raw-response key mismatch")
++            validator(cached_record)
++            cached_record.product_url = sanitize_public_url(cached_record.product_url)
++            cached_record.datasheet_url = sanitize_public_url(
++                cached_record.datasheet_url
++            )
++            return cached_record
++        except (TypeError, ValueError):
++            if offline:
++                raise MetadataCacheCorruptError(
++                    provider.name, key, "normalized record is invalid"
++                ) from None
++
++    record = fetch()
++    try:
++        validator(record)
++    except (TypeError, ValueError) as error:
++        raise MetadataServiceError(
++            "INVALID_RESPONSE",
++            "provider returned a record that failed exact validation",
++            provider.name,
++        ) from error
++    # Only public HTTP(S) links cross the provider boundary. This happens
++    # before normalized cache persistence and also makes the first online run
++    # identical to a later cache hit.
++    record.product_url = sanitize_public_url(record.product_url)
++    record.datasheet_url = sanitize_public_url(record.datasheet_url)
++    record.raw_response_cache_key = key
++    raw = getattr(provider, "last_raw_response", None)
++    try:
++        cache.write(
++            provider.name,
++            key,
++            raw if raw is not None else {},
++            record.to_dict(),
++            request=request,
++            retrieved_at=record.retrieved_at,
++        )
++    except OSError:
++        raise MetadataServiceError(
++            "CACHE_WRITE_ERROR", "metadata cache could not be written", provider.name
++        ) from None
++    return record
++
++
++def _validate_record_identity(
++    record: DistributorRecord,
++    expected_mpn: Optional[str],
++    expected_manufacturer: Optional[str],
++) -> None:
++    if expected_mpn and normalize_mpn(record.mpn) != normalize_mpn(expected_mpn):
++        raise MetadataServiceError(
++            "MPN_MISMATCH",
++            "provider result does not match the verified MPN",
++            record.provider,
++        )
++    if expected_manufacturer and normalize_manufacturer(
++        record.manufacturer
++    ) != normalize_manufacturer(expected_manufacturer):
++        raise MetadataServiceError(
++            "MANUFACTURER_MISMATCH",
++            "provider result does not match the requested manufacturer",
++            record.provider,
++        )
++
++
++def _validate_cached_record(
++    record: DistributorRecord,
++    provider_name: str,
++    *,
++    expected_mpn: Optional[str] = None,
++    expected_manufacturer: Optional[str] = None,
++    expected_distributor_id: Optional[str] = None,
++) -> None:
++    if record.provider != provider_name:
++        raise ValueError("cached provider does not match its envelope")
++    if expected_mpn and normalize_mpn(record.mpn) != normalize_mpn(expected_mpn):
++        raise ValueError("cached MPN failed exact validation")
++    if expected_manufacturer and normalize_manufacturer(
++        record.manufacturer
++    ) != normalize_manufacturer(expected_manufacturer):
++        raise ValueError("cached manufacturer failed exact validation")
++    if (
++        expected_distributor_id
++        and (record.distributor_part_number or "").strip().casefold()
++        != expected_distributor_id.strip().casefold()
++    ):
++        raise ValueError("cached distributor ID failed exact validation")
++
++
++def _provider_cache_context(provider: MetadataProvider) -> Dict[str, str]:
++    getter = getattr(provider, "get_cache_context", None)
++    if not callable(getter):
++        return {}
++    context = getter()
++    if not isinstance(context, Mapping):
++        raise MetadataServiceError(
++            "INVALID_RESPONSE", "provider cache context is invalid", provider.name
++        )
++    return {str(key): str(value) for key, value in context.items()}
++
++
++def _set_identity_provenance(
++    merged: MergedPart, field_name: str, source: Optional[str]
++) -> None:
++    if not source:
++        return
++    source_fields = {
++        ("mpn", "user"): "--mpn",
++        ("manufacturer", "user"): "--manufacturer",
++        ("mpn", "easyeda"): "dataStr.head.c_para.Manufacturer Part",
++        (
++            "manufacturer",
++            "easyeda",
++        ): "dataStr.head.c_para.Manufacturer",
++    }
++    source_field = source_fields.get((field_name, source), field_name)
++    merged.provenance["identity.{0}".format(field_name)] = [
++        ProvenanceEntry(provider=source, source_field=source_field)
++    ]
++    merged.provenance["identity.{0}_normalized".format(field_name)] = [
++        ProvenanceEntry(
++            provider=source,
++            source_field="normalized({0})".format(field_name),
++        )
++    ]
++    merged.provenance = {
++        key: merged.provenance[key] for key in sorted(merged.provenance)
++    }
++
++
++def _retain_inferred_manufacturer_conflict(
++    merged: MergedPart,
++    trusted_manufacturer: str,
++    source: Optional[str],
++) -> None:
++    """Keep inferred display-name disagreements without filtering records."""
++
++    trusted_normalized = normalize_manufacturer(trusted_manufacturer)
++    if not trusted_normalized or source == "user":
++        return
++
++    source_label = source or "verified_identity"
++    values: Dict[str, Any] = {source_label: trusted_manufacturer}
++    provider_counts: Dict[str, int] = {}
++    has_disagreement = False
++    for record in merged.distributor_records:
++        manufacturer = (record.manufacturer or "").strip()
++        if not manufacturer:
++            continue
++        provider_counts[record.provider] = provider_counts.get(record.provider, 0) + 1
++        count = provider_counts[record.provider]
++        label = (
++            record.provider if count == 1 else "{0}#{1}".format(record.provider, count)
++        )
++        values[label] = manufacturer
++        if normalize_manufacturer(manufacturer) != trusted_normalized:
++            has_disagreement = True
++
++    if not has_disagreement:
++        return
++
++    existing = next(
++        (conflict for conflict in merged.conflicts if conflict.field == "manufacturer"),
++        None,
++    )
++    if existing is None:
++        merged.conflicts.append(
++            Conflict(
++                field="manufacturer",
++                values=values,
++                selected_value=trusted_manufacturer,
++                reason="inferred manufacturer display names disagree",
++            )
++        )
++    else:
++        combined = dict(existing.values)
++        combined.update(values)
++        existing.values = combined
++        existing.selected_value = trusted_manufacturer
++        existing.reason = "inferred manufacturer display names disagree"
++    merged.conflicts.sort(key=lambda conflict: conflict.field)
++
++
++def _append_once(records: List[DistributorRecord], record: DistributorRecord) -> None:
++    marker = (
++        record.provider,
++        record.distributor_part_number,
++        normalize_mpn(record.mpn),
++    )
++    for existing in records:
++        if (
++            existing.provider,
++            existing.distributor_part_number,
++            normalize_mpn(existing.mpn),
++        ) == marker:
++            return
++    records.append(record)
++
++
++def _fatal_provider_error(error: ProviderError) -> MetadataServiceError:
++    detail = (
++        "exact identity is not unique"
++        if error.code == "AMBIGUOUS"
++        else "provider result does not match the requested exact identity"
++    )
++    return MetadataServiceError(error.code, detail, error.provider)
++
++
++def _error_code(error: Any) -> str:
++    return str(getattr(error, "code", getattr(error, "category", "PROVIDER_ERROR")))
++
++
++def _clean(value: Optional[str]) -> Optional[str]:
++    if value is None:
++        return None
++    text = str(value).strip()
++    return text or None
++
++
++__all__ = [
++    "MetadataResolution",
++    "MetadataServiceError",
++    "create_cad_provider",
++    "create_metadata_provider",
++    "resolve_metadata",
++]
+
+diff --git a/easyeda2kicad/metadata/merge.py b/easyeda2kicad/metadata/merge.py
+new file mode 100644
+index 0000000..f53afa6
+--- /dev/null
++++ b/easyeda2kicad/metadata/merge.py
+@@ -0,0 +1,476 @@
++"""Conservative exact-identity merge with conflicts and provenance."""
++
++from __future__ import annotations
++
++# Global imports
++import unicodedata
++from collections import Counter
++from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
++from urllib.parse import urlsplit, urlunsplit
++
++# Local imports
++from .models import (
++    CadRecord,
++    Conflict,
++    DistributorRecord,
++    MergedPart,
++    PartIdentity,
++    ProvenanceEntry,
++    normalize_manufacturer,
++    normalize_mpn,
++)
++
++VERIFIED = "VERIFIED"
++PARTIAL = "PARTIAL"
++CAD_NOT_FOUND = "CAD_NOT_FOUND"
++CAD_PIN_PAD_MISMATCH = "CAD_PIN_PAD_MISMATCH"
++VERIFICATION_STATUSES = frozenset(
++    (VERIFIED, PARTIAL, CAD_NOT_FOUND, CAD_PIN_PAD_MISMATCH)
++)
++
++_PROVIDER_PRIORITY = {"lcsc": 0, "digikey": 1, "mouser": 2}
++
++
++class MergeError(ValueError):
++    category = "MERGE_ERROR"
++
++
++class IdentityMismatchError(MergeError):
++    category = "MPN_MISMATCH"
++
++
++class AmbiguousIdentityError(MergeError):
++    category = "AMBIGUOUS"
++
++
++def merge_records(
++    distributor_records: Sequence[DistributorRecord],
++    mpn: Optional[str] = None,
++    manufacturer: Optional[str] = None,
++    cad: Optional[CadRecord] = None,
++    provider_errors: Optional[Mapping[str, Any]] = None,
++    verification_status: Optional[str] = None,
++) -> MergedPart:
++    """Merge locally validated distributor records around one exact identity.
++
++    The explicit MPN/manufacturer remain authoritative.  A mismatching LCSC
++    record is fatal because it represents an explicit CAD identity; an invalid
++    distributor result is excluded and reported as a provider diagnostic.
++    """
++
++    records = [_coerce_record(record) for record in distributor_records]
++    records.sort(key=_record_sort_key)
++    errors: Dict[str, str] = {
++        str(provider).lower(): str(error)
++        for provider, error in (provider_errors or {}).items()
++    }
++
++    authoritative_mpn, mpn_provider = _select_authoritative_mpn(records, mpn)
++    requested_mpn_normalized = normalize_mpn(authoritative_mpn)
++    if not requested_mpn_normalized:
++        raise MergeError("an exact MPN is required to merge metadata")
++
++    authoritative_manufacturer, manufacturer_provider = _select_manufacturer(
++        records, manufacturer
++    )
++    requested_manufacturer_normalized = normalize_manufacturer(
++        authoritative_manufacturer
++    )
++    # Manufacturer is a hard filter only when the user supplied it. Provider
++    # display names are not canonical identifiers (for example TI vs the full
++    # company name), so inferred disagreements remain explicit conflicts.
++    enforce_manufacturer = bool(
++        manufacturer is not None and normalize_manufacturer(manufacturer)
++    )
++
++    valid_records: List[DistributorRecord] = []
++    for record in records:
++        if normalize_mpn(record.mpn) != requested_mpn_normalized:
++            if record.provider == "lcsc":
++                raise IdentityMismatchError(
++                    "LCSC identity does not exactly match MPN {0}".format(
++                        authoritative_mpn
++                    )
++                )
++            errors[record.provider] = "NOT_FOUND: returned MPN failed exact validation"
++            continue
++        if (
++            enforce_manufacturer
++            and requested_manufacturer_normalized
++            and normalize_manufacturer(record.manufacturer)
++            != requested_manufacturer_normalized
++        ):
++            if record.provider == "lcsc":
++                raise IdentityMismatchError(
++                    "LCSC manufacturer does not match the requested identity"
++                )
++            errors[record.provider] = (
++                "NOT_FOUND: returned manufacturer failed exact validation"
++            )
++            continue
++        valid_records.append(record)
++
++    conflicts: List[Conflict] = []
++    provenance: Dict[str, List[ProvenanceEntry]] = {}
++
++    identity_manufacturer = authoritative_manufacturer
++    if not identity_manufacturer:
++        identity_manufacturer, manufacturer_provider = _first_value(
++            valid_records, "manufacturer"
++        )
++
++    _add_identity_provenance(
++        provenance,
++        "identity.mpn",
++        mpn_provider,
++        "--mpn" if mpn_provider == "user" else "mpn",
++    )
++    _add_identity_provenance(
++        provenance,
++        "identity.mpn_normalized",
++        mpn_provider,
++        "normalized(mpn)",
++    )
++    if identity_manufacturer:
++        _add_identity_provenance(
++            provenance,
++            "identity.manufacturer",
++            manufacturer_provider,
++            "--manufacturer" if manufacturer_provider == "user" else "manufacturer",
++        )
++        _add_identity_provenance(
++            provenance,
++            "identity.manufacturer_normalized",
++            manufacturer_provider,
++            "normalized(manufacturer)",
++        )
++
++    _append_conflict_if_needed(
++        conflicts,
++        "manufacturer",
++        valid_records,
++        "manufacturer",
++        identity_manufacturer,
++        normalizer=normalize_manufacturer,
++    )
++
++    package, package_entries = _select_scalar(valid_records, "package")
++    lifecycle, lifecycle_entries = _select_scalar(valid_records, "lifecycle")
++    datasheet, datasheet_entries = _select_datasheet(valid_records)
++    if package_entries:
++        provenance["identity.package"] = package_entries
++    if lifecycle_entries:
++        provenance["identity.lifecycle"] = lifecycle_entries
++    if datasheet_entries:
++        provenance["identity.manufacturer_datasheet_url"] = datasheet_entries
++
++    _append_conflict_if_needed(conflicts, "package", valid_records, "package", package)
++    _append_conflict_if_needed(
++        conflicts, "lifecycle", valid_records, "lifecycle", lifecycle
++    )
++    _append_conflict_if_needed(
++        conflicts,
++        "manufacturer_datasheet_url",
++        valid_records,
++        "datasheet_url",
++        datasheet,
++        normalizer=_normalize_url,
++    )
++
++    if cad is not None and not isinstance(cad, CadRecord):
++        cad = CadRecord.from_dict(cad)
++    if cad is not None:
++        for field_name in (
++            "lcsc_part_number",
++            "easyeda_component_id",
++            "symbol_name",
++            "footprint_name",
++            "model_3d",
++            "symbol_path",
++            "footprint_path",
++            "model_3d_path",
++            "verification_status",
++        ):
++            if getattr(cad, field_name):
++                provenance["cad.{0}".format(field_name)] = [
++                    ProvenanceEntry(provider=cad.source, source_field=field_name)
++                ]
++
++    status = _verification_status(cad, errors, verification_status)
++    identity = PartIdentity(
++        manufacturer=identity_manufacturer,
++        manufacturer_normalized=normalize_manufacturer(identity_manufacturer),
++        mpn=authoritative_mpn,
++        mpn_normalized=requested_mpn_normalized,
++        package=package,
++        lifecycle=lifecycle,
++        manufacturer_datasheet_url=datasheet,
++    )
++    return MergedPart(
++        identity=identity,
++        distributor_records=valid_records,
++        cad=cad,
++        conflicts=sorted(conflicts, key=lambda conflict: conflict.field),
++        verification_status=status,
++        provenance={key: provenance[key] for key in sorted(provenance)},
++        provider_errors={key: errors[key] for key in sorted(errors)},
++    )
++
++
++def merge_metadata(
++    records: Sequence[DistributorRecord],
++    requested_mpn: Optional[str] = None,
++    requested_manufacturer: Optional[str] = None,
++    cad: Optional[CadRecord] = None,
++    provider_errors: Optional[Mapping[str, Any]] = None,
++    verification_status: Optional[str] = None,
++) -> MergedPart:
++    """Named compatibility wrapper for orchestration code."""
++
++    return merge_records(
++        distributor_records=records,
++        mpn=requested_mpn,
++        manufacturer=requested_manufacturer,
++        cad=cad,
++        provider_errors=provider_errors,
++        verification_status=verification_status,
++    )
++
++
++merge_part = merge_records
++
++
++def _coerce_record(record: DistributorRecord) -> DistributorRecord:
++    if isinstance(record, DistributorRecord):
++        return record
++    return DistributorRecord.from_dict(record)
++
++
++def _record_sort_key(record: DistributorRecord) -> Tuple[Any, ...]:
++    return (
++        _PROVIDER_PRIORITY.get(record.provider, 100),
++        record.provider,
++        record.minimum_order_quantity is None,
++        record.minimum_order_quantity or 0,
++        record.distributor_part_number or "",
++        record.product_url or "",
++    )
++
++
++def _select_authoritative_mpn(
++    records: Sequence[DistributorRecord], requested_mpn: Optional[str]
++) -> Tuple[str, str]:
++    if requested_mpn is not None and normalize_mpn(requested_mpn):
++        return str(requested_mpn).strip(), "user"
++    lcsc_records = [record for record in records if record.provider == "lcsc"]
++    candidates = {
++        normalize_mpn(record.mpn): record.mpn
++        for record in lcsc_records
++        if normalize_mpn(record.mpn)
++    }
++    if len(candidates) > 1:
++        raise AmbiguousIdentityError("LCSC records contain multiple exact identities")
++    if len(candidates) == 1:
++        return str(next(iter(candidates.values()))), "lcsc"
++    raise MergeError("MPN is required when no exact LCSC identity is available")
++
++
++def _select_manufacturer(
++    records: Sequence[DistributorRecord], requested_manufacturer: Optional[str]
++) -> Tuple[Optional[str], str]:
++    if requested_manufacturer is not None and normalize_manufacturer(
++        requested_manufacturer
++    ):
++        return str(requested_manufacturer).strip(), "user"
++    lcsc_records = [record for record in records if record.provider == "lcsc"]
++    value, provider = _first_value(lcsc_records, "manufacturer")
++    if value:
++        return value, provider
++    return _first_value(records, "manufacturer")
++
++
++def _first_value(
++    records: Iterable[DistributorRecord], field_name: str
++) -> Tuple[Optional[str], str]:
++    for record in records:
++        value = getattr(record, field_name)
++        if value is not None and str(value).strip():
++            return str(value).strip(), record.provider
++    return None, ""
++
++
++def _select_scalar(
++    records: Sequence[DistributorRecord], field_name: str
++) -> Tuple[Optional[str], List[ProvenanceEntry]]:
++    selected, _ = _first_value(records, field_name)
++    if not selected:
++        return None, []
++    normalized_selected = _normalize_scalar(selected)
++    entries = [
++        ProvenanceEntry(provider=record.provider, source_field=field_name)
++        for record in records
++        if getattr(record, field_name)
++        and _normalize_scalar(str(getattr(record, field_name))) == normalized_selected
++    ]
++    return selected, _deduplicate_provenance(entries)
++
++
++def _select_datasheet(
++    records: Sequence[DistributorRecord],
++) -> Tuple[Optional[str], List[ProvenanceEntry]]:
++    product_urls = {
++        _normalize_url(record.product_url)
++        for record in records
++        if record.product_url and _normalize_url(record.product_url)
++    }
++    candidates: List[str] = []
++    for record in records:
++        candidate = record.datasheet_url
++        if candidate and _is_http_url(candidate):
++            normalized = _normalize_url(candidate)
++            if normalized and normalized not in product_urls:
++                candidates.append(candidate.strip())
++    if not candidates:
++        return None, []
++    manufacturer_candidates = [
++        candidate
++        for candidate in candidates
++        if not _is_distributor_owned_url(candidate)
++    ]
++    # This is only a link-quality heuristic. Record identity, conflicts, and
++    # provenance remain governed by the same exact-match merge rules.
++    selected = (manufacturer_candidates or candidates)[0]
++    normalized_selected = _normalize_url(selected)
++    entries = [
++        ProvenanceEntry(provider=record.provider, source_field="datasheet_url")
++        for record in records
++        if record.datasheet_url
++        and _normalize_url(record.datasheet_url) == normalized_selected
++    ]
++    return selected, _deduplicate_provenance(entries)
++
++
++def _append_conflict_if_needed(
++    conflicts: List[Conflict],
++    conflict_field: str,
++    records: Sequence[DistributorRecord],
++    record_field: str,
++    selected_value: Optional[str],
++    normalizer: Any = None,
++) -> None:
++    if normalizer is None:
++        normalizer = _normalize_scalar
++    values: List[Tuple[str, str, str]] = []
++    provider_counts: Counter[str] = Counter()
++    for record in records:
++        value = getattr(record, record_field)
++        if value is None or not str(value).strip():
++            continue
++        provider_counts[record.provider] += 1
++        suffix = provider_counts[record.provider]
++        label = (
++            record.provider
++            if suffix == 1
++            else "{0}#{1}".format(record.provider, suffix)
++        )
++        values.append((label, str(value), normalizer(str(value))))
++    distinct = {normalized for _, _, normalized in values if normalized}
++    if len(distinct) <= 1:
++        return
++    conflicts.append(
++        Conflict(
++            field=conflict_field,
++            values={label: value for label, value, _ in values},
++            selected_value=selected_value,
++        )
++    )
++
++
++def _add_identity_provenance(
++    provenance: Dict[str, List[ProvenanceEntry]],
++    key: str,
++    provider: str,
++    source_field: str,
++) -> None:
++    if provider:
++        provenance[key] = [
++            ProvenanceEntry(provider=provider, source_field=source_field)
++        ]
++
++
++def _deduplicate_provenance(
++    entries: Iterable[ProvenanceEntry],
++) -> List[ProvenanceEntry]:
++    unique = {(entry.provider, entry.source_field): entry for entry in entries}
++    return [unique[key] for key in sorted(unique)]
++
++
++def _verification_status(
++    cad: Optional[CadRecord],
++    provider_errors: Mapping[str, str],
++    explicit: Optional[str],
++) -> str:
++    if explicit is not None:
++        if explicit not in VERIFICATION_STATUSES:
++            raise ValueError("invalid verification status")
++        return explicit
++    if cad is None:
++        return CAD_NOT_FOUND
++    cad_status = cad.verification_status or VERIFIED
++    if cad_status not in VERIFICATION_STATUSES:
++        raise ValueError("invalid CAD verification status")
++    if cad_status in (CAD_NOT_FOUND, CAD_PIN_PAD_MISMATCH):
++        return cad_status
++    if provider_errors or cad_status == PARTIAL:
++        return PARTIAL
++    return VERIFIED
++
++
++def _normalize_scalar(value: str) -> str:
++    normalized = unicodedata.normalize("NFKC", value).strip().casefold()
++    return " ".join(normalized.split())
++
++
++def _normalize_url(value: Optional[str]) -> str:
++    if not value:
++        return ""
++    try:
++        parsed = urlsplit(value.strip())
++    except ValueError:
++        return _normalize_scalar(value)
++    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
++        return _normalize_scalar(value)
++    hostname = (parsed.hostname or "").lower()
++    try:
++        port = parsed.port
++    except ValueError:
++        return _normalize_scalar(value)
++    if port is not None:
++        hostname = "{0}:{1}".format(hostname, port)
++    path = parsed.path.rstrip("/") or "/"
++    return urlunsplit((parsed.scheme.lower(), hostname, path, parsed.query, ""))
++
++
++def _is_http_url(value: str) -> bool:
++    try:
++        parsed = urlsplit(value.strip())
++        return parsed.scheme.lower() in ("http", "https") and bool(parsed.netloc)
++    except ValueError:
++        return False
++
++
++def _is_distributor_owned_url(value: str) -> bool:
++    """Recognize common LCSC/DigiKey/Mouser mirror host families."""
++
++    try:
++        hostname = (urlsplit(value.strip()).hostname or "").strip(".").casefold()
++    except ValueError:
++        return False
++    labels = hostname.split(".")
++    if len(labels) < 2:
++        return False
++    distributor_labels = {"lcsc", "szlcsc", "digikey", "mouser"}
++    plausible_official_suffix = labels[-1] == "com" or len(labels[-1]) == 2
++    return plausible_official_suffix and any(
++        label in distributor_labels for label in labels[:-1]
++    )
+
+diff --git a/tests/test_metadata_service.py b/tests/test_metadata_service.py
+new file mode 100644
+index 0000000..d77fc5f
+--- /dev/null
++++ b/tests/test_metadata_service.py
+@@ -0,0 +1,915 @@
++from __future__ import annotations
++
++import json
++from pathlib import Path
++from typing import Any, Callable, cast
++
++import pytest
++
++from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
++from easyeda2kicad.metadata.cache import MetadataCache
++from easyeda2kicad.metadata.merge import CAD_NOT_FOUND, PARTIAL, VERIFIED
++from easyeda2kicad.metadata.models import CadRecord, DistributorRecord
++from easyeda2kicad.metadata.service import MetadataServiceError, resolve_metadata
++from easyeda2kicad.providers import (
++    AmbiguousMatchError,
++    AuthMissingError,
++    MetadataProvider,
++    NetworkError,
++    NotFoundError,
++)
++
++
++class FakeMetadataProvider:
++    def __init__(
++        self,
++        name: str,
++        record: DistributorRecord | None = None,
++        error: Exception | None = None,
++        cache_context: dict[str, str] | None = None,
++    ) -> None:
++        self.name = name
++        self.record = record
++        self.error = error
++        self.exact_calls = 0
++        self.id_calls = 0
++        self.last_raw_response: dict[str, Any] = {"provider": name}
++        self.cache_context = cache_context or {}
++
++    def get_cache_context(self) -> dict[str, str]:
++        return dict(self.cache_context)
++
++    def search_exact_mpn(self, manufacturer: str | None, mpn: str) -> DistributorRecord:
++        del manufacturer, mpn
++        self.exact_calls += 1
++        return self._result()
++
++    def get_part_by_distributor_id(self, part_id: str) -> DistributorRecord:
++        del part_id
++        self.id_calls += 1
++        return self._result()
++
++    def _result(self) -> DistributorRecord:
++        if self.error is not None:
++            raise self.error
++        assert self.record is not None
++        return self.record
++
++
++class FakeCadProvider:
++    name = "easyeda"
++
++    def __init__(
++        self,
++        raw: dict[str, Any] | None = None,
++        error: Exception | None = None,
++    ) -> None:
++        self.raw = raw
++        self.error = error
++        self.calls: list[str] = []
++
++    def get_cad_data(self, lcsc_id: str) -> tuple[CadRecord, dict[str, Any]]:
++        self.calls.append(lcsc_id)
++        if self.error is not None:
++            raise self.error
++        assert self.raw is not None
++        return (
++            CadRecord(
++                source="easyeda",
++                lcsc_part_number=lcsc_id,
++                verification_status=PARTIAL,
++            ),
++            self.raw,
++        )
++
++
++def cad_payload(
++    mpn: str = "OPA333AIDBVR",
++    lcsc: str = "C30878",
++    manufacturer: str = "Texas Instruments",
++) -> dict[str, Any]:
++    identity = {
++        "Manufacturer": manufacturer,
++        "Manufacturer Part": mpn,
++        "Supplier Part": lcsc,
++    }
++    return {
++        "uuid": "easyeda-uuid",
++        "lcsc": {"number": lcsc},
++        "dataStr": {"head": {"c_para": identity}},
++        "packageDetail": {"dataStr": {"head": {"c_para": dict(identity)}}},
++    }
++
++
++def cad_payload_without_mpn() -> dict[str, Any]:
++    payload = cad_payload()
++    payload["dataStr"]["head"]["c_para"].pop("Manufacturer Part")
++    payload["packageDetail"]["dataStr"]["head"]["c_para"].pop("Manufacturer Part")
++    return payload
++
++
++def record(
++    provider: str,
++    mpn: str = "OPA333AIDBVR",
++    manufacturer: str = "Texas Instruments",
++) -> DistributorRecord:
++    part = {
++        "lcsc": "C30878",
++        "digikey": "296-OPA333AIDBVRCT-ND",
++        "mouser": "595-OPA333AIDBVR",
++    }[provider]
++    return DistributorRecord(
++        provider=provider,
++        distributor_part_number=part,
++        manufacturer=manufacturer,
++        mpn=mpn,
++        datasheet_url="https://example.invalid/{0}.pdf".format(provider),
++        retrieved_at="2026-07-22T00:00:00Z",
++    )
++
++
++def make_factory(
++    providers: dict[str, FakeMetadataProvider],
++) -> Callable[[str, EasyedaApi], MetadataProvider]:
++    def factory(name: str, api: EasyedaApi) -> MetadataProvider:
++        del api
++        return cast(MetadataProvider, providers[name])
++
++    return factory
++
++
++def test_mpn_only_resolves_lcsc_before_other_metadata(tmp_path: Path) -> None:
++    providers = {
++        name: FakeMetadataProvider(name, record(name))
++        for name in ("lcsc", "digikey", "mouser")
++    }
++    cad = FakeCadProvider(cad_payload())
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id=None,
++        provider_names=("lcsc", "digikey", "mouser"),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory(providers),
++        cad_provider_factory=lambda api: cad,
++    )
++    merged = result.to_merged(VERIFIED)
++
++    assert cad.calls == ["C30878"]
++    assert providers["lcsc"].exact_calls == 1
++    assert [item.provider for item in merged.distributor_records] == [
++        "lcsc",
++        "digikey",
++        "mouser",
++    ]
++    assert merged.verification_status == VERIFIED
++
++
++def test_inferred_lcsc_manufacturer_alias_does_not_constrain_other_sources(
++    tmp_path: Path,
++) -> None:
++    providers = {
++        "lcsc": FakeMetadataProvider(
++            "lcsc", record("lcsc", manufacturer="TI(德州仪器)")
++        ),
++        "digikey": FakeMetadataProvider("digikey", record("digikey")),
++    }
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id=None,
++        provider_names=("lcsc", "digikey"),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory(providers),
++        cad_provider_factory=lambda api: FakeCadProvider(
++            cad_payload(manufacturer="TI(德州仪器)")
++        ),
++    )
++
++    assert [item.provider for item in result.distributor_records] == [
++        "lcsc",
++        "digikey",
++    ]
++    assert result.trusted_manufacturer == "TI(德州仪器)"
++    merged = result.to_merged(VERIFIED)
++    assert [item.provider for item in merged.distributor_records] == [
++        "lcsc",
++        "digikey",
++    ]
++    assert "manufacturer" in [conflict.field for conflict in merged.conflicts]
++
++
++def test_easyeda_manufacturer_alias_is_retained_when_only_digikey_is_selected(
++    tmp_path: Path,
++) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=("digikey",),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++        cad_provider_factory=lambda api: FakeCadProvider(
++            cad_payload(manufacturer="TI(德州仪器)")
++        ),
++    )
++
++    merged = result.to_merged(VERIFIED)
++
++    assert [item.provider for item in merged.distributor_records] == ["digikey"]
++    assert merged.identity.manufacturer == "TI(德州仪器)"
++    assert merged.provenance["identity.manufacturer"][0].provider == "easyeda"
++    conflict = next(item for item in merged.conflicts if item.field == "manufacturer")
++    assert conflict.values == {
++        "easyeda": "TI(德州仪器)",
++        "digikey": "Texas Instruments",
++    }
++    assert conflict.selected_value == "TI(德州仪器)"
++
++
++def test_combined_identity_mismatch_stops_before_distributor_calls(
++    tmp_path: Path,
++) -> None:
++    providers = {
++        name: FakeMetadataProvider(name, record(name))
++        for name in ("lcsc", "digikey", "mouser")
++    }
++    cad = FakeCadProvider(cad_payload(mpn="OPA333AIDBVR-T"))
++
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer=None,
++            requested_lcsc_id="C30878",
++            provider_names=("lcsc", "digikey", "mouser"),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            provider_factory=make_factory(providers),
++            cad_provider_factory=lambda api: cad,
++        )
++
++    assert exc_info.value.code == "MPN_MISMATCH"
++    assert all(provider.exact_calls == 0 for provider in providers.values())
++    assert all(provider.id_calls == 0 for provider in providers.values())
++
++
++def test_cad_missing_mpn_uses_unselected_lcsc_identity_lookup(
++    tmp_path: Path,
++) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=("digikey",),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++        cad_provider_factory=lambda api: FakeCadProvider(cad_payload_without_mpn()),
++    )
++
++    assert result.cad_data is not None
++    assert result.cad_identity is not None
++    assert result.cad_identity.lcsc_id == "C30878"
++    assert result.cad_identity.mpn is None
++    assert lcsc.id_calls == 1
++    assert [item.provider for item in result.distributor_records] == ["digikey"]
++    assert digikey.exact_calls == 1
++
++
++def test_cad_missing_mpn_rejects_lcsc_identity_mismatch(tmp_path: Path) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc", mpn="OPA333AIDBVT"))
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer=None,
++            requested_lcsc_id="C30878",
++            provider_names=("digikey",),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++            cad_provider_factory=lambda api: FakeCadProvider(cad_payload_without_mpn()),
++        )
++
++    assert exc_info.value.code == "MPN_MISMATCH"
++    assert lcsc.id_calls == 1
++    assert digikey.exact_calls == 0
++
++
++def test_cad_missing_mpn_fails_closed_when_lcsc_identity_is_unavailable(
++    tmp_path: Path,
++) -> None:
++    lcsc = FakeMetadataProvider(
++        "lcsc", error=NetworkError("lcsc", operation="id-lookup")
++    )
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer=None,
++            requested_lcsc_id="C30878",
++            provider_names=("digikey",),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++            cad_provider_factory=lambda api: FakeCadProvider(cad_payload_without_mpn()),
++        )
++
++    assert exc_info.value.code == "NETWORK_ERROR"
++    assert lcsc.id_calls == 1
++    assert digikey.exact_calls == 0
++
++
++def test_confirmed_cad_not_found_keeps_distributor_metadata(tmp_path: Path) -> None:
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    cad = FakeCadProvider(error=NotFoundError("easyeda", operation="cad-fetch"))
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer="Texas Instruments",
++        requested_lcsc_id="C30878",
++        provider_names=("digikey",),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++        cad_provider_factory=lambda api: cad,
++    )
++    merged = result.to_merged(CAD_NOT_FOUND)
++
++    assert merged.verification_status == CAD_NOT_FOUND
++    assert [item.provider for item in merged.distributor_records] == ["digikey"]
++    assert lcsc.id_calls == 1
++    assert result.blocking_error is None
++
++
++def test_id_only_cad_not_found_resolves_unselected_lcsc_before_external(
++    tmp_path: Path,
++) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    result = resolve_metadata(
++        requested_mpn=None,
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=("digikey",),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++        cad_provider_factory=lambda api: FakeCadProvider(
++            error=NotFoundError("easyeda", operation="cad-fetch")
++        ),
++    )
++
++    assert result.trusted_mpn == "OPA333AIDBVR"
++    assert lcsc.id_calls == 1
++    assert digikey.exact_calls == 1
++    assert [item.provider for item in result.distributor_records] == ["digikey"]
++    assert result.to_merged(CAD_NOT_FOUND).verification_status == CAD_NOT_FOUND
++
++
++def test_id_only_cad_missing_mpn_resolves_unselected_lcsc_before_external(
++    tmp_path: Path,
++) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    result = resolve_metadata(
++        requested_mpn=None,
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=("digikey",),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++        cad_provider_factory=lambda api: FakeCadProvider(cad_payload_without_mpn()),
++    )
++
++    assert result.cad_identity is not None
++    assert result.cad_identity.mpn is None
++    assert result.trusted_mpn == "OPA333AIDBVR"
++    assert lcsc.id_calls == 1
++    assert digikey.exact_calls == 1
++    assert [item.provider for item in result.distributor_records] == ["digikey"]
++
++
++@pytest.mark.parametrize(
++    ("identity_error", "expected_code"),
++    [
++        (NotFoundError("lcsc", operation="id-lookup"), "NOT_FOUND"),
++        (NetworkError("lcsc", operation="id-lookup"), "NETWORK_ERROR"),
++        (AmbiguousMatchError("lcsc", operation="id-lookup"), "AMBIGUOUS"),
++    ],
++)
++def test_id_only_external_provider_fails_closed_when_lcsc_identity_unavailable(
++    tmp_path: Path,
++    identity_error: Exception,
++    expected_code: str,
++) -> None:
++    lcsc = FakeMetadataProvider("lcsc", error=identity_error)
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn=None,
++            requested_manufacturer=None,
++            requested_lcsc_id="C30878",
++            provider_names=("digikey",),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++            cad_provider_factory=lambda api: FakeCadProvider(
++                error=NotFoundError("easyeda", operation="cad-fetch")
++            ),
++        )
++
++    assert exc_info.value.code == expected_code
++    assert lcsc.id_calls == 1
++    assert digikey.exact_calls == 0
++
++
++def test_cad_not_found_rejects_unselected_lcsc_mpn_mismatch(
++    tmp_path: Path,
++) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc", mpn="OPA333AIDBVT"))
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer=None,
++            requested_lcsc_id="C30878",
++            provider_names=("digikey",),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++            cad_provider_factory=lambda api: FakeCadProvider(
++                error=NotFoundError("easyeda", operation="cad-fetch")
++            ),
++        )
++
++    assert exc_info.value.code == "MPN_MISMATCH"
++    assert lcsc.id_calls == 1
++    assert digikey.exact_calls == 0
++
++
++@pytest.mark.parametrize(
++    ("identity_error", "expected_code"),
++    [
++        (NotFoundError("lcsc", operation="id-lookup"), "NOT_FOUND"),
++        (NetworkError("lcsc", operation="id-lookup"), "NETWORK_ERROR"),
++        (AmbiguousMatchError("lcsc", operation="id-lookup"), "AMBIGUOUS"),
++    ],
++)
++def test_cad_not_found_fails_closed_when_unselected_lcsc_identity_is_unavailable(
++    tmp_path: Path,
++    identity_error: Exception,
++    expected_code: str,
++) -> None:
++    lcsc = FakeMetadataProvider("lcsc", error=identity_error)
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer=None,
++            requested_lcsc_id="C30878",
++            provider_names=("digikey",),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++            cad_provider_factory=lambda api: FakeCadProvider(
++                error=NotFoundError("easyeda", operation="cad-fetch")
++            ),
++        )
++
++    assert exc_info.value.code == expected_code
++    assert lcsc.id_calls == 1
++    assert digikey.exact_calls == 0
++
++
++def test_cad_not_found_explicit_pair_fails_closed_on_offline_identity_cache_miss(
++    tmp_path: Path,
++) -> None:
++    lcsc = FakeMetadataProvider(
++        "lcsc", error=AssertionError("offline identity lookup used network")
++    )
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer=None,
++            requested_lcsc_id="C30878",
++            provider_names=("digikey",),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            offline=True,
++            provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++            cad_provider_factory=lambda api: FakeCadProvider(
++                error=NotFoundError("easyeda", operation="cad-fetch")
++            ),
++        )
++
++    assert exc_info.value.code == "OFFLINE_CACHE_MISS"
++    assert lcsc.id_calls == 0
++    assert digikey.exact_calls == 0
++
++
++def test_cad_network_error_is_not_cad_not_found(tmp_path: Path) -> None:
++    cad = FakeCadProvider(error=NetworkError("easyeda", operation="cad-fetch"))
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=(),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc}),
++        cad_provider_factory=lambda api: cad,
++    )
++    merged = result.to_merged(PARTIAL)
++
++    assert result.blocking_error == "NETWORK_ERROR"
++    assert merged.verification_status == PARTIAL
++    assert merged.verification_status != CAD_NOT_FOUND
++
++
++def test_offline_metadata_cache_hit_performs_no_provider_request(
++    tmp_path: Path,
++) -> None:
++    cache = MetadataCache(tmp_path)
++    request = cache.canonical_request(
++        "lcsc",
++        "search_exact_mpn",
++        mpn="OPA333AIDBVR",
++        manufacturer=None,
++        options={"provider_context": {}},
++    )
++    cache_key = cache.get_cache_key("lcsc", request)
++    cached_record = record("lcsc")
++    cached_record.raw_response_cache_key = cache_key
++    cache.save("lcsc", request, {"cached": True}, cached_record.to_dict())
++    lcsc = FakeMetadataProvider(
++        "lcsc", error=AssertionError("offline provider must not be called")
++    )
++    cad = FakeCadProvider(cad_payload())
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id=None,
++        provider_names=("lcsc",),
++        cad_api=EasyedaApi(),
++        cache=cache,
++        offline=True,
++        provider_factory=make_factory({"lcsc": lcsc}),
++        cad_provider_factory=lambda api: cad,
++    )
++
++    assert result.cad_data is not None
++    assert lcsc.exact_calls == 0
++    assert lcsc.id_calls == 0
++
++
++def test_offline_metadata_cache_miss_does_not_call_provider(tmp_path: Path) -> None:
++    lcsc = FakeMetadataProvider(
++        "lcsc", error=AssertionError("offline provider must not be called")
++    )
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id=None,
++        provider_names=("lcsc",),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        offline=True,
++        provider_factory=make_factory({"lcsc": lcsc}),
++        cad_provider_factory=lambda api: FakeCadProvider(cad_payload()),
++    )
++
++    assert result.blocking_error == "OFFLINE_CACHE_MISS"
++    assert result.to_merged(PARTIAL).verification_status == PARTIAL
++    assert lcsc.exact_calls == 0
++
++
++def test_external_auth_failure_is_recoverable_partial(tmp_path: Path) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    digikey = FakeMetadataProvider(
++        "digikey", error=AuthMissingError("digikey", operation="exact-search")
++    )
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id=None,
++        provider_names=("lcsc", "digikey"),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc, "digikey": digikey}),
++        cad_provider_factory=lambda api: FakeCadProvider(cad_payload()),
++    )
++    merged = result.to_merged(VERIFIED)
++
++    assert merged.provider_errors == {"digikey": "AUTH_MISSING"}
++    assert merged.verification_status == PARTIAL
++
++
++def test_separator_difference_from_provider_is_fatal(tmp_path: Path) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc", mpn="A-B12"))
++
++    with pytest.raises(MetadataServiceError):
++        resolve_metadata(
++            requested_mpn="AB-12",
++            requested_manufacturer=None,
++            requested_lcsc_id=None,
++            provider_names=("lcsc",),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            provider_factory=make_factory({"lcsc": lcsc}),
++            cad_provider_factory=lambda api: FakeCadProvider(cad_payload()),
++        )
++
++
++def test_cad_inferred_mpn_has_easyeda_provenance(tmp_path: Path) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++
++    result = resolve_metadata(
++        requested_mpn=None,
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=(),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc}),
++        cad_provider_factory=lambda api: FakeCadProvider(cad_payload()),
++    )
++    merged = result.to_merged(VERIFIED)
++
++    assert merged.identity.mpn == "OPA333AIDBVR"
++    assert merged.provenance["identity.mpn"][0].provider == "easyeda"
++    assert "c_para" in merged.provenance["identity.mpn"][0].source_field
++    assert result.cad is not None
++    assert result.cad.verification_status == PARTIAL
++
++
++def test_default_merge_after_cad_network_error_stays_partial(tmp_path: Path) -> None:
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=(),
++        cad_api=EasyedaApi(),
++        cache=MetadataCache(tmp_path),
++        provider_factory=make_factory({"lcsc": lcsc}),
++        cad_provider_factory=lambda api: FakeCadProvider(
++            error=NetworkError("easyeda", operation="cad-fetch")
++        ),
++    )
++
++    assert result.to_merged().verification_status == PARTIAL
++
++
++def test_offline_is_enforced_on_supplied_cad_api(tmp_path: Path) -> None:
++    cache = MetadataCache(tmp_path)
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    api = EasyedaApi(use_cache=False, offline=False)
++    observed: list[tuple[bool, bool]] = []
++
++    def cad_factory(received: EasyedaApi) -> FakeCadProvider:
++        observed.append((received.offline, received.use_cache))
++        return FakeCadProvider(error=NotFoundError("easyeda", operation="cad-fetch"))
++
++    resolve_metadata(
++        requested_mpn=None,
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=(),
++        cad_api=api,
++        cache=cache,
++        offline=True,
++        provider_factory=make_factory({"lcsc": lcsc}),
++        cad_provider_factory=cad_factory,
++    )
++
++    assert observed == [(True, True)]
++
++
++def test_malformed_lcsc_resolver_id_stops_before_cad(tmp_path: Path) -> None:
++    malformed = record("lcsc")
++    malformed.distributor_part_number = "D123"
++    lcsc = FakeMetadataProvider("lcsc", malformed)
++    cad = FakeCadProvider(cad_payload())
++
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer=None,
++            requested_lcsc_id=None,
++            provider_names=("lcsc",),
++            cad_api=EasyedaApi(),
++            cache=MetadataCache(tmp_path),
++            provider_factory=make_factory({"lcsc": lcsc}),
++            cad_provider_factory=lambda api: cad,
++        )
++
++    assert exc_info.value.code == "INVALID_RESPONSE"
++    assert cad.calls == []
++
++
++def test_wrong_provider_normalized_cache_is_corrupt_offline(tmp_path: Path) -> None:
++    cache = MetadataCache(tmp_path)
++    request = cache.canonical_request(
++        "lcsc",
++        "search_exact_mpn",
++        mpn="OPA333AIDBVR",
++        manufacturer=None,
++        options={"provider_context": {}},
++    )
++    key = cache.get_cache_key("lcsc", request)
++    wrong = record("digikey")
++    wrong.raw_response_cache_key = key
++    cache.write("lcsc", key, {}, wrong.to_dict(), request=request)
++    lcsc = FakeMetadataProvider(
++        "lcsc", error=AssertionError("corrupt offline cache must not refetch")
++    )
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id=None,
++        provider_names=("lcsc",),
++        cad_api=EasyedaApi(),
++        cache=cache,
++        offline=True,
++        provider_factory=make_factory({"lcsc": lcsc}),
++        cad_provider_factory=lambda api: FakeCadProvider(cad_payload()),
++    )
++
++    assert result.blocking_error == "CACHE_CORRUPT"
++    assert lcsc.exact_calls == 0
++
++
++def test_wrong_normalized_cache_refetches_online(tmp_path: Path) -> None:
++    cache = MetadataCache(tmp_path)
++    request = cache.canonical_request(
++        "lcsc",
++        "search_exact_mpn",
++        mpn="OPA333AIDBVR",
++        manufacturer=None,
++        options={"provider_context": {}},
++    )
++    key = cache.get_cache_key("lcsc", request)
++    wrong = record("digikey")
++    wrong.raw_response_cache_key = key
++    cache.write("lcsc", key, {}, wrong.to_dict(), request=request)
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++
++    result = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id=None,
++        provider_names=("lcsc",),
++        cad_api=EasyedaApi(),
++        cache=cache,
++        provider_factory=make_factory({"lcsc": lcsc}),
++        cad_provider_factory=lambda api: FakeCadProvider(cad_payload()),
++    )
++
++    assert result.cad_data is not None
++    assert lcsc.exact_calls == 1
++
++
++def test_public_provider_context_partitions_service_cache(tmp_path: Path) -> None:
++    cache = MetadataCache(tmp_path)
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    cad = FakeCadProvider(cad_payload())
++    usd = FakeMetadataProvider(
++        "digikey", record("digikey"), cache_context={"currency": "USD"}
++    )
++    jpy = FakeMetadataProvider(
++        "digikey", record("digikey"), cache_context={"currency": "JPY"}
++    )
++
++    for provider in (usd, jpy):
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer=None,
++            requested_lcsc_id="C30878",
++            provider_names=("digikey",),
++            cad_api=EasyedaApi(),
++            cache=cache,
++            provider_factory=make_factory({"lcsc": lcsc, "digikey": provider}),
++            cad_provider_factory=lambda api: cad,
++        )
++
++    assert usd.exact_calls == 1
++    assert jpy.exact_calls == 1
++
++
++def test_refresh_bypasses_metadata_cache_but_reuses_separate_cad_cache(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    cad_api = EasyedaApi(use_cache=True)
++    cad_api.cache_dir = tmp_path / "cad"
++    cad_api.cache_dir.mkdir()
++    cad_cache_path = cad_api._get_cache_path("C30878", "json")
++    cad_cache_path.write_text(
++        json.dumps({"success": True, "result": cad_payload()}),
++        encoding="utf-8",
++    )
++    original_cad_cache = cad_cache_path.read_bytes()
++
++    def unexpected_network(*args: object, **kwargs: object) -> None:
++        raise AssertionError("CAD metadata refresh attempted network access")
++
++    monkeypatch.setattr("urllib.request.urlopen", unexpected_network)
++
++    metadata_cache = MetadataCache(tmp_path / "metadata")
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    digikey = FakeMetadataProvider("digikey", record("digikey"))
++    provider_factory = make_factory({"lcsc": lcsc, "digikey": digikey})
++
++    first = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=("digikey",),
++        cad_api=cad_api,
++        cache=metadata_cache,
++        provider_factory=provider_factory,
++    )
++    assert digikey.exact_calls == 1
++    assert first.distributor_records[0].description is None
++
++    refreshed_record = record("digikey")
++    refreshed_record.description = "fresh provider response"
++    digikey.record = refreshed_record
++
++    cached = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=("digikey",),
++        cad_api=cad_api,
++        cache=metadata_cache,
++        provider_factory=provider_factory,
++    )
++    assert digikey.exact_calls == 1
++    assert cached.distributor_records[0].description is None
++
++    refreshed = resolve_metadata(
++        requested_mpn="OPA333AIDBVR",
++        requested_manufacturer=None,
++        requested_lcsc_id="C30878",
++        provider_names=("digikey",),
++        cad_api=cad_api,
++        cache=metadata_cache,
++        refresh_metadata=True,
++        provider_factory=provider_factory,
++    )
++
++    assert digikey.exact_calls == 2
++    assert refreshed.distributor_records[0].description == "fresh provider response"
++    assert cad_cache_path.read_bytes() == original_cad_cache
++    assert cad_api.last_error is None
++
++
++def test_cache_write_failure_is_safe_service_error(tmp_path: Path) -> None:
++    class FailingCache(MetadataCache):
++        def write(self, *args: Any, **kwargs: Any) -> tuple[Path, Path]:
++            raise OSError("disk failure")
++
++    lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
++    with pytest.raises(MetadataServiceError) as exc_info:
++        resolve_metadata(
++            requested_mpn="OPA333AIDBVR",
++            requested_manufacturer=None,
++            requested_lcsc_id=None,
++            provider_names=("lcsc",),
++            cad_api=EasyedaApi(),
++            cache=FailingCache(tmp_path),
++            provider_factory=make_factory({"lcsc": lcsc}),
++            cad_provider_factory=lambda api: FakeCadProvider(cad_payload()),
++        )
++
++    assert exc_info.value.code == "CACHE_WRITE_ERROR"
+
+diff --git a/tests/test_metadata_merge.py b/tests/test_metadata_merge.py
+new file mode 100644
+index 0000000..eeea5f1
+--- /dev/null
++++ b/tests/test_metadata_merge.py
+@@ -0,0 +1,212 @@
++from __future__ import annotations
++
++import pytest
++
++from easyeda2kicad.metadata.merge import (
++    CAD_NOT_FOUND,
++    PARTIAL,
++    VERIFIED,
++    IdentityMismatchError,
++    merge_metadata,
++    merge_records,
++)
++from easyeda2kicad.metadata.models import CadRecord, DistributorRecord
++
++
++def _record(provider: str, **values: object) -> DistributorRecord:
++    defaults: dict[str, object] = {
++        "provider": provider,
++        "manufacturer": "Texas Instruments",
++        "mpn": "OPA333AIDBVR",
++        "distributor_part_number": provider + "-part",
++    }
++    defaults.update(values)
++    return DistributorRecord.from_dict(defaults)
++
++
++def test_merge_is_deterministic_with_conflicts_and_provenance() -> None:
++    records = [
++        _record(
++            "mouser",
++            package="SOT-23-5",
++            lifecycle="Active",
++            datasheet_url="https://ti.example/opa333.pdf",
++        ),
++        _record(
++            "lcsc",
++            package="SOT-23",
++            lifecycle="Active",
++            datasheet_url="https://lcsc.example/opa333.pdf",
++        ),
++        _record(
++            "digikey",
++            package="SOT-23-5",
++            lifecycle="Not Recommended for New Designs",
++            datasheet_url="https://ti.example/opa333.pdf",
++        ),
++    ]
++    cad = CadRecord(source="easyeda", verification_status="VERIFIED")
++
++    merged = merge_records(records, mpn="OPA333AIDBVR", cad=cad)
++
++    assert [record.provider for record in merged.distributor_records] == [
++        "lcsc",
++        "digikey",
++        "mouser",
++    ]
++    assert merged.identity.package == "SOT-23"
++    assert merged.identity.lifecycle == "Active"
++    assert merged.identity.manufacturer_datasheet_url == (
++        "https://lcsc.example/opa333.pdf"
++    )
++    assert [conflict.field for conflict in merged.conflicts] == [
++        "lifecycle",
++        "manufacturer_datasheet_url",
++        "package",
++    ]
++    assert merged.provenance["identity.mpn"][0].provider == "user"
++    assert merged.provenance["identity.package"][0].provider == "lcsc"
++    assert merged.verification_status == VERIFIED
++    assert (
++        merged.to_dict()
++        == merge_records(list(reversed(records)), mpn="OPA333AIDBVR", cad=cad).to_dict()
++    )
++
++
++def test_merge_rejects_false_distributor_match_as_partial_result() -> None:
++    records = [
++        _record("digikey", mpn="OPA333AIDBVR"),
++        _record("mouser", mpn="OPA333AIDBVT"),
++    ]
++
++    merged = merge_records(
++        records,
++        mpn="OPA333AIDBVR",
++        cad=CadRecord(source="easyeda", verification_status="VERIFIED"),
++    )
++
++    assert [record.provider for record in merged.distributor_records] == ["digikey"]
++    assert merged.provider_errors["mouser"].startswith("NOT_FOUND")
++    assert merged.verification_status == PARTIAL
++
++
++def test_merge_lcsc_mismatch_is_fatal() -> None:
++    with pytest.raises(IdentityMismatchError) as error:
++        merge_records(
++            [_record("lcsc", mpn="OPA333AIDBVT")],
++            mpn="OPA333AIDBVR",
++        )
++    assert error.value.category == "MPN_MISMATCH"
++
++
++def test_merge_does_not_conflate_separator_positions() -> None:
++    merged = merge_records(
++        [_record("digikey", mpn="A-B12")],
++        mpn="AB-12",
++    )
++    assert merged.distributor_records == []
++    assert merged.provider_errors["digikey"].startswith("NOT_FOUND")
++
++
++def test_merge_preserves_slash_suffix_and_accepts_unicode_dash_variant() -> None:
++    record = _record("lcsc", mpn="LM321MF/NOPB")
++    record.manufacturer = "Texas Instruments"
++    merged = merge_metadata(
++        [record],
++        requested_mpn="LM321MF/NOPB",
++        requested_manufacturer="Texas-Instruments",
++    )
++    assert merged.identity.mpn == "LM321MF/NOPB"
++    assert merged.identity.mpn_normalized == "LM321MF/NOPB"
++    assert merged.distributor_records == [record]
++
++
++def test_distributor_product_page_is_not_manufacturer_datasheet() -> None:
++    record = _record(
++        "digikey",
++        product_url="https://digikey.example/products/OPA333",
++        datasheet_url="https://digikey.example/products/OPA333",
++    )
++    merged = merge_records([record], mpn="OPA333AIDBVR")
++    assert merged.identity.manufacturer_datasheet_url is None
++    assert merged.distributor_records[0].datasheet_url == record.datasheet_url
++
++
++def test_manufacturer_host_datasheet_is_preferred_over_lcsc_mirror() -> None:
++    records = [
++        _record(
++            "lcsc",
++            datasheet_url="https://datasheet.lcsc.com/szlcsc/OPA333.pdf",
++        ),
++        _record(
++            "digikey",
++            datasheet_url="https://www.ti.com/lit/ds/symlink/opa333.pdf",
++        ),
++    ]
++
++    merged = merge_records(records, mpn="OPA333AIDBVR")
++
++    assert merged.identity.manufacturer_datasheet_url == (
++        "https://www.ti.com/lit/ds/symlink/opa333.pdf"
++    )
++    assert [
++        (entry.provider, entry.source_field)
++        for entry in merged.provenance["identity.manufacturer_datasheet_url"]
++    ] == [("digikey", "datasheet_url")]
++    conflict = next(
++        item for item in merged.conflicts if item.field == "manufacturer_datasheet_url"
++    )
++    assert conflict.selected_value == "https://www.ti.com/lit/ds/symlink/opa333.pdf"
++
++
++def test_all_distributor_mirror_datasheets_keep_provider_priority() -> None:
++    records = [
++        _record(
++            "mouser",
++            datasheet_url="https://www.mouser.com/datasheet/opa333.pdf",
++        ),
++        _record(
++            "digikey",
++            datasheet_url="https://media.digikey.com/pdf/opa333.pdf",
++        ),
++        _record(
++            "lcsc",
++            datasheet_url="https://datasheet.lcsc.com/szlcsc/opa333.pdf",
++        ),
++    ]
++
++    merged = merge_records(records, mpn="OPA333AIDBVR")
++
++    assert merged.identity.manufacturer_datasheet_url == (
++        "https://datasheet.lcsc.com/szlcsc/opa333.pdf"
++    )
++
++
++def test_metadata_without_cad_is_successful_cad_not_found_state() -> None:
++    merged = merge_records([_record("digikey")], mpn="OPA333AIDBVR")
++    assert merged.verification_status == CAD_NOT_FOUND
++
++
++def test_untrusted_manufacturer_disagreement_is_retained_as_conflict() -> None:
++    records = [
++        _record("digikey", manufacturer="Acme Devices"),
++        _record("mouser", manufacturer="Other Devices"),
++    ]
++
++    merged = merge_records(records, mpn="OPA333AIDBVR")
++
++    assert len(merged.distributor_records) == 2
++    conflict = next(item for item in merged.conflicts if item.field == "manufacturer")
++    assert conflict.values == {
++        "digikey": "Acme Devices",
++        "mouser": "Other Devices",
++    }
++
++
++def test_explicit_invalid_verification_status_is_rejected() -> None:
++    with pytest.raises(ValueError, match="verification status"):
++        merge_records(
++            [_record("digikey")],
++            mpn="OPA333AIDBVR",
++            verification_status="MAYBE",
++        )
+
+diff --git a/docs/DECISIONS.md b/docs/DECISIONS.md
+new file mode 100644
+index 0000000..767fc90
+--- /dev/null
++++ b/docs/DECISIONS.md
+@@ -0,0 +1,180 @@
++# Design decisions
++
++This is a living record. Implemented decisions remain subject to the independent
++Oracle architecture and release-candidate reviews.
++
++## D001 — Preserve a separate legacy execution path
++
++**Status:** Implemented  
++**Decision:** Runs using only existing options continue through the existing
++validation and `_process_component` flow. Metadata orchestration is activated
++only by a new option.  
++**Reason:** This is the smallest reliable compatibility boundary: geometry,
++control flow, and ordinary legacy output continue through upstream code. A
++deliberate cross-path safety correction escapes backslashes, quotes, CR, and LF
++in quoted KiCad property keys and values. Legacy input containing those special
++characters can therefore be byte-different while becoming syntactically safe.  
++**Alternatives:** Route every invocation through `MergedPart`; rejected because
++it adds new network/error/normalization behavior to old commands.  
++**Compatibility:** No general reserialization or metadata-path behavior is
++introduced for existing invocations. Upstream golden-output tests remain in the
++suite, but their reference bundle is absent from this checkout, so complete
++byte-for-byte equivalence is not claimed as current evidence.
++
++## D002 — Separate distributor metadata from EasyEDA CAD
++
++**Status:** Implemented  
++**Decision:** `MetadataProvider` and `CadProvider` are different contracts.
++DigiKey/Mouser never return CAD. Existing EasyEDA classes stay in place behind a
++thin adapter.  
++**Reason:** Prevents product availability from being mistaken for CAD success
++and avoids moving stable upstream conversion code.  
++**Alternatives:** One provider interface for all data; rejected because most
++methods would be invalid for most providers.  
++**Compatibility:** Minimal imports/adapters around existing code.
++
++## D003 — Conservative exact-MPN normalization
++
++**Status:** Implemented  
++**Decision:** Normalize Unicode/case/whitespace and Unicode dash presentation,
++but preserve separator positions and distinguish ASCII `-`, `_`, and `/`. Never
++strip suffixes. Require manufacturer equality when supplied. Validate local
++identity fields even when the API reports exact results.  
++**Reason:** False matches are more harmful than explicit not-found results.  
++**Alternatives:** Fuzzy matching, package suffix removal, distributor ranking;
++rejected by scope and safety requirements.  
++**Compatibility:** New MPN path only.
++
++## D004 — Standard-library HTTP clients with injected transport
++
++**Status:** Implemented  
++**Decision:** Use `urllib` and small shared retry helpers.  
++**Reason:** Matches upstream dependency policy and supports deterministic tests.  
++**Alternatives:** `requests`, distributor SDKs; rejected to avoid runtime
++dependencies and opaque credential/cache behavior.  
++**Compatibility:** No new install requirement.
++
++## D005 — Provider-scoped metadata cache with 24-hour freshness
++
++**Status:** Implemented  
++**Decision:** Store versioned raw and normalized responses separately below the
++existing `.easyeda_cache` root. Online results expire after 24 hours; offline
++accepts stale data. `--refresh-metadata` affects metadata only.  
++**Reason:** Distributor stock/pricing is volatile and API quotas require caching.
++Separation prevents refresh from invalidating CAD.  
++**Alternatives:** No cache; rejected for API quota. Indefinite cache; rejected as
++misleading for stock/price. Reuse a single EasyEDA JSON file; rejected due schema
++and secret-boundary risk.  
++**Compatibility:** Existing cache file names and CAD behavior remain untouched.
++
++## D006 — Continue on unavailable distributor credentials
++
++**Status:** Implemented  
++**Decision:** A requested distributor with missing/rejected auth yields an
++explicit provider error and `PARTIAL` verification while other providers and CAD
++continue. Identity ambiguity and explicit MPN mismatch remain fatal.  
++**Reason:** CAD generation and available metadata remain useful, while absence
++of credentials is not misreported as product absence.  
++**Alternatives:** Fail the entire command on any auth error; rejected because it
++makes multi-provider enrichment brittle. Silent skip; rejected because it hides
++missing data.  
++**Compatibility:** New metadata path only.
++
++## D007 — Reuse hidden custom properties for additional KiCad fields
++
++**Status:** Implemented  
++**Decision:** Keep native existing properties and add stable metadata through the
++exporter's ordered `custom_fields`. Do not add volatile fields. Preserve the
++current datasheet unless `--datasheet-link` is explicit.  
++**Reason:** This is the narrowest tested change and already handles KiCad schema
++versions.  
++**Alternatives:** Rewrite symbol S-expressions after export or redesign
++`KiSymbolInfo`; rejected as more invasive.  
++**Compatibility:** Metadata fields are not added on the legacy path; the quoted
++property escaping exception is recorded in D001.
++
++## D008 — Treat manifest CSV as BOM-compatible output
++
++**Status:** Implemented  
++**Decision:** JSON contains the complete merged model; CSV repeats stable fields
++once per distributor and JSON-encodes nested values.  
++**Reason:** The requested CLI names JSON/CSV manifests, and the CSV is directly
++usable as a purchasing BOM without adding another near-duplicate option.  
++**Alternatives:** Separate `--bom`; deferred unless review finds it necessary.  
++**Compatibility:** Additive output only.
++
++## D009 — AGPL-3.0 remains the project license
++
++**Status:** Accepted  
++**Decision:** Preserve the upstream `LICENSE`, package classifier, source
++notices, and AGPL-3.0 distribution terms.  
++**Reason:** The work is a modification of the AGPL-3.0 upstream project.  
++**Alternatives:** Relicensing is out of scope and not permitted unilaterally.  
++**Compatibility:** No license change.
++
++## D010 — Continue locally when Oracle is unavailable before RC
++
++**Status:** Accepted by explicit user instruction  
++**Decision:** Record Oracle failures or stalled sessions and continue normal
++implementation. A complete Architecture Review and Release Candidate Audit
++remain mandatory before declaring an RC; stop only if Oracle is still
++unavailable at that boundary.  
++**Reason:** Oracle is an independent review gate, not a reason to discard safe
++local progress before the gate can be retried.  
++**Alternatives:** Stop immediately on every Oracle failure; superseded by the
++user's revised policy. Silently omit the review; rejected.  
++**Compatibility:** Process-only decision; no runtime effect.
++
++## D011 — Treat only a user-supplied manufacturer as a hard constraint
++
++**Status:** Implemented  
++**Decision:** `--manufacturer` is compared exactly after conservative
++normalization. Manufacturer names inferred from LCSC/EasyEDA/distributors do not
++filter other exact-MPN records; differing display names remain conflicts with
++provenance.  
++**Reason:** Real OPA333 data uses both `TI(德州仪器)` and `Texas Instruments`.
++Treating either inferred label as canonical rejected a valid exact MPN.  
++**Alternatives:** Alias table or trusting LCSC spelling; rejected because both
++can create false matches.  
++**Compatibility:** New metadata path only.
++
++## D012 — Verify identity from CAD payload evidence, not titles
++
++**Status:** Implemented  
++**Decision:** Reconcile LCSC ID, MPN, and manufacturer from top-level LCSC fields
++and symbol/package `c_para`. Search terms, titles, descriptions, and caller
++values are never fallback identity evidence. Contradictory or container-valued
++evidence is `INVALID_RESPONSE`.  
++**Reason:** Search ranking/title text is not exact identity proof.  
++**Compatibility:** Legacy importers are unchanged; the check runs only in
++metadata mode.
++
++## D013 — Revalidate normalized cache and partition public locale
++
++**Status:** Implemented  
++**Decision:** Cache hits must match provider envelope, raw key, exact MPN,
++optional user manufacturer, and distributor ID. DigiKey site/language/currency
++are included in canonical cache context.  
++**Reason:** Structurally valid wrong-provider data and cross-currency reuse are
++unsafe.  
++**Compatibility:** Older incompatible metadata entries miss/refetch online;
++existing CAD cache layout is unchanged.
++
++## D014 — Count SMD pads as electrical without trusting `is_plated`
++
++**Status:** Implemented  
++**Decision:** Pin/pad verification includes SMD pads and plated through-holes,
++while excluding non-plated through-hole mechanics.  
++**Reason:** EasyEDA uses `is_plated=false` for ordinary SMD pads; filtering only
++on that flag made real OPA333 and LM321 CAD appear unparseable.  
++**Compatibility:** Verification exists only in metadata mode.
++
++## D015 — Fail an unavailable explicit datasheet selection
++
++**Status:** Implemented  
++**Decision:** No `--datasheet-link` preserves the original source value exactly.
++An explicitly selected provider must supply `datasheet_url`; product pages are
++never substituted.  
++**Reason:** Silent fallback would contradict an explicit source choice and blur
++datasheet/product URL responsibilities.  
++**Compatibility:** Legacy/default behavior is unchanged.

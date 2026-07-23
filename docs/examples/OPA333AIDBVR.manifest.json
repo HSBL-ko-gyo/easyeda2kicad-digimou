@@ -1,0 +1,170 @@
+{
+  "cad": {
+    "easyeda_component_id": "54a2cf3ef5d64984927842928a51f7ac",
+    "footprint_name": "SOT-23-5_L3.0-W1.7-P0.95-LS2.8-BR",
+    "footprint_path": "examples/project_parts.pretty/SOT-23-5_L3.0-W1.7-P0.95-LS2.8-BR.kicad_mod",
+    "lcsc_part_number": "C30878",
+    "model_3d": "SOT-23-5_L2.9-W1.6-H1.1-LS2.8-P0.95",
+    "model_3d_path": "examples/project_parts.3dshapes/SOT-23-5_L2.9-W1.6-H1.1-LS2.8-P0.95.step",
+    "source": "easyeda",
+    "symbol_name": "OPA333AIDBVR",
+    "symbol_path": "examples/project_parts.kicad_sym",
+    "verification_status": "VERIFIED"
+  },
+  "conflicts": [],
+  "distributor_records": [
+    {
+      "currency": null,
+      "datasheet_url": "https://www.lcsc.com/datasheet/lcsc_datasheet_1810221831_Texas-Instruments-OPA333AIDBVR_C30878.pdf",
+      "description": "-2.75V~-900mV、900mV~2.75V -40℃~+125℃ 0.16V/us 1 1.8V~5.5V 130dB 17uA 2uV 350kHz 400pA 50nV/℃ 5mA 70pA Rail-to-Rail Input, Rail-to-Rail Output Zero drift/automatic zero stabilization SOT-23-5 Precision Op Amps ROHS",
+      "distributor_part_number": "C30878",
+      "lifecycle": null,
+      "manufacturer": "Texas Instruments",
+      "minimum_order_quantity": 1,
+      "mpn": "OPA333AIDBVR",
+      "package": "SOT-23-5",
+      "packaging": "Reel",
+      "price_breaks": [
+        {
+          "currency": null,
+          "quantity": 1,
+          "unit_price": 1.5213
+        },
+        {
+          "currency": null,
+          "quantity": 10,
+          "unit_price": 1.3809
+        },
+        {
+          "currency": null,
+          "quantity": 30,
+          "unit_price": 1.247
+        },
+        {
+          "currency": null,
+          "quantity": 100,
+          "unit_price": 1.1486
+        },
+        {
+          "currency": null,
+          "quantity": 500,
+          "unit_price": 1.1083
+        },
+        {
+          "currency": null,
+          "quantity": 1000,
+          "unit_price": 1.0873
+        }
+      ],
+      "product_url": "https://www.lcsc.com/product-detail/precision-op-amps_texas-instruments-opa333aidbvr_C30878.html",
+      "provider": "lcsc",
+      "raw_response_cache_key": "238d628a4915fcb8c7f3a05de9936127e2da13a7f253a056eefc077348f650e4",
+      "retrieved_at": "2026-07-22T11:14:05.207710Z",
+      "stock": 3783
+    }
+  ],
+  "identity": {
+    "lifecycle": null,
+    "manufacturer": "Texas Instruments",
+    "manufacturer_datasheet_url": "https://www.lcsc.com/datasheet/lcsc_datasheet_1810221831_Texas-Instruments-OPA333AIDBVR_C30878.pdf",
+    "manufacturer_normalized": "TEXASINSTRUMENTS",
+    "mpn": "OPA333AIDBVR",
+    "mpn_normalized": "OPA333AIDBVR",
+    "package": "SOT-23-5"
+  },
+  "provenance": {
+    "cad.easyeda_component_id": [
+      {
+        "provider": "easyeda",
+        "source_field": "easyeda_component_id"
+      }
+    ],
+    "cad.footprint_name": [
+      {
+        "provider": "easyeda",
+        "source_field": "footprint_name"
+      }
+    ],
+    "cad.footprint_path": [
+      {
+        "provider": "easyeda",
+        "source_field": "footprint_path"
+      }
+    ],
+    "cad.lcsc_part_number": [
+      {
+        "provider": "easyeda",
+        "source_field": "lcsc_part_number"
+      }
+    ],
+    "cad.model_3d": [
+      {
+        "provider": "easyeda",
+        "source_field": "model_3d"
+      }
+    ],
+    "cad.model_3d_path": [
+      {
+        "provider": "easyeda",
+        "source_field": "model_3d_path"
+      }
+    ],
+    "cad.symbol_name": [
+      {
+        "provider": "easyeda",
+        "source_field": "symbol_name"
+      }
+    ],
+    "cad.symbol_path": [
+      {
+        "provider": "easyeda",
+        "source_field": "symbol_path"
+      }
+    ],
+    "cad.verification_status": [
+      {
+        "provider": "easyeda",
+        "source_field": "verification_status"
+      }
+    ],
+    "identity.manufacturer": [
+      {
+        "provider": "lcsc",
+        "source_field": "manufacturer"
+      }
+    ],
+    "identity.manufacturer_datasheet_url": [
+      {
+        "provider": "lcsc",
+        "source_field": "datasheet_url"
+      }
+    ],
+    "identity.manufacturer_normalized": [
+      {
+        "provider": "lcsc",
+        "source_field": "normalized(manufacturer)"
+      }
+    ],
+    "identity.mpn": [
+      {
+        "provider": "user",
+        "source_field": "--mpn"
+      }
+    ],
+    "identity.mpn_normalized": [
+      {
+        "provider": "user",
+        "source_field": "normalized(mpn)"
+      }
+    ],
+    "identity.package": [
+      {
+        "provider": "lcsc",
+        "source_field": "package"
+      }
+    ]
+  },
+  "provider_diagnostics": {},
+  "provider_errors": {},
+  "verification_status": "VERIFIED"
+}

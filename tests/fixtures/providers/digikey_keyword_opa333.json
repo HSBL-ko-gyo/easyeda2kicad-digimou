@@ -1,0 +1,86 @@
+{
+  "ExactMatches": [],
+  "Products": [
+    {
+      "Description": {
+        "ProductDescription": "IC OPAMP ZERO-DRIFT SOT23-5",
+        "DetailedDescription": "Zero-drift amplifier"
+      },
+      "Manufacturer": {
+        "Id": 2,
+        "Name": "Texas Instruments"
+      },
+      "ManufacturerProductNumber": "OPA333AIDBVR",
+      "ProductUrl": "https://www.digikey.com/en/products/detail/texas-instruments/OPA333AIDBVR/1592182",
+      "DatasheetUrl": "https://www.ti.com/lit/ds/symlink/opa333.pdf",
+      "QuantityAvailable": 1220,
+      "ProductStatus": {
+        "Status": "Active"
+      },
+      "Discontinued": false,
+      "EndOfLife": false,
+      "Parameters": [
+        {
+          "ParameterText": "Package / Case",
+          "ValueText": "SOT-23-5"
+        },
+        {
+          "ParameterText": "Supplier Device Package",
+          "ValueText": "SOT-23-5"
+        }
+      ],
+      "ProductVariations": [
+        {
+          "DigiKeyProductNumber": "296-19569-2-ND",
+          "PackageType": {
+            "Name": "Tape & Reel (TR)"
+          },
+          "MinimumOrderQuantity": 2500,
+          "QuantityAvailableforPackageType": 10000,
+          "StandardPricing": [
+            {
+              "BreakQuantity": 2500,
+              "UnitPrice": 1.09
+            }
+          ]
+        },
+        {
+          "DigiKeyProductNumber": "296-19569-1-ND",
+          "PackageType": {
+            "Name": "Cut Tape (CT)"
+          },
+          "MinimumOrderQuantity": 1,
+          "QuantityAvailableforPackageType": 1220,
+          "StandardPricing": [
+            {
+              "BreakQuantity": 1,
+              "UnitPrice": 2.18
+            },
+            {
+              "BreakQuantity": 10,
+              "UnitPrice": 1.86
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Description": {
+        "ProductDescription": "Different ordering code"
+      },
+      "Manufacturer": {
+        "Name": "Texas Instruments"
+      },
+      "ManufacturerProductNumber": "OPA333AIDBVRG4",
+      "ProductUrl": "https://www.digikey.com/example/similar",
+      "ProductVariations": [
+        {
+          "DigiKeyProductNumber": "SIMILAR-ND",
+          "MinimumOrderQuantity": 1,
+          "StandardPricing": []
+        }
+      ]
+    }
+  ],
+  "ProductsCount": 2
+}

@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
 from easyeda2kicad.kicad.export_kicad_symbol import (
+    ExporterSymbolKicad,
     id_already_in_symbol_lib,
     read_symbol_lib_version,
     write_component_in_symbol_lib_file,
 )
+from easyeda2kicad.kicad.parameters_kicad_symbol import KICAD_SYM_VERSION_20211014
 
 
 # ---- fixtures ----
@@ -133,6 +137,27 @@ def test_write_two_then_overwrite_first_unchanged(v6_lib_with_a: Path) -> None:
     assert content_after.count('(symbol "CompA"') == 1
     assert content_after.count('(symbol "CompB"') == 1
     assert content_before.strip() == content_after.strip()
+
+
+def test_exporter_overwrite_uses_sanitized_slash_name(tmp_path: Path) -> None:
+    lib = tmp_path / "slash.kicad_sym"
+    exporter = cast(Any, object.__new__(ExporterSymbolKicad))
+    exporter.input = SimpleNamespace(
+        info=SimpleNamespace(name="LM321MF/NOPB"),
+        sub_symbols=[],
+    )
+    exporter.version = KICAD_SYM_VERSION_20211014
+    exporter.export = lambda footprint_lib_name: V6_SYMBOL_A.replace(
+        "CompA", "LM321MF_NOPB"
+    )
+
+    assert exporter.save_to_lib(str(lib), "library", overwrite=True)
+    first = lib.read_bytes()
+    assert exporter.save_to_lib(str(lib), "library", overwrite=True)
+
+    content = lib.read_text(encoding="utf-8")
+    assert lib.read_bytes() == first
+    assert content.count('(symbol "LM321MF_NOPB"') == 1
 
 
 # ---- read_symbol_lib_version ----

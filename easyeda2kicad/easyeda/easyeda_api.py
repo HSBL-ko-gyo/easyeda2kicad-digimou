@@ -53,7 +53,7 @@ JLCPCB_SEARCH_API = "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/s
 
 
 class EasyedaApi:
-    def __init__(self, use_cache: bool = False) -> None:
+    def __init__(self, use_cache: bool = False, offline: bool = False) -> None:
         self.headers = {
             "Accept-Encoding": "gzip, deflate",
             "Accept": "application/json, text/javascript, */*; q=0.01",
@@ -64,6 +64,13 @@ class EasyedaApi:
         self.ssl_context = self._create_ssl_context()
         self.cache_dir = Path.cwd() / ".easyeda_cache"
         self.use_cache = use_cache
+        self.offline = offline
+        self.last_error: str | None = None
+
+    def _offline_cache_miss(self, resource: str) -> None:
+        """Log a cache miss without exposing a request URL or other secrets."""
+        self.last_error = "offline_cache_miss"
+        logging.error(f"Offline cache miss for EasyEDA resource: {resource}")
 
     def _get_cache_path(self, identifier: str, extension: str) -> Path:
         """Get the cache file path for a specific resource."""
@@ -77,13 +84,31 @@ class EasyedaApi:
         if not self.use_cache or not cache_path.exists():
             return None
         try:
-            mode = "rb" if binary else "r"
-            with open(cache_path, mode) as f:
-                data: str | bytes = f.read()
+            if binary:
+                with open(cache_path, "rb") as f:
+                    data: str | bytes = f.read()
+            else:
+                try:
+                    with open(cache_path, "r", encoding="utf-8") as f:
+                        data = f.read()
+                except UnicodeDecodeError:
+                    if cache_path.suffix.casefold() != ".json":
+                        raise
+                    # Older Windows releases wrote JSON using the active
+                    # Japanese locale.  Accept CP932 only when it is valid JSON;
+                    # all new writes remain canonical UTF-8.
+                    with open(cache_path, "r", encoding="cp932") as f:
+                        legacy_data = f.read()
+                    json.loads(legacy_data)
+                    data = legacy_data
             logging.debug(f"Cache hit: {cache_path}")
             return data
-        except Exception as e:
-            logging.warning(f"Failed to read cache {cache_path}: {e}")
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            if not binary and cache_path.suffix.casefold() == ".json":
+                self.last_error = "cache_corrupt"
+            logging.warning(
+                "Failed to read cache %s: %s", cache_path, type(error).__name__
+            )
             return None
 
     def _write_to_cache(
@@ -100,7 +125,7 @@ class EasyedaApi:
                 try:
                     # Try to parse as JSON and write with indentation
                     json_data = json.loads(data) if isinstance(data, str) else data
-                    with open(cache_path, "w") as f:
+                    with open(cache_path, "w", encoding="utf-8") as f:
                         json.dump(json_data, f, indent=2, ensure_ascii=False)
                     logging.debug(f"Cached (formatted): {cache_path}")
                     return
@@ -108,9 +133,16 @@ class EasyedaApi:
                     # If not valid JSON, fall back to normal write
                     pass
 
-            mode = "wb" if binary else "w"
-            with open(cache_path, mode) as f:
-                f.write(data)
+            if binary:
+                if not isinstance(data, bytes):
+                    raise TypeError("binary cache data must be bytes")
+                with open(cache_path, "wb") as f:
+                    f.write(data)
+            else:
+                if not isinstance(data, str):
+                    raise TypeError("text cache data must be a string")
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    f.write(data)
             logging.debug(f"Cached: {cache_path}")
         except Exception as e:
             logging.warning(f"Failed to write cache {cache_path}: {e}")
@@ -121,6 +153,28 @@ class EasyedaApi:
         if raw[:2] == b"\x1f\x8b":
             return gzip.decompress(raw).decode("utf-8")
         return raw.decode("utf-8")
+
+    @staticmethod
+    def _component_envelope_state(
+        value: Any,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Classify an EasyEDA component response without guessing absence."""
+
+        if not isinstance(value, dict):
+            return "invalid", None
+        success = value.get("success")
+        if success is False:
+            # A not-found envelope must not contradict itself with component data.
+            result = value.get("result")
+            if result not in (None, {}):
+                return "invalid", None
+            return "not_found", None
+        if success is not True:
+            return "invalid", None
+        result = value.get("result")
+        if not isinstance(result, dict) or not result:
+            return "invalid", None
+        return "found", value
 
     def _create_ssl_context(self) -> ssl.SSLContext:
         """Create SSL context with proper certificate handling for macOS."""
@@ -162,17 +216,35 @@ class EasyedaApi:
         return context
 
     def get_info_from_easyeda_api(self, lcsc_id: str) -> dict[str, Any]:
+        self.last_error = None
         # Try to read from cache first
         cache_path = self._get_cache_path(lcsc_id, "json")
         cached_data = self._read_from_cache(cache_path, binary=False)
         if cached_data is not None:
             try:
-                cached: dict[str, Any] = json.loads(cached_data)
-                return cached
+                cached_value = json.loads(cached_data)
             except json.JSONDecodeError:
                 logging.warning(
                     f"Invalid cached JSON for {lcsc_id}, fetching fresh data"
                 )
+                self.last_error = "cache_corrupt"
+            else:
+                state, cached = self._component_envelope_state(cached_value)
+                if state == "found" and cached is not None:
+                    return cached
+                if state == "not_found":
+                    self.last_error = "not_found"
+                    return {}
+                logging.warning(
+                    "Invalid cached component envelope for %s, fetching fresh data",
+                    lcsc_id,
+                )
+                self.last_error = "cache_corrupt"
+
+        if self.offline:
+            if self.last_error != "cache_corrupt":
+                self._offline_cache_miss(lcsc_id)
+            return {}
 
         try:
             req = urllib.request.Request(  # noqa: S310
@@ -181,30 +253,44 @@ class EasyedaApi:
             with urllib.request.urlopen(  # noqa: S310
                 req, timeout=30, context=self.ssl_context
             ) as response:
-                data = self._decode_response(response.read())
                 try:
-                    api_response: dict[str, Any] = json.loads(data)
-                except json.JSONDecodeError as e:
-                    logging.error(f"Invalid JSON response from API: {e}")
+                    data = self._decode_response(response.read())
+                    response_value = json.loads(data)
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                    logging.error(
+                        "Invalid component response from API: %s",
+                        type(error).__name__,
+                    )
+                    self.last_error = "invalid_response"
                     return {}
 
-            if not api_response or api_response.get("success") is False:
-                logging.debug(f"{api_response}")
+            state, api_response = self._component_envelope_state(response_value)
+            if state == "not_found":
+                self.last_error = "not_found"
+                return {}
+            if state != "found" or api_response is None:
+                logging.error("EasyEDA API returned an invalid component envelope")
+                self.last_error = "invalid_response"
                 return {}
 
             # Write to cache
             self._write_to_cache(cache_path, data, binary=False)
 
             return api_response
-        except (urllib.error.URLError, json.JSONDecodeError) as e:
+        except urllib.error.URLError as e:
             logging.error(f"API request failed: {e}")
+            self.last_error = "network_error"
             return {}
 
     def get_cad_data_of_component(self, lcsc_id: str) -> dict[str, Any]:
         cp_cad_info = self.get_info_from_easyeda_api(lcsc_id=lcsc_id)
         if not cp_cad_info:
             return {}
-        result: dict[str, Any] = cp_cad_info["result"]
+        result_value = cp_cad_info.get("result")
+        if not isinstance(result_value, dict):
+            self.last_error = "invalid_response"
+            return {}
+        result: dict[str, Any] = result_value
         return result
 
     def get_raw_3d_model_obj(self, uuid: str) -> str | None:
@@ -215,6 +301,10 @@ class EasyedaApi:
             if not isinstance(cached_data, str):
                 return None
             return cached_data
+
+        if self.offline:
+            self._offline_cache_miss(f"3d-obj:{uuid}")
+            return None
 
         try:
             req = urllib.request.Request(  # noqa: S310
@@ -246,6 +336,10 @@ class EasyedaApi:
                 return None
             return cached_data
 
+        if self.offline:
+            self._offline_cache_miss(f"3d-step:{uuid}")
+            return None
+
         try:
             req = urllib.request.Request(  # noqa: S310
                 url=ENDPOINT_3D_MODEL_STEP.format(uuid=uuid),
@@ -273,6 +367,9 @@ class EasyedaApi:
 
     def _get_v2_json(self, path: str, base: str = API_BASE_V2) -> dict[str, Any]:
         """GET request against an EasyEDA API base, returns parsed JSON."""
+        if self.offline:
+            self._offline_cache_miss(f"v2:{path}")
+            return {}
         url = base + path
         try:
             req = urllib.request.Request(url=url, headers=self.headers)  # noqa: S310
@@ -294,6 +391,9 @@ class EasyedaApi:
 
         Body format: numbers=json.dumps([...]) as form-encoded, not JSON.
         """
+        if self.offline:
+            self._offline_cache_miss("v2-search-by-lcsc")
+            return {}
         url = API_BASE_LEGACY + ENDPOINT_V2_SEARCH_BY_NUMBERS
         try:
             params = urllib.parse.urlencode(
@@ -325,82 +425,34 @@ class EasyedaApi:
         page_size: int = 10,
         part_type: str | None = None,
     ) -> dict[str, Any]:
-        """POST JLCPCB_SEARCH_API — keyword search across the JLCPCB parts library.
+        """Compatibility facade over the dedicated JLCPCB catalogue client."""
 
-        Works anonymously. Returns dict with 'total' and 'results' list; each result
-        contains: lcsc, name, model, brand, package, category, stock, type, price,
-        price_breaks, min_qty, reel_qty, description, url, datasheet, attributes.
-        part_type: "base" = Basic, "expand" = Extended.
-        """
-        payload: dict[str, Any] = {
-            "keyword": keyword,
-            "currentPage": page,
-            "pageSize": page_size,
-        }
-        if part_type:
-            payload["componentLibraryType"] = part_type
+        # Local import avoids making the legacy EasyEDA module depend on the
+        # provider package during module initialization.
+        from ..providers.lcsc_client import (
+            JlcpcbCatalogueClient,
+            adapt_catalogue_response,
+        )
 
-        try:
-            req = urllib.request.Request(  # noqa: S310
-                url=JLCPCB_SEARCH_API,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    **self.headers,
-                    "Content-Type": "application/json",
-                    "Origin": "https://jlcpcb.com",
-                    "Referer": "https://jlcpcb.com/parts",
-                },
-            )
-            with urllib.request.urlopen(  # noqa: S310
-                req, timeout=15, context=self.ssl_context
-            ) as response:
-                raw: dict[str, Any] = json.loads(self._decode_response(response.read()))
-        except (urllib.error.URLError, json.JSONDecodeError) as e:
-            logging.error(f"JLCPCB search failed: {e}")
+        client = JlcpcbCatalogueClient(
+            offline=self.offline,
+            ssl_context=self.ssl_context,
+            headers=self.headers,
+        )
+        raw = client.search_jlcpcb_components(
+            keyword,
+            page=page,
+            page_size=page_size,
+            part_type=part_type,
+        )
+        self.last_error = client.last_error
+        if not raw:
             return {"total": 0, "results": []}
-
-        page_info: dict[str, Any] = (raw.get("data") or {}).get(
-            "componentPageInfo"
-        ) or {}
-        items: list[dict[str, Any]] = page_info.get("list") or []
-        results = []
-        for item in items:
-            prices = item.get("componentPrices") or []
-            results.append(
-                {
-                    "lcsc": item.get("componentCode", ""),
-                    "name": item.get("componentName", ""),
-                    "model": item.get("componentModelEn", ""),
-                    "brand": item.get("componentBrandEn", ""),
-                    "package": item.get("componentSpecificationEn", ""),
-                    "category": item.get("componentTypeEn", ""),
-                    "stock": item.get("stockCount", 0),
-                    "type": "Basic"
-                    if item.get("componentLibraryType") == "base"
-                    else "Extended",
-                    "price": prices[0].get("productPrice") if prices else None,
-                    "price_breaks": [
-                        {"qty": p.get("startNumber"), "price": p.get("productPrice")}
-                        for p in prices
-                    ],
-                    "min_qty": item.get("minPurchaseNum", 1),
-                    "reel_qty": item.get("encapsulationNumber"),
-                    "description": item.get("describe", ""),
-                    "url": item.get("lcscGoodsUrl", ""),
-                    "datasheet": item.get("dataManualUrl", ""),
-                    # Technical specs list; entries with value "-" are omitted as uninformative.
-                    "attributes": [
-                        {
-                            "name": a.get("attribute_name_en", ""),
-                            "value": a["attribute_value_name"],
-                        }
-                        for a in (item.get("attributes") or [])
-                        if a.get("attribute_value_name")
-                        and a["attribute_value_name"] != "-"
-                    ],
-                }
-            )
-        return {"total": page_info.get("total", 0), "results": results}
+        try:
+            return adapt_catalogue_response(raw)
+        except (KeyError, TypeError, ValueError):
+            self.last_error = "invalid_response"
+            return {"total": 0, "results": []}
 
     def get_svg_from_api(self, lcsc_id: str) -> dict[str, Any]:
         """Return pre-rendered SVGs from the EasyEDA /svgs endpoint as ``{"symbol": str, "footprint": str}``.
@@ -417,6 +469,10 @@ class EasyedaApi:
                 return result
             except json.JSONDecodeError:
                 pass
+
+        if self.offline:
+            self._offline_cache_miss(f"svg:{lcsc_id}")
+            return {"symbol": "", "footprint": ""}
 
         try:
             req = urllib.request.Request(  # noqa: S310
@@ -461,6 +517,10 @@ class EasyedaApi:
                 f"get_product_image_url: unexpected host {parsed.hostname!r}, skipping"
             )
             return None
+        if self.offline:
+            self._offline_cache_miss("lcsc-product-image")
+            return None
+
         try:
             req = urllib.request.Request(  # noqa: S310
                 url=lcsc_url,

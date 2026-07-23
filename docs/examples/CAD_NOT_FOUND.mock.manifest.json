@@ -1,0 +1,97 @@
+{
+  "cad": {
+    "easyeda_component_id": null,
+    "footprint_name": null,
+    "footprint_path": null,
+    "lcsc_part_number": null,
+    "model_3d": null,
+    "model_3d_path": null,
+    "source": "easyeda",
+    "symbol_name": null,
+    "symbol_path": null,
+    "verification_status": "CAD_NOT_FOUND"
+  },
+  "conflicts": [],
+  "distributor_records": [
+    {
+      "currency": "USD",
+      "datasheet_url": "https://manufacturer.example/EXAMPLE-NO-CAD-001.pdf",
+      "description": "Mocked metadata-only fixture",
+      "distributor_part_number": "EXAMPLE-NO-CAD-001-ND",
+      "lifecycle": "Active",
+      "manufacturer": "Example Semiconductor",
+      "minimum_order_quantity": 1,
+      "mpn": "EXAMPLE-NO-CAD-001",
+      "package": "Example Package",
+      "packaging": "Cut Tape",
+      "price_breaks": [],
+      "product_url": "https://distributor.example/EXAMPLE-NO-CAD-001",
+      "provider": "digikey",
+      "raw_response_cache_key": null,
+      "retrieved_at": "2026-07-22T00:00:00Z",
+      "stock": 100
+    }
+  ],
+  "identity": {
+    "lifecycle": "Active",
+    "manufacturer": "Example Semiconductor",
+    "manufacturer_datasheet_url": "https://manufacturer.example/EXAMPLE-NO-CAD-001.pdf",
+    "manufacturer_normalized": "EXAMPLESEMICONDUCTOR",
+    "mpn": "EXAMPLE-NO-CAD-001",
+    "mpn_normalized": "EXAMPLE-NO-CAD-001",
+    "package": "Example Package"
+  },
+  "provenance": {
+    "cad.verification_status": [
+      {
+        "provider": "easyeda",
+        "source_field": "verification_status"
+      }
+    ],
+    "identity.lifecycle": [
+      {
+        "provider": "digikey",
+        "source_field": "lifecycle"
+      }
+    ],
+    "identity.manufacturer": [
+      {
+        "provider": "user",
+        "source_field": "--manufacturer"
+      }
+    ],
+    "identity.manufacturer_datasheet_url": [
+      {
+        "provider": "digikey",
+        "source_field": "datasheet_url"
+      }
+    ],
+    "identity.manufacturer_normalized": [
+      {
+        "provider": "user",
+        "source_field": "normalized(--manufacturer)"
+      }
+    ],
+    "identity.mpn": [
+      {
+        "provider": "user",
+        "source_field": "--mpn"
+      }
+    ],
+    "identity.mpn_normalized": [
+      {
+        "provider": "user",
+        "source_field": "normalized(mpn)"
+      }
+    ],
+    "identity.package": [
+      {
+        "provider": "digikey",
+        "source_field": "package"
+      }
+    ]
+  },
+  "provider_diagnostics": {},
+  "provider_errors": {},
+  "verification_status": "CAD_NOT_FOUND"
+}

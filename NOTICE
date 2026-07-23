@@ -1,0 +1,23 @@
+Modified-work notice
+====================
+
+This source tree is a modified version of uPesy/easyeda2kicad.py:
+
+- Upstream project: https://github.com/uPesy/easyeda2kicad.py
+- Upstream baseline: fff10a38619963d7cb1c57d779655a9ea4572e95
+- Modification period: 2026-07-22 through 2026-07-23
+- Modification scope: exact-MPN distributor metadata integration for LCSC,
+  DigiKey, and Mouser; metadata caching and manifests; additive CLI options;
+  and related compatibility, security, documentation, and test work.
+
+The modifications were produced under the user's direction with assistance
+from OpenAI Codex and are published as the unofficial public beta
+"easyeda2kicad +DigiMou" at:
+
+https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou
+
+This project is not an official DigiKey, Mouser, LCSC, EasyEDA, or upstream
+release. Preserve this notice and the upstream copyright and attribution when
+conveying modified copies.
+
+The entire modified work remains licensed under GNU AGPL-3.0. See LICENSE.

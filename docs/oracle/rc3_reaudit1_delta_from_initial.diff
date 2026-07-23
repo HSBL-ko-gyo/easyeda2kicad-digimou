@@ -1,0 +1,824 @@
+diff --git a/docs/CODEX_RESULT.md b/docs/CODEX_RESULT.md
+index 59223815cc97592505aa037c04a47e2826aae28c..b44eb5ee322ee91d9d82fcb78ed6f994e42f7603 100644
+--- a/docs/CODEX_RESULT.md
++++ b/docs/CODEX_RESULT.md
+@@ -1,4 +1,4 @@
+-# Codex Release Candidate result — new RC audit pending
++# Codex Release Candidate result — re-audit 1 pending
+ 
+ Generated: 2026-07-23 (Asia/Tokyo)  
+ Upstream baseline: `fff10a38619963d7cb1c57d779655a9ea4572e95`  
+@@ -185,9 +185,9 @@ Final source-change matrix:
+ 
+ | Gate | Result |
+ | --- | --- |
+-| Python 3.9.25 pytest | `687 passed, 71 skipped` |
+-| Python 3.12.13 pytest | `687 passed, 71 skipped` |
+-| Python 3.14.3 pytest | `687 passed, 71 skipped` |
++| Python 3.9.25 pytest | `695 passed, 71 skipped` |
++| Python 3.12.13 pytest | `695 passed, 71 skipped` |
++| Python 3.14.3 pytest | `695 passed, 71 skipped` |
+ | Ruff format check | PASS, `59 files already formatted` |
+ | Ruff lint | PASS |
+ | Python 3.9 strict mypy | PASS, 59 source files |
+@@ -350,7 +350,10 @@ dispositioned. RC2's valid final re-audit remains closed as
+ 
+ The complete RC2 answer remains `docs/oracle/release_candidate_audit.md`; its
+ second/final re-audit limit is unchanged. The user opened a distinct RC cycle on
+-2026-07-23. Its focused probes report `22 passed`, the three full Python matrices
+-report `687 passed, 71 skipped`, Ruff and strict mypy pass, and schema-v2
+-normalized cache entries are invalidated by schema v3. The new Oracle initial
+-audit is the remaining gate.
++2026-07-23. Its initial Oracle audit is preserved separately and reported
++`CANARY PASS / RELEASE BLOCKED` for an overflow exception-class gap and a
++manifest-below-symbol-file collision. Both findings and the stale historical
++matrix label were fixed within the authorized scope. The new probes report
++`8 passed`, the related run reports `280 passed`, and all three full Python
++matrices report `695 passed, 71 skipped`; Ruff and strict mypy pass. Oracle
++re-audit 1 is the remaining gate.
+diff --git a/docs/CURRENT_STATE.md b/docs/CURRENT_STATE.md
+index 0d89ef150baed47e11b85083448c808bd6ee5dc3..40e17bb50bd0708a3bc5f43e8ae6549a1e7c12bd 100644
+--- a/docs/CURRENT_STATE.md
++++ b/docs/CURRENT_STATE.md
+@@ -5,10 +5,9 @@ Last updated: 2026-07-23 16:07 JST (UTC+09:00)
+ ## Current phase
+ 
+ RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
+-limit unchanged. The user authorized a distinct RC cycle from the verified RC2
+-source canary. The two permitted findings are fixed, focused probes and the
+-complete local quality matrix pass, and the new Oracle initial audit is the next
+-gate.
++limit unchanged. The distinct new RC initial Oracle audit passed its canary and
++found two edge-case blockers inside the authorized RB/SF scope. Both are fixed,
++the complete quality matrix passes, and Oracle re-audit 1 is the next gate.
+ 
+ ## Completed
+ 
+@@ -42,6 +41,12 @@ gate.
+ - Fixed SF-RC2-1 by rejecting manifests that are equal to or ancestors of CAD
+   output before any persistent output. Normal child manifests and adjacent
+   prefixes remain valid.
++- Adopted initial-audit `RB-RC3-1`: non-finite/overflowing numeric fields now
++  become typed exact Provider failures, and schema-3 normalized cache preserves
++  online/offline/refresh semantics.
++- Adopted initial-audit `SF-RC3-1`: a manifest below the planned symbol output
++  file is rejected before metadata resolution or output. Child manifests remain
++  valid for selected CAD directories.
+ - Added checked-in C2040 offline fixture/goldens and verified legacy exit code,
+   stdout/stderr, no-network behavior, and byte-for-byte symbol/footprint output.
+ - Completed real public LCSC/EasyEDA E2E on Windows:
+@@ -59,9 +64,9 @@ gate.
+ 
+ | Gate | Result |
+ | --- | --- |
+-| Current Python 3.9.25 pytest | `687 passed, 71 skipped` |
+-| Current Python 3.12.13 pytest | `687 passed, 71 skipped` |
+-| Current Python 3.14.3 pytest | `687 passed, 71 skipped` |
++| Current Python 3.9.25 pytest | `695 passed, 71 skipped` |
++| Current Python 3.12.13 pytest | `695 passed, 71 skipped` |
++| Current Python 3.14.3 pytest | `695 passed, 71 skipped` |
+ | Unmodified baseline Python 3.9.25 pytest | `177 passed, 69 skipped` |
+ | Unmodified baseline Python 3.14.3 pytest | `177 passed, 69 skipped` |
+ | `ruff format --check . --no-cache` | PASS, `59 files already formatted` |
+@@ -79,21 +84,21 @@ and passes.
+ 
+ None.
+ 
+-The focused acceptance probe reports `22 passed, 192 deselected`. It includes
+-all three Providers, raw replay, exact/unknown/mismatch classification, cache
+-online/offline/refresh behavior, path normalization, Windows semantics, allowed
+-child/adjacent paths, and no partial output. The related-file `252 passed` run
+-also covers explicit schema-v2 invalidation.
++The initial focused acceptance probe reported `22 passed, 192 deselected`.
++After Oracle's initial audit, the new blocker probes report `8 passed` and the
++related Provider/cache/CLI/E2E run reports `280 passed`. Coverage includes all
++three Provider live-shaped/raw replay overflow paths, schema-3
++online/offline/refresh handling, JSON/CSV child-of-symbol-file collisions, and
++no partial output.
+ 
+ ## Remaining
+ 
+-- Generate the new candidate diff and source-canary SHA-256 inventory without
+-  changing RC2 artifacts.
+-- Rescan the current documents and Oracle input for secrets.
+-- Run the new cycle's initial Oracle audit in a new browser/manual-login
+-  conversation with individual short `-f` attachments and no bundle cache.
+-- Disposition the answer. The new cycle allows at most two re-audits only if
+-  needed.
++- Generate re-audit 1 candidate/delta SHA-256 and source canary without changing
++  RC2 or initial new-RC artifacts.
++- Rescan the revised documents and Oracle input for secrets.
++- Run re-audit 1 in a new browser/manual-login conversation with individual
++  attachments and no bundle/cache. One further re-audit remains available only
++  if needed.
+ 
+ ## Explicit limitations and risks
+ 
+@@ -112,9 +117,10 @@ also covers explicit schema-v2 invalidation.
+ 
+ ## Oracle status and next action
+ 
+-Oracle CLI 0.16.0 is available. Architecture Review, consultation 001, and the
+-closed RC2 evidence remain recorded under `docs/oracle/`. RC2's answer and
+-limits are not being rewritten or counted toward the new cycle.
++Oracle CLI 0.16.0 is available. Architecture Review, consultation 001, the
++closed RC2 evidence, and the new cycle's initial answer remain recorded under
++`docs/oracle/`. The initial answer is `CANARY PASS / RELEASE BLOCKED`; its two
++blockers and one SHOULD FIX are implemented and await re-audit 1.
+ 
+ The new audit must use the browser engine, `--browser-manual-login`, a verified
+ non-Pro model, a new conversation, individual short `-f` attachments, and a
+diff --git a/docs/DECISIONS.md b/docs/DECISIONS.md
+index 9d12bd9c6206afb821295716dc279864e442af67..833e09b9b7de63f77d203863149a7c482d753f92 100644
+--- a/docs/DECISIONS.md
++++ b/docs/DECISIONS.md
+@@ -473,3 +473,28 @@ re-audits if needed.
+ requiring the previous audit trail to remain closed and immutable.  
+ **Compatibility:** No commit, stash, push, fork, unrelated refactor, dependency
+ change, CLI change, API change, or output-format change is authorized.
++
++## D029 — Adopt the new RC initial-audit findings
++
++**Status:** Implemented and locally verified; Oracle re-audit 1 pending  
++**Decision:** Preserve the initial new-RC answer as
++`docs/oracle/release_candidate_audit_rc3.md`. Adopt `RB-RC3-1` by rejecting
++non-finite/overflowing numeric fields at the shared parser boundary, converting
++any residual `OverflowError` to the existing typed Provider/cache semantics,
++and testing all three Providers plus online/offline/refresh. Adopt `SF-RC3-1`
++by treating the symbol output as a file and rejecting a manifest on either
++side of its containment relation, while retaining child manifests for CAD
++directories. Adopt `DOC-RC3-1` by relabelling the `666 passed` matrix as
++historical RC2 evidence. Retain `AR-RC3-1` through `AR-RC3-3` unchanged.  
++**Reason:** Direct probes reproduced the exception-class gap and the
++child-of-symbol-file path collision. Both are edge cases of the two changes
++authorized for this new cycle, not a scope expansion. The document label was
++factually stale.  
++**Alternatives:** Catch overflow independently in each Provider; rejected
++because it would duplicate semantics. Reject every manifest below any selected
++CAD path; rejected because a child file is valid inside footprint, 3D, and SVG
++directories. Change cache schema again; rejected because schema 3 already
++preserves completeness and only exception mapping was missing.  
++**Compatibility:** No public API, CLI option, output format, dependency, cache
++schema, or Provider/CAD responsibility changed. The full matrix is now
++`695 passed, 71 skipped` on Python 3.9, 3.12, and 3.14.
+diff --git a/docs/PROVIDER_CONTRACT.md b/docs/PROVIDER_CONTRACT.md
+index 3af5ec5c76a267801da430804945c04cae942370..c8e722a15cc2a6251cf7ec077ab0cc7f9cac34c5 100644
+--- a/docs/PROVIDER_CONTRACT.md
++++ b/docs/PROVIDER_CONTRACT.md
+@@ -1,7 +1,7 @@
+ # Provider contract
+ 
+-Status: new Release Candidate after the closed RC2 cycle; RB-RC2-1 and
+-SF-RC2-1 are implemented and locally verified; new Oracle audit pending
++Status: new Release Candidate after the closed RC2 cycle; initial Oracle audit
++passed its canary, blocker fixes are locally verified, re-audit 1 pending
+ 
+ ## Interface
+ 
+@@ -236,6 +236,12 @@ missing half or any mismatch is `CACHE_CORRUPT`. `--refresh-metadata` bypasses
+ only metadata reads. Corrupt cache is a fatal diagnostic offline and is
+ ignored/refetched online.
+ 
++Non-finite or overflowing numeric values are invalid Provider data. Exact live
++and raw-replay paths return typed `INVALID_RESPONSE`; they never publish a
++cache pair. If such a value is present in a schema-3 normalized entry, online
++mode treats it as a miss and refetches, offline mode reports `CACHE_CORRUPT`,
++and refresh bypasses it.
++
+ ## Rate limiting and retry
+ 
+ Providers make at most three attempts for HTTP 429, 500, 502, 503, or 504 and
+diff --git a/docs/architecture.md b/docs/architecture.md
+index 1b51aed6d2f4f565a9a296613cd60f05336066d8..09a2169b33e258554d8b8ded00f600b22833fb0a 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -1,7 +1,7 @@
+ # Multi-distributor metadata architecture
+ 
+-Status: new Release Candidate after the closed RC2 audit; RB-RC2-1 and
+-SF-RC2-1 locally fixed; new Oracle audit pending  
++Status: new Release Candidate after the closed RC2 audit; initial Oracle audit
++passed its canary, blocker fixes are locally verified, re-audit 1 pending  
+ Baseline: upstream commit `fff10a38619963d7cb1c57d779655a9ea4572e95`  
+ License: GNU AGPL-3.0 remains unchanged
+ 
+@@ -347,17 +347,20 @@ normalized cache. Potential spreadsheet-formula cells in CSV are prefixed with
+ an apostrophe, while JSON retains the exact non-secret scalar value. Output
+ preflight rejects equal or ancestor/descendant JSON/CSV paths. A manifest path
+ that equals or is an ancestor of a selected CAD output path is rejected before
+-any persistent output; a normal manifest file below a CAD output directory is
+-allowed.
++any persistent output. Because the symbol output is a regular file, a manifest
++below that file path is also rejected. A normal manifest file below a
++footprint, 3D, or SVG output directory is allowed.
+ 
+ The closed RC2 audit identified RB-RC2-1 and SF-RC2-1. The new candidate
+ classifies each raw MPN before full parsing through one common Provider helper,
+ rejects indeterminate or exact-but-unparseable candidates, and skips only a
+-provably different MPN. Output preflight now resolves planned paths and rejects
+-the manifest-as-ancestor direction before creating the default output tree or
++provably different MPN. Non-finite or overflowing sales fields follow that same
++typed failure boundary, including cache replay. Output preflight now resolves
++planned paths and rejects the manifest-as-ancestor direction plus the impossible
++manifest-below-symbol-file direction before creating the default output tree or
+ starting metadata/CAD work. Focused probes cover all three Providers, cache
+-lifecycles, Windows path semantics, relative `..`, allowed descendants, adjacent
+-prefixes, and absence of partial output.
++lifecycles, Windows path semantics, relative `..`, allowed directory
++descendants, adjacent prefixes, and absence of partial output.
+ 
+ `--project-relative` resolves both the current working directory and the model
+ output directory before conversion. The model directory must be contained by
+diff --git a/docs/oracle/legacy_compatibility.md b/docs/oracle/legacy_compatibility.md
+index 5c2bf83e99fbb2fa25d6465d4481326c8a24631c..8418d72e22285732b42ec67153341fc3a67680c3 100644
+--- a/docs/oracle/legacy_compatibility.md
++++ b/docs/oracle/legacy_compatibility.md
+@@ -50,9 +50,13 @@ full-suite run. It is collected and passes in every current Python matrix run.
+ | --- | --- |
+ | Unmodified baseline, Python 3.9.25 | `177 passed, 69 skipped` |
+ | Unmodified baseline, Python 3.14.3 | `177 passed, 69 skipped` |
+-| Current tree, Python 3.9.25 | `666 passed, 71 skipped` |
+-| Current tree, Python 3.12.13 | `666 passed, 71 skipped` |
+-| Current tree, Python 3.14.3 | `666 passed, 71 skipped` |
++| RC2 pre-RC3 tree, Python 3.9.25 | `666 passed, 71 skipped` |
++| RC2 pre-RC3 tree, Python 3.12.13 | `666 passed, 71 skipped` |
++| RC2 pre-RC3 tree, Python 3.14.3 | `666 passed, 71 skipped` |
++
++The current RC3 matrix is recorded separately in
++`docs/oracle/rc3_quality.md`; the rows above remain historical compatibility
++evidence and are not a claim about the current tree.
+ 
+ The 69 inherited skips occur because this checkout does not contain upstream's
+ optional `tests/reference_outputs/` tree. That missing directory is distinct
+diff --git a/docs/oracle/rc3_reaudit1_quality.md b/docs/oracle/rc3_reaudit1_quality.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8bee943bacb82801499d1721ae525ee15d078d00
+--- /dev/null
++++ b/docs/oracle/rc3_reaudit1_quality.md
+@@ -0,0 +1,80 @@
++# New RC re-audit 1 quality evidence
++
++Generated: 2026-07-23 (Asia/Tokyo)
++
++## Initial-audit disposition
++
++Oracle session `easyeda-new-rc-initial-audit` completed with
++**CANARY PASS / RELEASE BLOCKED**. Its answer is preserved in
++`docs/oracle/release_candidate_audit_rc3.md` with SHA-256
++`2a2c63dcbe6c21597bcaaaee42242dd81a2887a1eaef1187ed6efca6135edebb`.
++All 20 initial source-canary hashes matched immediately after the answer.
++
++Codex independently confirmed and adopted:
++
++- `RB-RC3-1`: overflowing/non-finite numeric data could escape the exact
++  Provider and normalized-cache boundaries as untyped `OverflowError`;
++- `SF-RC3-1`: a manifest below the selected symbol file was not rejected before
++  CAD export; and
++- `DOC-RC3-1`: historical RC2 `666 passed` rows were labelled as the current
++  tree.
++
++The three previously accepted risks remain unchanged.
++
++## Minimal fixes
++
++- Shared optional numeric parsing now rejects non-finite and overflowing values
++  as `ValueError`; the common exact-candidate boundary converts
++  `OverflowError`, `TypeError`, and `ValueError` to typed
++  `INVALID_RESPONSE/exact-normalize`.
++- Normalized model/cache reconstruction maps overflow to the existing online
++  miss and offline corruption semantics. Refresh still bypasses the entry.
++- Manifest collision preflight records whether each selected output is a file
++  or directory. Only the symbol file rejects containment in both directions;
++  footprint, 3D, and SVG directories still allow normal child manifests.
++- The historical compatibility rows are now labelled `RC2 pre-RC3 tree` and
++  point to the current quality record.
++
++No API, CLI spelling, output format, dependency, cache schema, or Provider
++responsibility changed.
++
++## Regression probes
++
++| Probe | Result |
++| --- | --- |
++| New Oracle-blocker probes | `8 passed` |
++| Related Provider/cache/CLI/E2E files | `280 passed` |
++
++The new probes cover:
++
++- DigiKey, Mouser, and LCSC overflowing exact candidates through live-shaped
++  transport and direct raw-response replay;
++- common optional numeric parser rejection of infinity, NaN, oversized
++  integers, and oversized numeric text;
++- schema-3 normalized cache online refetch, offline corruption, refresh bypass,
++  and validator-overflow mapping; and
++- JSON and CSV manifests nested below a planned symbol file, with metadata
++  resolution never entered and no parent, symbol, manifest, or cache output.
++
++## Full quality matrix
++
++| Gate | Result |
++| --- | --- |
++| Python 3.9.25 full pytest | `695 passed, 71 skipped` |
++| Python 3.12.13 full pytest | `695 passed, 71 skipped` |
++| Python 3.14.3 full pytest | `695 passed, 71 skipped` |
++| Ruff format check | PASS, `59 files already formatted` |
++| Ruff lint | PASS |
++| Python 3.9 strict mypy | PASS, 59 source files |
++| `git diff --check` | PASS; only Git LF/CRLF working-tree notices |
++
++The pass count increased by eight from the initial RC3 audit and the skip count
++did not change. The 69 inherited reference-output skips and two credentialed
++live-Provider skips remain the previously accepted risks. Native Linux
++process-level E2E remains unrun.
++
++The first parallel full-suite harness also printed the same three successful
++`695 passed, 71 skipped` summaries, but its PowerShell wrapper treated an empty
++post-exit process property as failure. The standard sequential commands were
++therefore rerun and each returned exit code 0; only those clean runs are the
++authoritative matrix above.
+diff --git a/easyeda2kicad/__main__.py b/easyeda2kicad/__main__.py
+index 6304d4ba1758160ba222d1e0e7bc54ce6767de68..4ec5dfaac82ba97d8dc47e7e8f46dbb587af0c17 100644
+--- a/easyeda2kicad/__main__.py
++++ b/easyeda2kicad/__main__.py
+@@ -430,26 +430,34 @@ def _manifest_collides_with_selected_cad_output(arguments: dict[str, Any]) -> bo
+     if not output:
+         return False
+ 
+-    selected_outputs: list[tuple[str, Path]] = []
++    selected_outputs: list[tuple[str, Path, bool]] = []
+     if arguments["symbol"]:
+-        selected_outputs.append(("symbol", Path(f"{output}.kicad_sym")))
++        selected_outputs.append(("symbol", Path(f"{output}.kicad_sym"), True))
+     if arguments["footprint"]:
+-        selected_outputs.append(("footprint directory", Path(f"{output}.pretty")))
++        selected_outputs.append(
++            ("footprint directory", Path(f"{output}.pretty"), False)
++        )
+     if arguments["3d"]:
+-        selected_outputs.append(("3D model directory", Path(f"{output}.3dshapes")))
++        selected_outputs.append(
++            ("3D model directory", Path(f"{output}.3dshapes"), False)
++        )
+     if arguments["svg"]:
+-        selected_outputs.append(("SVG directory", Path(f"{output}.svgs")))
++        selected_outputs.append(("SVG directory", Path(f"{output}.svgs"), False))
+ 
+     resolved_outputs = [
+-        (description, path.resolve()) for description, path in selected_outputs
++        (description, path.resolve(), is_file)
++        for description, path, is_file in selected_outputs
+     ]
+     for option_name in ("manifest_json", "manifest_csv"):
+         manifest = arguments.get(option_name)
+         if not manifest:
+             continue
+         resolved_manifest = Path(manifest).resolve()
+-        for description, resolved_output in resolved_outputs:
+-            if _same_or_descendant(resolved_output, resolved_manifest):
++        for description, resolved_output, output_is_file in resolved_outputs:
++            if _same_or_descendant(resolved_output, resolved_manifest) or (
++                output_is_file
++                and _same_or_descendant(resolved_manifest, resolved_output)
++            ):
+                 logging.error(
+                     "--%s path conflicts with the selected %s output tree",
+                     option_name.replace("_", "-"),
+diff --git a/easyeda2kicad/metadata/cache.py b/easyeda2kicad/metadata/cache.py
+index f0c7b2284235343bdbab56c5239e4c7f5e7ee5e6..1dc2987e4eaeba1ecae698920a4ad5f5279a09b3 100644
+--- a/easyeda2kicad/metadata/cache.py
++++ b/easyeda2kicad/metadata/cache.py
+@@ -270,6 +270,7 @@ class MetadataCache:
+         except (
+             OSError,
+             json.JSONDecodeError,
++            OverflowError,
+             ValueError,
+             TypeError,
+         ) as exc:
+@@ -286,7 +287,7 @@ class MetadataCache:
+         if validator is not None:
+             try:
+                 data = validator(data)
+-            except (TypeError, ValueError, KeyError):
++            except (OverflowError, TypeError, ValueError, KeyError):
+                 if offline:
+                     raise CacheCorruptError(
+                         normalized_provider,
+diff --git a/easyeda2kicad/metadata/models.py b/easyeda2kicad/metadata/models.py
+index 5b547ba80353f814a557cf237fdfa5314679129d..1b3c9bf38eea45dc1792789fbd4b64774cadfc1d 100644
+--- a/easyeda2kicad/metadata/models.py
++++ b/easyeda2kicad/metadata/models.py
+@@ -570,7 +570,10 @@ def _optional_integer(value: Any, name: str) -> Optional[int]:
+ def _number(value: Any, name: str) -> float:
+     if isinstance(value, bool) or not isinstance(value, (int, float)):
+         raise ValueError("{0} must be numeric".format(name))
+-    number = float(value)
++    try:
++        number = float(value)
++    except OverflowError:
++        raise ValueError("{0} is out of range".format(name)) from None
+     if not math.isfinite(number):
+         raise ValueError("{0} must be finite".format(name))
+     return number
+diff --git a/easyeda2kicad/metadata/service.py b/easyeda2kicad/metadata/service.py
+index b49d418191bcc2e16ff331d49fb5d4a0764d51dc..1890bfe826a7f74decd728370efd8c2c68c383cd 100644
+--- a/easyeda2kicad/metadata/service.py
++++ b/easyeda2kicad/metadata/service.py
+@@ -548,7 +548,7 @@ def _cached_lookup(
+                 cached_record.datasheet_url
+             )
+             return cached_record
+-        except (TypeError, ValueError):
++        except (OverflowError, TypeError, ValueError):
+             if offline:
+                 raise MetadataCacheCorruptError(
+                     provider.name, key, "normalized record is invalid"
+@@ -557,7 +557,7 @@ def _cached_lookup(
+     record = fetch()
+     try:
+         validator(record)
+-    except (TypeError, ValueError) as error:
++    except (OverflowError, TypeError, ValueError) as error:
+         raise MetadataServiceError(
+             "INVALID_RESPONSE",
+             "provider returned a record that failed exact validation",
+diff --git a/easyeda2kicad/providers/base.py b/easyeda2kicad/providers/base.py
+index 299f19c5b70ad0b33666eaf34c3e694bdb07190e..2cf96464d55adeb0f6d7a35f43589489adce89b5 100644
+--- a/easyeda2kicad/providers/base.py
++++ b/easyeda2kicad/providers/base.py
+@@ -3,6 +3,7 @@ from __future__ import annotations
+ # Global imports
+ import hashlib
+ import json
++import math
+ import os
+ import re
+ import socket
+@@ -312,7 +313,7 @@ class BaseMetadataProvider:
+                 if manufacturer is not None
+                 else None
+             )
+-        except (TypeError, ValueError):
++        except (OverflowError, TypeError, ValueError):
+             raise InvalidResponseError(self.name, operation="exact-match") from None
+         exact: List[DistributorRecord] = []
+         for candidate in candidates:
+@@ -373,7 +374,7 @@ class BaseMetadataProvider:
+                 normalized_candidate = normalize_mpn(
+                     identity_text(get_raw_mpn(raw_candidate), "candidate_mpn")
+                 )
+-            except (TypeError, ValueError):
++            except (OverflowError, TypeError, ValueError):
+                 raise InvalidResponseError(
+                     self.name, operation="exact-normalize"
+                 ) from None
+@@ -384,7 +385,7 @@ class BaseMetadataProvider:
+ 
+             try:
+                 record = parse_record(raw_candidate)
+-            except (TypeError, ValueError):
++            except (OverflowError, TypeError, ValueError):
+                 raise InvalidResponseError(
+                     self.name, operation="exact-normalize"
+                 ) from None
+@@ -394,7 +395,7 @@ class BaseMetadataProvider:
+                 normalized_record = normalize_mpn(
+                     identity_text(record.mpn, "record_mpn")
+                 )
+-            except (TypeError, ValueError):
++            except (OverflowError, TypeError, ValueError):
+                 raise InvalidResponseError(
+                     self.name, operation="exact-normalize"
+                 ) from None
+@@ -536,14 +537,19 @@ def optional_int(value: Any) -> Optional[int]:
+     if isinstance(value, int):
+         return value
+     if isinstance(value, float):
+-        return int(value)
++        if not math.isfinite(value):
++            raise ValueError("integer value must be finite")
++        try:
++            return int(value)
++        except OverflowError:
++            raise ValueError("integer value is out of range") from None
+     text = str(value).strip().replace(",", "")
+     match = re.search(r"-?\d+", text)
+     if not match:
+         return None
+     try:
+         return int(match.group(0))
+-    except ValueError:
++    except (OverflowError, ValueError):
+         return None
+ 
+ 
+@@ -572,15 +578,24 @@ def optional_float(value: Any) -> Optional[float]:
+     if value is None or isinstance(value, bool):
+         return None
+     if isinstance(value, (int, float)):
+-        return float(value)
++        try:
++            number = float(value)
++        except OverflowError:
++            raise ValueError("floating-point value is out of range") from None
++        if not math.isfinite(number):
++            raise ValueError("floating-point value must be finite")
++        return number
+     text = str(value).strip().replace(",", "")
+     match = re.search(r"-?(?:\d+(?:\.\d*)?|\.\d+)", text)
+     if not match:
+         return None
+     try:
+-        return float(match.group(0))
+-    except ValueError:
++        number = float(match.group(0))
++    except (OverflowError, ValueError):
+         return None
++    if not math.isfinite(number):
++        raise ValueError("floating-point value must be finite")
++    return number
+ 
+ 
+ __all__ = [
+diff --git a/tests/test_cli_metadata.py b/tests/test_cli_metadata.py
+index dd9063a70930a4ce2accdd3746b308e174df870d..b7636477a2731d0a0010fa401ff532041ee7f5fc 100644
+--- a/tests/test_cli_metadata.py
++++ b/tests/test_cli_metadata.py
+@@ -413,6 +413,44 @@ def test_manifest_ancestor_collision_stops_before_any_output(
+     assert not Path(f"{output}.pretty").exists()
+ 
+ 
++@pytest.mark.parametrize("manifest_option", ["--manifest-json", "--manifest-csv"])
++def test_manifest_cannot_be_nested_below_selected_symbol_file_before_output(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++    manifest_option: str,
++) -> None:
++    planned_root = tmp_path / "planned"
++    output = planned_root / "library"
++    symbol_path = Path(f"{output}.kicad_sym")
++    manifest = symbol_path / (
++        "manifest.json" if manifest_option == "--manifest-json" else "manifest.csv"
++    )
++
++    def unexpected_resolution(**_kwargs: Any) -> None:
++        raise AssertionError(
++            "metadata resolution must not start after preflight failure"
++        )
++
++    monkeypatch.setattr(cli, "resolve_metadata", unexpected_resolution)
++
++    exit_code = main(
++        [
++            "--mpn",
++            "PART",
++            "--symbol",
++            "--output",
++            str(output),
++            manifest_option,
++            str(manifest),
++        ]
++    )
++
++    assert exit_code == 1
++    assert not planned_root.exists()
++    assert not symbol_path.exists()
++    assert not manifest.exists()
++
++
+ @pytest.mark.parametrize(
+     ("json_suffix", "csv_suffix"),
+     [
+diff --git a/tests/test_metadata_cache.py b/tests/test_metadata_cache.py
+index 333a181a70b664b3c50f77ec6f3c8c491832d88c..7bdb5a3745ceef9b78c9284bf1e1f6254b4c9cc9 100644
+--- a/tests/test_metadata_cache.py
++++ b/tests/test_metadata_cache.py
+@@ -404,6 +404,26 @@ def test_normalized_cache_supports_domain_revalidation(tmp_path: Path) -> None:
+         cache.read_normalized("mouser", key, offline=True, validator=require_provider)
+ 
+ 
++def test_normalized_cache_maps_overflowing_validator_to_cache_semantics(
++    tmp_path: Path,
++) -> None:
++    cache = _cache(tmp_path)
++    request = {"operation": "search"}
++    key = cache.save(
++        "mouser",
++        request,
++        raw={"evidence": True},
++        normalized={"provider": "mouser"},
++    )
++
++    def overflow(_value: object) -> object:
++        raise OverflowError("simulated numeric overflow")
++
++    assert cache.read_normalized("mouser", key, validator=overflow) is None
++    with pytest.raises(CacheCorruptError, match="revalidation"):
++        cache.read_normalized("mouser", key, offline=True, validator=overflow)
++
++
+ @pytest.mark.parametrize("provider", ["../mouser", "mouser/key", ""])
+ def test_cache_rejects_provider_path_traversal(tmp_path: Path, provider: str) -> None:
+     with pytest.raises(ValueError, match="provider"):
+diff --git a/tests/test_metadata_service.py b/tests/test_metadata_service.py
+index 45f62c8e0d619fadbb6640b99dc0b663c941d6e7..116e0fd437e62729d72c41f367f3544a8d94fd06 100644
+--- a/tests/test_metadata_service.py
++++ b/tests/test_metadata_service.py
+@@ -9,6 +9,7 @@ import pytest
+ 
+ from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
+ from easyeda2kicad.metadata.cache import (
++    CacheCorruptError as MetadataCacheCorruptError,
+     MetadataCache,
+     OfflineCacheMissError as MetadataOfflineCacheMissError,
+ )
+@@ -797,6 +798,76 @@ def test_incomplete_exact_failure_is_never_cached_or_lost_offline(
+     assert not cache.path("mouser", key, "normalized").exists()
+ 
+ 
++def test_schema3_overflowing_normalized_exact_cache_is_fail_closed_in_all_modes(
++    tmp_path: Path,
++) -> None:
++    def cache_with_overflowing_record(name: str) -> MetadataCache:
++        cache = MetadataCache(
++            tmp_path / name,
++            freshness_seconds=1_000_000_000,
++        )
++        request = cache.canonical_request(
++            "mouser",
++            "search_exact_mpn",
++            mpn="OPA333AIDBVR",
++            manufacturer="Texas Instruments",
++            options={"provider_context": {}},
++        )
++        normalized = record("mouser").to_dict()
++        normalized["price_breaks"] = [
++            {"quantity": 1, "unit_price": 10**400, "currency": "USD"}
++        ]
++        cache.save(
++            "mouser",
++            request,
++            raw={"SearchResults": {"Parts": []}},
++            normalized=normalized,
++        )
++        return cache
++
++    online_cache = cache_with_overflowing_record("online")
++    online_provider = FakeMetadataProvider("mouser", record=record("mouser"))
++    online_record = _cached_exact_lookup(
++        cast(MetadataProvider, online_provider),
++        online_cache,
++        "Texas Instruments",
++        "OPA333AIDBVR",
++        offline=False,
++        refresh=False,
++    )
++    assert online_record.mpn == "OPA333AIDBVR"
++    assert online_provider.exact_calls == 1
++
++    offline_cache = cache_with_overflowing_record("offline")
++    offline_provider = FakeMetadataProvider(
++        "mouser",
++        error=AssertionError("offline provider must not be called"),
++    )
++    with pytest.raises(MetadataCacheCorruptError):
++        _cached_exact_lookup(
++            cast(MetadataProvider, offline_provider),
++            offline_cache,
++            "Texas Instruments",
++            "OPA333AIDBVR",
++            offline=True,
++            refresh=False,
++        )
++    assert offline_provider.exact_calls == 0
++
++    refresh_cache = cache_with_overflowing_record("refresh")
++    refresh_provider = FakeMetadataProvider("mouser", record=record("mouser"))
++    refresh_record = _cached_exact_lookup(
++        cast(MetadataProvider, refresh_provider),
++        refresh_cache,
++        "Texas Instruments",
++        "OPA333AIDBVR",
++        offline=False,
++        refresh=True,
++    )
++    assert refresh_record.mpn == "OPA333AIDBVR"
++    assert refresh_provider.exact_calls == 1
++
++
+ def test_external_auth_failure_is_recoverable_partial(tmp_path: Path) -> None:
+     lcsc = FakeMetadataProvider("lcsc", record("lcsc"))
+     digikey = FakeMetadataProvider(
+diff --git a/tests/test_provider_base.py b/tests/test_provider_base.py
+index a6f71ee5f656b046a00461018162ed8c80d5fec9..0f02731d85300905cf96df24101ffea35aaa0453 100644
+--- a/tests/test_provider_base.py
++++ b/tests/test_provider_base.py
+@@ -17,6 +17,8 @@ from easyeda2kicad.providers.base import (
+     ProviderError,
+     RateLimitedError,
+     canonical_request,
++    optional_float,
++    optional_int,
+ )
+ 
+ 
+@@ -57,6 +59,17 @@ def test_exact_normalization_preserves_separator_positions() -> None:
+     assert normalize_mpn("LM321MF/NOPB") == "LM321MF/NOPB"
+ 
+ 
++def test_optional_numeric_parsers_reject_nonfinite_and_overflowing_values() -> None:
++    with pytest.raises(ValueError, match="finite"):
++        optional_int(float("inf"))
++    with pytest.raises(ValueError, match="finite"):
++        optional_float(float("nan"))
++    with pytest.raises(ValueError, match="range"):
++        optional_float(10**400)
++    with pytest.raises(ValueError, match="finite"):
++        optional_float("9" * 400)
++
++
+ def test_exact_match_rejects_false_separator_collision() -> None:
+     provider = _Provider(sleeper=lambda _delay: None)
+     with pytest.raises(NotFoundError):
+diff --git a/tests/test_provider_digikey.py b/tests/test_provider_digikey.py
+index c4a92ad101f215af657493ebd610196c5ae32b87..2d47c1c0e6b2cbdaa82856d931947f9b6e1d5ae9 100644
+--- a/tests/test_provider_digikey.py
++++ b/tests/test_provider_digikey.py
+@@ -400,6 +400,23 @@ def test_raw_exact_candidate_parse_failure_blocks_other_exact_candidate() -> Non
+     assert error.value.operation == "exact-normalize"
+ 
+ 
++def test_overflowing_exact_candidate_is_typed_for_live_and_raw_replay() -> None:
++    fixture = _fixture()
++    for variation in fixture["Products"][0]["ProductVariations"]:
++        variation["StandardPricing"] = [
++            {"BreakQuantity": 1, "UnitPrice": 10**400, "Currency": "USD"}
++        ]
++    provider = _provider_with_response(fixture)
++
++    with pytest.raises(InvalidResponseError) as live_error:
++        provider.search_exact_mpn(None, "OPA333AIDBVR")
++    with pytest.raises(InvalidResponseError) as replay_error:
++        provider._normalize_exact_response(copy.deepcopy(fixture), "OPA333AIDBVR")
++
++    assert live_error.value.operation == "exact-normalize"
++    assert replay_error.value.operation == "exact-normalize"
++
++
+ def test_proven_mpn_mismatch_can_skip_other_field_parse_failure() -> None:
+     fixture = _fixture()
+     exact = copy.deepcopy(fixture["Products"][0])
+diff --git a/tests/test_provider_lcsc_easyeda.py b/tests/test_provider_lcsc_easyeda.py
+index fc2d87ad286b1469048979f95cbc1e35797e3416..d0c44602f3345ca26c40749085c996415224dcd0 100644
+--- a/tests/test_provider_lcsc_easyeda.py
++++ b/tests/test_provider_lcsc_easyeda.py
+@@ -183,6 +183,24 @@ def test_lcsc_raw_exact_parse_failure_blocks_other_exact_candidate() -> None:
+     assert error.value.operation == "exact-normalize"
+ 
+ 
++def test_lcsc_overflowing_exact_candidate_is_typed_for_live_and_raw_replay() -> None:
++    item = _search_item("C30878", "OPA333AIDBVR")
++    item["price_breaks"][0]["price"] = 10**400
++    response = {"total": 1, "results": [item]}
++    provider = LcscProvider(
++        api=cast(Any, _FakeApi(pages={1: response})),
++        sleeper=lambda _delay: None,
++    )
++
++    with pytest.raises(InvalidResponseError) as live_error:
++        provider.search_exact_mpn(None, "OPA333AIDBVR")
++    with pytest.raises(InvalidResponseError) as replay_error:
++        provider._normalize_exact_response(response, "OPA333AIDBVR")
++
++    assert live_error.value.operation == "exact-normalize"
++    assert replay_error.value.operation == "exact-normalize"
++
++
+ def test_lcsc_proven_mpn_mismatch_can_skip_other_field_parse_failure() -> None:
+     response = {
+         "total": 2,
+diff --git a/tests/test_provider_mouser.py b/tests/test_provider_mouser.py
+index 3be11cab30ec8e654d8703a7d5c2af4c24c54218..5d85f5293d8ea639c9835d9abe4ac516bb3c23f5 100644
+--- a/tests/test_provider_mouser.py
++++ b/tests/test_provider_mouser.py
+@@ -266,6 +266,20 @@ def test_raw_exact_candidate_parse_failure_blocks_other_exact_candidate() -> Non
+     assert error.value.operation == "exact-normalize"
+ 
+ 
++def test_overflowing_exact_candidate_is_typed_for_live_and_raw_replay() -> None:
++    fixture = _fixture()
++    fixture["SearchResults"]["Parts"][0]["PriceBreaks"][0]["Price"] = 10**400
++    provider = _provider_with_response(fixture)
++
++    with pytest.raises(InvalidResponseError) as live_error:
++        provider.search_exact_mpn(None, "LM321MF/NOPB")
++    with pytest.raises(InvalidResponseError) as replay_error:
++        provider._normalize_exact_response(copy.deepcopy(fixture), "LM321MF/NOPB")
++
++    assert live_error.value.operation == "exact-normalize"
++    assert replay_error.value.operation == "exact-normalize"
++
++
+ def test_proven_mpn_mismatch_can_skip_other_field_parse_failure() -> None:
+     fixture = _fixture()
+     exact = copy.deepcopy(fixture["SearchResults"]["Parts"][0])

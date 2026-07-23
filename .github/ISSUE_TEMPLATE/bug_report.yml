@@ -1,0 +1,126 @@
+name: Bug report
+description: Report a reproducible easyeda2kicad +DigiMou beta defect
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing the public beta. Remove all API keys, client
+        secrets, access tokens, Authorization headers, credential-bearing URLs,
+        and unsanitized cache content before submitting. Do not report security
+        vulnerabilities here; use the private route in SECURITY.md.
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11 24H2, Ubuntu 24.04, macOS 15
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: 3.12.13
+    validations:
+      required: true
+  - type: input
+    id: kicad
+    attributes:
+      label: KiCad version
+      placeholder: 9.0.3
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: CLI command
+      description: Remove credential values and credential-bearing URLs.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider
+      placeholder: lcsc, digikey, mouser
+    validations:
+      required: true
+  - type: input
+    id: mpn
+    attributes:
+      label: MPN
+      placeholder: OPA333AIDBVR
+    validations:
+      required: true
+  - type: input
+    id: lcsc_id
+    attributes:
+      label: LCSC ID
+      placeholder: C30878 or not supplied
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Execution mode
+      options:
+        - Legacy mode
+        - Metadata mode
+    validations:
+      required: true
+  - type: dropdown
+    id: cache_mode
+    attributes:
+      label: Data source / cache mode
+      options:
+        - Live
+        - Raw cache replay
+        - Normalized cache
+        - Offline
+        - Refresh
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: manifest
+    attributes:
+      label: Sanitized Manifest
+      description: |
+        Paste only the minimum relevant, sanitized JSON/CSV fragment. Never
+        attach a raw cache or a Manifest containing credentials.
+      render: json
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Sanitized diagnostic
+      description: Remove secrets, tokens, Authorization headers, and private URLs.
+      render: text
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: List the smallest deterministic sequence that reproduces the issue.
+    validations:
+      required: true
+  - type: checkboxes
+    id: sanitization
+    attributes:
+      label: Sanitization confirmation
+      options:
+        - label: I removed API keys, client secrets, access tokens, Authorization headers, credential-bearing URLs, and unsanitized cache content.
+          required: true
+        - label: This is not a security vulnerability report.
+          required: true

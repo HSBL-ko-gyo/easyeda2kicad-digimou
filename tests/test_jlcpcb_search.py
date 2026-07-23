@@ -56,6 +56,7 @@ def _item_resistor() -> dict[str, Any]:
         "componentName": "100KΩ 100mW ±1% 0402 Chip Resistor",
         "componentModelEn": "RC0402FR-07100KL",
         "componentBrandEn": "YAGEO",
+        "componentBrand": "国巨",
         "componentSpecificationEn": "0402",
         "componentTypeEn": "Chip Resistor - Surface Mount",
         "stockCount": 19832,
@@ -118,6 +119,33 @@ def _item_missing_fields() -> dict[str, Any]:
 
 
 class TestSearchJlcpcbComponents:
+    @pytest.mark.parametrize(
+        ("field", "malformed"),
+        [
+            ("componentPrices", {}),
+            ("componentPrices", [None]),
+            ("attributes", {}),
+            ("attributes", ["not-an-object"]),
+        ],
+    )
+    def test_malformed_nested_catalogue_data_is_invalid_response(
+        self,
+        api: EasyedaApi,
+        monkeypatch: pytest.MonkeyPatch,
+        field: str,
+        malformed: object,
+    ) -> None:
+        item = _item_resistor()
+        item[field] = malformed
+        monkeypatch.setattr(
+            "urllib.request.urlopen", _fake_response(_jlcpcb_response([item]))
+        )
+
+        result = api.search_jlcpcb_components("100k 0402")
+
+        assert result == {"total": 0, "results": []}
+        assert api.last_error == "invalid_response"
+
     def test_resistor_all_fields_parsed(
         self, api: EasyedaApi, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -133,7 +161,8 @@ class TestSearchJlcpcbComponents:
         assert r["lcsc"] == "C25744"
         assert r["name"] == "100KΩ 100mW ±1% 0402 Chip Resistor"
         assert r["model"] == "RC0402FR-07100KL"
-        assert r["brand"] == "YAGEO"
+        assert r["brand"] == "国巨"
+        assert r["componentBrandEn"] == "YAGEO"
         assert r["package"] == "0402"
         assert r["category"] == "Chip Resistor - Surface Mount"
         assert r["stock"] == 19832
@@ -240,6 +269,7 @@ class TestSearchJlcpcbComponents:
 
         result = api.search_jlcpcb_components("anything")
         assert result == {"total": 0, "results": []}
+        assert api.last_error == "network_error"
 
     def test_empty_response_envelope(
         self, api: EasyedaApi, monkeypatch: pytest.MonkeyPatch
@@ -249,6 +279,20 @@ class TestSearchJlcpcbComponents:
 
         result = api.search_jlcpcb_components("ghost")
         assert result == {"total": 0, "results": []}
+        assert api.last_error == "invalid_response"
+
+    def test_zero_results_is_distinct_not_found(
+        self, api: EasyedaApi, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "urllib.request.urlopen", _fake_response(_jlcpcb_response([]))
+        )
+
+        assert api.search_jlcpcb_components("ghost") == {
+            "total": 0,
+            "results": [],
+        }
+        assert api.last_error == "not_found"
 
 
 # ---------------------------------------------------------------------------

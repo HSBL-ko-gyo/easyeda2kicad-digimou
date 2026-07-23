@@ -1,0 +1,217 @@
+diff --git a/docs/CODEX_RESULT.md b/docs/CODEX_RESULT.md
+index b44eb5ee322ee91d9d82fcb78ed6f994e42f7603..5060a81ff306b57c0648cdc386bc6c89866e68d6 100644
+--- a/docs/CODEX_RESULT.md
++++ b/docs/CODEX_RESULT.md
+@@ -1,4 +1,4 @@
+-# Codex Release Candidate result — re-audit 1 pending
++# Codex Release Candidate result — release approved
+ 
+ Generated: 2026-07-23 (Asia/Tokyo)  
+ Upstream baseline: `fff10a38619963d7cb1c57d779655a9ea4572e95`  
+@@ -304,8 +304,8 @@ and invoking its `--help` succeeds. AGPL-3.0 remains unchanged.
+ 
+ ## 14. Human checks before publication
+ 
+-- Do not publish this candidate until the newly authorized Oracle RC audit is
+-  complete and dispositioned.
++- Oracle's new-cycle audit gate is complete. Preserve its evidence and final
++  candidate hashes when preparing any publication.
+ - Run the opt-in DigiKey/Mouser live smoke tests with approved account
+   credentials, without capturing their values in CI logs.
+ - Run the full suite and representative legacy/metadata commands on native
+@@ -349,11 +349,12 @@ dispositioned. RC2's valid final re-audit remains closed as
+   compatibility, cache, secret, CAD-boundary, and licensing areas resolved.
+ 
+ The complete RC2 answer remains `docs/oracle/release_candidate_audit.md`; its
+-second/final re-audit limit is unchanged. The user opened a distinct RC cycle on
+-2026-07-23. Its initial Oracle audit is preserved separately and reported
+-`CANARY PASS / RELEASE BLOCKED` for an overflow exception-class gap and a
+-manifest-below-symbol-file collision. Both findings and the stale historical
+-matrix label were fixed within the authorized scope. The new probes report
+-`8 passed`, the related run reports `280 passed`, and all three full Python
+-matrices report `695 passed, 71 skipped`; Ruff and strict mypy pass. Oracle
+-re-audit 1 is the remaining gate.
++second/final re-audit limit is unchanged. The distinct new cycle's initial audit
++is preserved separately and reported `CANARY PASS / RELEASE BLOCKED` for an
++overflow exception-class gap and a manifest-below-symbol-file collision.
++Re-audit 1 then reported `CANARY PASS`, no release blocker, and
++`RELEASE APPROVED` subject only to one non-blocking document pointer. That
++pointer is corrected, and all three full Python matrices were rerun at
++`695 passed, 71 skipped`. Oracle explicitly required regenerated hashes,
++diff/apply checks, and secret-document checks rather than another model
++re-audit; the final evidence records those passes.
+diff --git a/docs/CURRENT_STATE.md b/docs/CURRENT_STATE.md
+index 40e17bb50bd0708a3bc5f43e8ae6549a1e7c12bd..36f340fa6197c8af6ae421129658225eb0d8357e 100644
+--- a/docs/CURRENT_STATE.md
++++ b/docs/CURRENT_STATE.md
+@@ -5,9 +5,9 @@ Last updated: 2026-07-23 16:07 JST (UTC+09:00)
+ ## Current phase
+ 
+ RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
+-limit unchanged. The distinct new RC initial Oracle audit passed its canary and
+-found two edge-case blockers inside the authorized RB/SF scope. Both are fixed,
+-the complete quality matrix passes, and Oracle re-audit 1 is the next gate.
++limit unchanged. The distinct new RC re-audit 1 passed its canary, found no
++release blocker, and approved release subject to one document pointer. The
++pointer is fixed and the complete quality matrix passes.
+ 
+ ## Completed
+ 
+@@ -93,12 +93,8 @@ no partial output.
+ 
+ ## Remaining
+ 
+-- Generate re-audit 1 candidate/delta SHA-256 and source canary without changing
+-  RC2 or initial new-RC artifacts.
+-- Rescan the revised documents and Oracle input for secrets.
+-- Run re-audit 1 in a new browser/manual-login conversation with individual
+-  attachments and no bundle/cache. One further re-audit remains available only
+-  if needed.
++- Optional external validation only: credentialed DigiKey/Mouser live calls and
++  native Linux process E2E remain the disclosed accepted risks.
+ 
+ ## Explicit limitations and risks
+ 
+@@ -117,13 +113,10 @@ no partial output.
+ 
+ ## Oracle status and next action
+ 
+-Oracle CLI 0.16.0 is available. Architecture Review, consultation 001, the
+-closed RC2 evidence, and the new cycle's initial answer remain recorded under
+-`docs/oracle/`. The initial answer is `CANARY PASS / RELEASE BLOCKED`; its two
+-blockers and one SHOULD FIX are implemented and await re-audit 1.
+-
+-The new audit must use the browser engine, `--browser-manual-login`, a verified
+-non-Pro model, a new conversation, individual short `-f` attachments, and a
+-current source canary. The accepted risks remain unchanged: no credentialed
++Oracle CLI 0.16.0 completed re-audit 1 through the browser engine,
++`--browser-manual-login`, a verified non-Pro `GPT-5.6 Sol`, a new conversation,
++and ten individual attachments with no bundle. The result is `CANARY PASS`,
++zero release blockers, and release approval after the now-complete document
++pointer correction. The accepted risks remain unchanged: no credentialed
+ DigiKey/Mouser live run, no native Linux process E2E, and 69 inherited
+ reference-output skips.
+diff --git a/docs/DECISIONS.md b/docs/DECISIONS.md
+index 833e09b9b7de63f77d203863149a7c482d753f92..80f361886baea3e5a0882fa215199bebf4ba3712 100644
+--- a/docs/DECISIONS.md
++++ b/docs/DECISIONS.md
+@@ -476,7 +476,7 @@ change, CLI change, API change, or output-format change is authorized.
+ 
+ ## D029 — Adopt the new RC initial-audit findings
+ 
+-**Status:** Implemented and locally verified; Oracle re-audit 1 pending  
++**Status:** Implemented; Oracle re-audit 1 resolved both blockers  
+ **Decision:** Preserve the initial new-RC answer as
+ `docs/oracle/release_candidate_audit_rc3.md`. Adopt `RB-RC3-1` by rejecting
+ non-finite/overflowing numeric fields at the shared parser boundary, converting
+@@ -498,3 +498,19 @@ preserves completeness and only exception mapping was missing.
+ **Compatibility:** No public API, CLI option, output format, dependency, cache
+ schema, or Provider/CAD responsibility changed. The full matrix is now
+ `695 passed, 71 skipped` on Python 3.9, 3.12, and 3.14.
++
++## New RC re-audit 1 disposition — 2026-07-23
++
++The authoritative answer is
++`docs/oracle/release_candidate_audit_rc3_reaudit1.md`. Oracle verified all ten
++individual attachments and reported **CANARY PASS**, no `RELEASE BLOCKER`, and
++`RESOLVED` for `RB-RC3-1`, `SF-RC3-1`, compatibility boundaries, and quality
++gates. `AR-RC3-1` through `AR-RC3-3` remain accepted risks.
++
++Oracle's only remaining `SHOULD FIX`, `DOC-RC3-1`, observed that the historical
++matrix pointed to the initial `rc3_quality.md` rather than the authoritative
++`rc3_reaudit1_quality.md`. The one-line pointer was corrected and all three
++full Python suites were rerun successfully. Oracle explicitly stated that this
++document-only correction does not require another model re-audit; it requires
++regenerated candidate/delta hashes plus diff/apply and secret-document checks.
++Those checks are recorded in the final new-RC evidence.
+diff --git a/docs/PROVIDER_CONTRACT.md b/docs/PROVIDER_CONTRACT.md
+index c8e722a15cc2a6251cf7ec077ab0cc7f9cac34c5..dc5637ed047bd5ed447fdd0946435b03d16dd804 100644
+--- a/docs/PROVIDER_CONTRACT.md
++++ b/docs/PROVIDER_CONTRACT.md
+@@ -1,7 +1,8 @@
+ # Provider contract
+ 
+-Status: new Release Candidate after the closed RC2 cycle; initial Oracle audit
+-passed its canary, blocker fixes are locally verified, re-audit 1 pending
++Status: new Release Candidate after the closed RC2 cycle; Oracle re-audit 1
++passed its canary with no release blocker, and its one document correction is
++complete
+ 
+ ## Interface
+ 
+diff --git a/docs/architecture.md b/docs/architecture.md
+index 09a2169b33e258554d8b8ded00f600b22833fb0a..42c471873526795adaabdfad45c20d5f0b991f51 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -1,7 +1,8 @@
+ # Multi-distributor metadata architecture
+ 
+-Status: new Release Candidate after the closed RC2 audit; initial Oracle audit
+-passed its canary, blocker fixes are locally verified, re-audit 1 pending  
++Status: new Release Candidate after the closed RC2 audit; Oracle re-audit 1
++passed its canary with no release blocker, and its one document correction is
++complete  
+ Baseline: upstream commit `fff10a38619963d7cb1c57d779655a9ea4572e95`  
+ License: GNU AGPL-3.0 remains unchanged
+ 
+diff --git a/docs/oracle/legacy_compatibility.md b/docs/oracle/legacy_compatibility.md
+index 8418d72e22285732b42ec67153341fc3a67680c3..1d2bd75786ea12f80b25db7d0fe3b05eceee16ca 100644
+--- a/docs/oracle/legacy_compatibility.md
++++ b/docs/oracle/legacy_compatibility.md
+@@ -55,8 +55,8 @@ full-suite run. It is collected and passes in every current Python matrix run.
+ | RC2 pre-RC3 tree, Python 3.14.3 | `666 passed, 71 skipped` |
+ 
+ The current RC3 matrix is recorded separately in
+-`docs/oracle/rc3_quality.md`; the rows above remain historical compatibility
+-evidence and are not a claim about the current tree.
++`docs/oracle/rc3_reaudit1_quality.md`; the rows above remain historical
++compatibility evidence and are not a claim about the current tree.
+ 
+ The 69 inherited skips occur because this checkout does not contain upstream's
+ optional `tests/reference_outputs/` tree. That missing directory is distinct
+diff --git a/docs/oracle/rc3_final_quality.md b/docs/oracle/rc3_final_quality.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ee30c36d6eb38029e746c3e1a406f4e36b2483c
+--- /dev/null
++++ b/docs/oracle/rc3_final_quality.md
+@@ -0,0 +1,40 @@
++# New RC final quality evidence
++
++Generated: 2026-07-23 (Asia/Tokyo)
++
++Oracle re-audit 1 completed with **CANARY PASS**, no release blocker, and
++`RELEASE APPROVED WITH NON-BLOCKING DOC-RC3-1 PATH CORRECTION OUTSTANDING`.
++The answer is preserved in
++`docs/oracle/release_candidate_audit_rc3_reaudit1.md`.
++
++`DOC-RC3-1` was a one-line documentation pointer:
++
++- old pointer: the historical initial-RC quality record;
++- corrected pointer: `docs/oracle/rc3_reaudit1_quality.md`.
++
++Oracle explicitly stated that this document-only correction needs regenerated
++candidate/delta hashes, diff/apply checks, and secret-document checks, but no
++additional model re-audit. The correction is complete.
++
++## Post-correction quality matrix
++
++| Gate | Result |
++| --- | --- |
++| Python 3.9.25 full pytest | `695 passed, 71 skipped`, exit 0 |
++| Python 3.12.13 full pytest | `695 passed, 71 skipped`, exit 0 |
++| Python 3.14.3 full pytest | `695 passed, 71 skipped`, exit 0 |
++| Ruff format check | PASS, `59 files already formatted` |
++| Ruff lint | PASS |
++| Python 3.9 strict mypy | PASS, 59 source files |
++| `git diff --check` | PASS; only Git LF/CRLF working-tree notices |
++
++The skip count is unchanged:
++
++- 69 inherited skips from the absent optional upstream reference-output bundle;
++- one DigiKey credentialed live test; and
++- one Mouser credentialed live test.
++
++No runtime source or test changed after Oracle re-audit 1. The only
++post-audit functional-candidate change is the exact document pointer requested
++by Oracle; the remaining edits record final audit status and regenerated
++evidence.

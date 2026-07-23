@@ -37,6 +37,7 @@ from .parameters_kicad_symbol import (
     KiSymbolPolygon,
     KiSymbolRectangle,
     KiSymbolText,
+    sanitize_fields,
 )
 
 _SYM_LIB_REGEX = r'\n(\s*)\(symbol "{component_name}".*?\n\1\)(?=\n|$)'
@@ -689,7 +690,7 @@ class ExporterSymbolKicad:
         return integrate_sub_units(
             main_symbol=main_content,
             sub_symbols=sub_contents,
-            component_name=self.input.info.name,
+            component_name=sanitize_fields(self.input.info.name),
         )
 
     def save_to_lib(
@@ -699,8 +700,9 @@ class ExporterSymbolKicad:
 
         Returns False if the symbol already exists and overwrite is False.
         """
+        component_name = sanitize_fields(self.input.info.name)
         already_exists = id_already_in_symbol_lib(
-            lib_path=lib_path, component_name=self.input.info.name
+            lib_path=lib_path, component_name=component_name
         )
         if already_exists and not overwrite:
             return False
@@ -708,7 +710,7 @@ class ExporterSymbolKicad:
         content = self.export(footprint_lib_name=footprint_lib_name)
         write_component_in_symbol_lib_file(
             lib_path=lib_path,
-            component_name=self.input.info.name,
+            component_name=component_name,
             component_content=content,
             version=self.version,
         )
