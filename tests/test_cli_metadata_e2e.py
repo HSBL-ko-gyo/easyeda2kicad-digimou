@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 # Global imports
+import io
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -156,6 +158,51 @@ def install_found_fakes(
         return True
 
     monkeypatch.setattr(cli, "_process_component", process)
+
+
+def test_cp932_show_conflicts_preserves_success_exit_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = found_resolution()
+    result.manufacturer_evidence = {
+        "easyeda": "TI(德州仪器)",
+        "lcsc": "Texas Instruments",
+    }
+    result.manufacturer_source = "lcsc"
+    install_found_fakes(monkeypatch, result, {})
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp932", newline="\n")
+    monkeypatch.setattr(sys, "stdout", stream)
+
+    without_conflicts = cli.main(
+        [
+            "--mpn",
+            "OPA333AIDBVR",
+            "--symbol",
+            "--output",
+            str(tmp_path / "without-conflicts"),
+        ]
+    )
+    with_conflicts = cli.main(
+        [
+            "--mpn",
+            "OPA333AIDBVR",
+            "--symbol",
+            "--output",
+            str(tmp_path / "with-conflicts"),
+            "--show-conflicts",
+        ]
+    )
+    stream.flush()
+
+    output = raw.getvalue().decode("cp932")
+    documents = [
+        json.loads(line) for line in output.splitlines() if line.startswith("{")
+    ]
+    assert without_conflicts == with_conflicts == 0
+    assert len(documents) == 1
+    assert documents[0]["conflicts"][0]["values"]["easyeda"] == "TI(德州仪器)"
 
 
 @pytest.mark.parametrize(

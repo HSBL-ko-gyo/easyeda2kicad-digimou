@@ -9,7 +9,7 @@ import re
 import sys
 import unicodedata
 from pathlib import Path, PurePath
-from typing import Any
+from typing import Any, TextIO
 
 # Local imports
 from ._version import __version__
@@ -942,20 +942,40 @@ def _write_requested_manifests(merged: MergedPart, arguments: dict[str, Any]) ->
     return True
 
 
+def _write_console_json(value: Any, *, stream: TextIO | None = None) -> None:
+    """Write one JSON line without partially encoding it to the console."""
+
+    target = sys.stdout if stream is None else stream
+    serialized = json.dumps(
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    encoding = getattr(target, "encoding", None)
+    if encoding:
+        try:
+            (serialized + "\n").encode(encoding)
+        except UnicodeEncodeError:
+            serialized = json.dumps(
+                value,
+                ensure_ascii=True,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+    target.write(serialized + "\n")
+
+
 def _show_metadata_conflicts(merged: MergedPart) -> None:
-    print(
-        json.dumps(
-            strip_secrets(
-                {
-                    "conflicts": model_to_dict(merged.conflicts),
-                    "provider_errors": merged.provider_errors,
-                    "provider_diagnostics": model_to_dict(merged.provider_diagnostics),
-                }
-            ),
-            ensure_ascii=False,
-            allow_nan=False,
-            sort_keys=True,
-            separators=(",", ":"),
+    _write_console_json(
+        strip_secrets(
+            {
+                "conflicts": model_to_dict(merged.conflicts),
+                "provider_errors": merged.provider_errors,
+                "provider_diagnostics": model_to_dict(merged.provider_diagnostics),
+            }
         )
     )
 
