@@ -25,7 +25,7 @@ from .easyeda.parameters_easyeda import EeFootprint, EeSymbol
 from .kicad.export_kicad_3d_model import Exporter3dModelKicad
 from .kicad.export_kicad_footprint import ExporterFootprintKicad
 from .kicad.export_kicad_symbol import ExporterSymbolKicad
-from .metadata.cache import strip_secrets
+from .metadata.cache import sanitize_public_url, strip_secrets
 from .metadata.manifest import write_csv_manifest, write_json_manifest
 from .metadata.merge import (
     CAD_NOT_FOUND,
@@ -1223,6 +1223,12 @@ def _log_metadata_diagnostics(merged: MergedPart, *, require_cad: bool) -> None:
             merged.cad_discovery.requested_source,
             merged.cad_discovery.status,
         )
+        action = merged.cad_discovery.action_required
+        if action is not None:
+            logging.warning("CAD action required %s: %s", action.code, action.detail)
+            setup_url = sanitize_public_url(action.setup_url)
+            if setup_url is not None:
+                logging.warning("CAD handoff: %s", setup_url)
 
     if merged.verification_status == CAD_NOT_FOUND:
         if require_cad:

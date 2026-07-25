@@ -2,6 +2,7 @@
 
 from .archive import ArchiveLimits, extract_zip_safely
 from .errors import CadPackageError
+from .mouser import MouserCadSource, MouserProductApi
 from .package import (
     CAD_PACKAGE_FORMATS,
     CadPackageIngestResult,
@@ -13,6 +14,8 @@ __all__ = [
     "CAD_PACKAGE_FORMATS",
     "CadPackageError",
     "CadPackageIngestResult",
+    "MouserCadSource",
+    "MouserProductApi",
     "extract_zip_safely",
     "ingest_cad_package",
 ]

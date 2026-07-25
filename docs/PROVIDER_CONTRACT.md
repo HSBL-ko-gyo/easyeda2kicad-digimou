@@ -218,14 +218,15 @@ both existing-entry lookup and writing, including MPNs containing `/`.
 | LCSC | none | none |
 | EasyEDA | none | existing CAD cache only |
 | DigiKey | `DIGIKEY_CLIENT_ID`, `DIGIKEY_CLIENT_SECRET`; optional public locale variables | token in memory only |
-| Mouser | `MOUSER_API_KEY` | never persisted |
+| Mouser | `MOUSER_API_KEY` | key never persisted; API records are live-only |
 
 Environment variables are read lazily. `describe_auth_requirements` returns only
 names and help URLs, never values.
 
 ## Cache
 
-The canonical request includes provider, operation, cache schema version,
+For providers whose current terms permit persistent caching, the canonical
+request includes provider, operation, cache schema version,
 normalized MPN/manufacturer, and public locale/feature switches. It excludes API
 keys, client secrets, access tokens, Authorization headers, and secret-bearing
 URLs. Cache schema version 3 stores `raw.json` and `normalized.json` as one
@@ -261,6 +262,13 @@ and raw-replay paths return typed `INVALID_RESPONSE`; they never publish a
 cache pair. If such a value is present in a schema-3 normalized entry, online
 mode treats it as a miss and refetches, offline mode reports `CACHE_CORRUPT`,
 and refresh bypasses it.
+
+Mouser is explicitly excluded from this persistent cache. Its current linked
+Search API terms prohibit caching or storing API content, so
+`MouserProvider.persistent_cache_allowed` is false, it does not retain
+`last_raw_response`, and service orchestration writes neither raw nor normalized
+Mouser entries. An offline Mouser lookup performs no HTTP request and reports
+`OFFLINE_CACHE_MISS`; an old on-disk entry is not replayed.
 
 ## Rate limiting and retry
 
@@ -338,3 +346,10 @@ partial-page exact match. `SuggestedReplacement` is ignored. When multiple
 records share one exact identity, the adapter chooses the lexically smallest
 non-empty `MouserPartNumber`, using product URL only as a stable fallback. MOQ,
 stock, and price never choose record identity or KiCad fields.
+
+For explicit Mouser CAD discovery, the exact record is revalidated and its
+`ProductDetailUrl` is accepted only when it is a sanitized HTTPS Mouser Product
+Detail URL. The CLI returns that URL as a manual ECAD/Library Loader handoff;
+it does not fetch the page or automate SamacSys search, login, requests, or
+download. Distributor remains `mouser`, delivery partner is `samacsys`, and
+model creator remains unknown until proven by the imported package.

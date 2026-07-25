@@ -22,6 +22,27 @@ gates remain.
 
 ## Completed
 
+- Added Mouser Search API V2 exact Product Detail handoff discovery for
+  explicit `--cad-source mouser`. The source revalidates exact manufacturer and
+  full MPN, accepts only a sanitized official `mouser.com` Product Detail URL,
+  reports `CAD_MANUAL_DOWNLOAD_REQUIRED`, and never fetches the returned page
+  or falls back to EasyEDA.
+- Kept Mouser as distributor, SamacSys as delivery partner, and the
+  package-proven model creator as separate provenance roles. SamacSys automated
+  search, login, request, and download remain deliberately unimplemented under
+  the current service terms.
+- Mouser API metadata and CAD handoff lookups are live-only because the current
+  API terms prohibit caching or storing API content. The adapter does not
+  retain its raw response, service orchestration writes neither raw nor
+  normalized Mouser cache entries, and offline mode performs no Mouser request.
+- Reconfirmed on 2026-07-26 that `Rectron / FM220A-W` has no exact public LCSC
+  match. Its official Mouser page still exposes the ECAD/Library Loader flow,
+  but currently labels the action “Build or request PCB Symbol, Footprint or
+  Model”; an already downloadable package is not proven. Per the Phase D plan,
+  no alternative candidate was selected. Credential- and package-gated smokes
+  cover the remaining checks without retaining responses, credentials, or
+  provider packages, but Phase D cannot complete without the real FM220A-W
+  package.
 - Added opt-in `--project PATH --register-project-libraries` registration for
   `sym-lib-table` and `fp-lib-table`, with `${KIPRJMOD}` URIs and nicknames
   derived from the output stem. `--project-relative` alone never registers a
@@ -170,12 +191,38 @@ three Provider live-shaped/raw replay overflow paths, schema-3
 online/offline/refresh handling, JSON/CSV child-of-symbol-file collisions, and
 no partial output.
 
+## Issue #7 Phase D quality evidence
+
+| Gate | Result |
+| --- | --- |
+| Mouser handoff/provider/service/docs focused tests | `97 passed, 2 skipped` |
+| Python 3.12.13 full pytest | `809 passed, 73 skipped` |
+| Ruff format check | PASS, 74 files |
+| Ruff lint | PASS |
+| Python 3.12 strict mypy | PASS, 74 source files |
+| `git diff --check` | PASS; Git emitted only working-tree LF/CRLF notices |
+| Build and Twine check | PASS for sdist and wheel |
+| Changed source and unpacked distribution secret/path scan | PASS |
+
+The two focused skips are deliberate external gates:
+`MOUSER_API_KEY` for the single-request official API smoke and
+`MOUSER_FM220A_CAD_PACKAGE` for real-package import, project registration, and
+KiCad CLI 7/9/10 rendering. Neither skip is counted as live success.
+
 ## Remaining
 
-- DigiKey/Ultra Librarian and Mouser/SamacSys service discovery/handoff,
-  user-owned real-package intake through the completed registration path, and
-  real-package KiCad GUI verification remain required before Issue #7 can
-  close.
+- This checkout has no `MOUSER_API_KEY` or owner-exported
+  `MOUSER_FM220A_CAD_PACKAGE`, so the FM220A-W official API handoff and real
+  SamacSys package remain unverified. The owner must configure the key, run the
+  documented one-request smoke, use the official Product Detail/Library Loader
+  flow with their own session, and provide the resulting native KiCad plus
+  STEP/WRL package. The package-gated smoke then imports and registers it in a
+  disposable project and renders it with KiCad CLI 7/9/10; final GUI inspection
+  remains required.
+- DigiKey/Ultra Librarian service discovery/handoff remains unimplemented on
+  this independent branch. DigiKey and Mouser both still require user-owned
+  real-package intake through the completed registration path and real-package
+  KiCad GUI verification before Issue #7 can close.
 - Credentialed DigiKey/Mouser live calls and native Linux process E2E remain
   disclosed external validation gaps.
 
