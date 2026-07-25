@@ -13,6 +13,7 @@ from typing import Any, TextIO
 
 # Local imports
 from ._version import __version__
+from .cad import CAD_PACKAGE_FORMATS, CadPackageError, ingest_cad_package
 from .easyeda.easyeda_api import EasyedaApi
 from .easyeda.easyeda_importer import (
     Easyeda3dModelImporter,
@@ -33,7 +34,9 @@ from .metadata.merge import (
     VERIFIED,
 )
 from .metadata.models import (
+    CadRequest,
     MergedPart,
+    PartIdentity,
     SUPPORTED_CAD_SOURCES,
     model_to_dict,
     normalize_manufacturer,
@@ -244,6 +247,21 @@ def get_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--cad-package",
+        type=str,
+        help="Import a locally downloaded Ultra Librarian or SamacSys ZIP package",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--cad-package-format",
+        choices=CAD_PACKAGE_FORMATS,
+        default="auto",
+        help="Local CAD package adapter (default: auto)",
+        required=False,
+    )
+
+    parser.add_argument(
         "--datasheet-link",
         choices=("manufacturer", "lcsc", "digikey", "mouser"),
         help="Select the KiCad Datasheet property source",
@@ -411,6 +429,8 @@ def is_metadata_mode(arguments: dict[str, Any]) -> bool:
         or arguments.get("manufacturer")
         or arguments.get("providers") is not None
         or arguments.get("cad_source", "easyeda") != "easyeda"
+        or arguments.get("cad_package")
+        or arguments.get("cad_package_format", "auto") != "auto"
         or arguments.get("datasheet_link") is not None
         or arguments.get("manifest_json")
         or arguments.get("manifest_csv")
@@ -450,13 +470,14 @@ def _manifest_collides_with_selected_cad_output(arguments: dict[str, Any]) -> bo
         return False
 
     selected_outputs: list[tuple[str, Path, bool]] = []
-    if arguments["symbol"]:
+    imports_package = bool(arguments.get("cad_package"))
+    if arguments["symbol"] or imports_package:
         selected_outputs.append(("symbol", Path(f"{output}.kicad_sym"), True))
-    if arguments["footprint"]:
+    if arguments["footprint"] or imports_package:
         selected_outputs.append(
             ("footprint directory", Path(f"{output}.pretty"), False)
         )
-    if arguments["3d"]:
+    if arguments["3d"] or imports_package:
         selected_outputs.append(
             ("3D model directory", Path(f"{output}.3dshapes"), False)
         )
@@ -491,6 +512,21 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
     arguments["metadata_mode"] = metadata_mode
     if arguments.get("cad_source") not in SUPPORTED_CAD_SOURCES:
         logging.error("Unsupported CAD source")
+        return False
+    if arguments.get("cad_package"):
+        if not arguments.get("manufacturer") or not arguments.get("mpn"):
+            logging.error("--cad-package requires --manufacturer and an exact --mpn")
+            return False
+        if arguments.get("cad_source") not in ("digikey", "mouser"):
+            logging.error(
+                "--cad-package requires --cad-source digikey or --cad-source mouser"
+            )
+            return False
+        if not Path(arguments["cad_package"]).is_file():
+            logging.error("--cad-package path must be an existing ZIP file")
+            return False
+    elif arguments.get("cad_package_format", "auto") != "auto":
+        logging.error("--cad-package-format requires --cad-package")
         return False
 
     if not arguments["lcsc_id"] and not arguments.get("mpn"):
@@ -558,6 +594,7 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
             arguments.get("manifest_csv"),
             arguments.get("require_cad"),
             arguments.get("show_conflicts"),
+            arguments.get("cad_package"),
         ]
     ):
         logging.error(
@@ -613,7 +650,13 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
         return False
 
     needs_cad_output = any(
-        [arguments["symbol"], arguments["footprint"], arguments["3d"], arguments["svg"]]
+        [
+            arguments["symbol"],
+            arguments["footprint"],
+            arguments["3d"],
+            arguments["svg"],
+            arguments.get("cad_package"),
+        ]
     )
 
     create_default_folder = False
@@ -1040,6 +1083,9 @@ def _log_metadata_diagnostics(merged: MergedPart, *, require_cad: bool) -> None:
 
 
 def _run_metadata_mode(arguments: dict[str, Any]) -> int:
+    if arguments.get("cad_package"):
+        return _run_cad_package_mode(arguments)
+
     # CAD and metadata caches intentionally have different control planes.
     cad_api = EasyedaApi(
         use_cache=arguments["use_cache"] or arguments["offline"],
@@ -1150,6 +1196,47 @@ def _run_metadata_mode(arguments: dict[str, Any]) -> int:
     if merged.verification_status == CAD_NOT_FOUND and arguments["require_cad"]:
         return 1
     return 0
+
+
+def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
+    """Import one already downloaded package without provider/network access."""
+
+    manufacturer = arguments.get("manufacturer")
+    mpn = arguments.get("mpn")
+    if not isinstance(manufacturer, str) or not isinstance(mpn, str):
+        logging.error("Local CAD package identity was not validated")
+        return 1
+    request = CadRequest(
+        manufacturer=manufacturer,
+        mpn=mpn,
+        source=arguments["cad_source"],
+    )
+    try:
+        result = ingest_cad_package(
+            Path(arguments["cad_package"]),
+            package_format=arguments["cad_package_format"],
+            request=request,
+            output_base=Path(arguments["output"]),
+            overwrite=arguments["overwrite"],
+        )
+    except CadPackageError as error:
+        logging.error("%s", error)
+        return 1
+
+    merged = MergedPart(
+        identity=PartIdentity(
+            manufacturer=request.manufacturer,
+            mpn=request.mpn,
+        ),
+        cad=result.cad,
+        cad_discovery=result.discovery,
+        verification_status=result.cad.verification_status,
+    )
+    _log_metadata_diagnostics(merged, require_cad=arguments["require_cad"])
+    manifests_ok = _write_requested_manifests(merged, arguments)
+    if arguments.get("show_conflicts"):
+        _show_metadata_conflicts(merged)
+    return 0 if manifests_ok else 1
 
 
 def main(argv: list[str] = sys.argv[1:]) -> int:

@@ -1,0 +1,2 @@
+Synthetic Ultra Librarian-shaped fixture for offline safety tests.
+This is not a redistributed provider package and contains no private response.

@@ -1,8 +1,14 @@
 # Current state
 
-Last updated: 2026-07-23 (Asia/Tokyo)
+Last updated: 2026-07-25 (Asia/Tokyo)
 
 ## Current phase
+
+The post-beta issue sequence is now active on the actual default branch.
+Issues #2 and #1 are merged and closed; Issue #4 Phase A and Issue #7 Phase A
+are merged while their parent issues remain open. Issue #7 Phase B implements
+the intermediate, local-package intake milestone. It is not the completion of
+DigiKey/Ultra Librarian or Mouser/SamacSys service acquisition.
 
 RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
 limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
@@ -14,6 +20,20 @@ gates remain.
 
 ## Completed
 
+- Added a fail-closed local ZIP intake path for native KiCad packages using
+  `--cad-package`, exact `--manufacturer`/`--mpn`, and explicit
+  `--cad-source digikey|mouser`. Versioned Ultra Librarian and SamacSys adapters
+  keep distributor, delivery partner, and model creator provenance separate.
+- Added defensive archive limits and path/link/collision/nested-archive
+  rejection, package-evidenced exact identity, unambiguous symbol/footprint/3D
+  selection, pin/pad verification, portable `${KIPRJMOD}` model links, and
+  staged atomic installation with concurrent-change detection and rollback.
+- Added synthetic provider-layout fixtures only; no provider package, private
+  response, credential, token, cookie, or secret-bearing URL is checked in.
+- Verified the synthetic local-package output in a disposable KiCad 10 project:
+  Symbol Editor showed both pins, Footprint Editor showed pads 1/2 plus the
+  outline and courtyard, and 3D Viewer loaded and rotated the centered WRL
+  model. No user-owned project was used or modified.
 - Preserved upstream `uPesy/easyeda2kicad.py` at
   `fff10a38619963d7cb1c57d779655a9ea4572e95`, retained `origin`, and worked on
   local branch `feature/multi-distributor-metadata` without commit, stash,
@@ -133,8 +153,11 @@ no partial output.
 
 ## Remaining
 
-- Optional external validation only: credentialed DigiKey/Mouser live calls and
-  native Linux process E2E remain the disclosed accepted risks.
+- DigiKey/Ultra Librarian and Mouser/SamacSys service discovery/handoff,
+  user-owned real-package intake, project registration, and real KiCad GUI
+  verification remain required before Issue #7 can close.
+- Credentialed DigiKey/Mouser live calls and native Linux process E2E remain
+  disclosed external validation gaps.
 
 ## Explicit limitations and risks
 
@@ -145,6 +168,11 @@ no partial output.
   metadata plus EasyEDA CAD, not live DigiKey/Mouser records.
 - The distributor-present/CAD-absent example is an explicitly labeled mock;
   a real such part was not verified without distributor credentials.
+- The local package importer has synthetic-layout, KiCad 7/9/10 CLI, and
+  disposable KiCad 10 GUI coverage, but it does not scrape or automate Ultra
+  Librarian/SamacSys websites and does not claim service download support.
+  Real provider packages are intentionally not committed, and real-package GUI
+  verification remains part of the later service phases.
 - Runtime E2E was performed on Windows. POSIX path behavior has deterministic
   unit coverage, but native Linux runtime E2E was not available.
 - The upstream golden resource directory remains absent; the extension adds a
