@@ -47,6 +47,14 @@ from .metadata.symbol_fields import (
     build_native_symbol_fields,
     build_symbol_fields,
 )
+from .project_registration import (
+    ProjectRegistrationError,
+    ProjectRegistrationPlan,
+    apply_project_registration,
+    plan_project_registration,
+    project_relative_path,
+    resolve_project,
+)
 
 SUPPORTED_PROVIDERS = ("lcsc", "digikey", "mouser")
 SUPPORTED_CAD_SOURCE_CHOICES = ("easyeda", "digikey", "mouser", "auto")
@@ -376,6 +384,27 @@ def get_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--project",
+        required=False,
+        type=str,
+        help="KiCad .kicad_pro file or unambiguous project directory",
+    )
+
+    parser.add_argument(
+        "--register-project-libraries",
+        required=False,
+        action="store_true",
+        help="Opt in to project-local sym-lib-table and fp-lib-table registration",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        required=False,
+        action="store_true",
+        help="Preview project library registration without CAD or project writes",
+    )
+
+    parser.add_argument(
         "--debug",
         help="set the logging level to debug",
         required=False,
@@ -584,6 +613,37 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
     if arguments["full"]:
         arguments["symbol"], arguments["footprint"], arguments["3d"] = True, True, True
 
+    if arguments.get("register_project_libraries"):
+        if not arguments.get("project"):
+            logging.error("--register-project-libraries requires --project")
+            return False
+        if not arguments.get("output"):
+            logging.error("--register-project-libraries requires an explicit --output")
+            return False
+        if not (
+            arguments.get("cad_package")
+            or (arguments["symbol"] and arguments["footprint"])
+        ):
+            logging.error(
+                "--register-project-libraries requires symbol and footprint generation"
+            )
+            return False
+        # Registration promises portable project-local 3D references. This does
+        # not make --project-relative imply registration in the other direction.
+        arguments["project_relative"] = True
+    if arguments.get("dry_run") and not arguments.get("register_project_libraries"):
+        logging.error("--dry-run requires --register-project-libraries")
+        return False
+    if (
+        arguments.get("project")
+        and not arguments.get("register_project_libraries")
+        and not arguments.get("project_relative")
+    ):
+        logging.error(
+            "--project requires --register-project-libraries or --project-relative"
+        )
+        return False
+
     if not any(
         [
             arguments["symbol"],
@@ -683,26 +743,68 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
     arguments["output"] = str(base_folder / lib_name)
 
     if arguments["project_relative"]:
-        project_root = Path.cwd().resolve()
-        model_directory = Path(f"{arguments['output']}.3dshapes").resolve()
-        relative_model_directory = relative_path_if_within(
-            project_root, model_directory
+        try:
+            project_context = (
+                resolve_project(arguments["project"])
+                if arguments.get("project")
+                else None
+            )
+        except ProjectRegistrationError as error:
+            logging.error("%s", error)
+            return False
+        project_root = (
+            project_context.project_root
+            if project_context is not None
+            else Path.cwd().resolve()
         )
+        model_directory = Path(f"{arguments['output']}.3dshapes").resolve()
+        relative_model_directory: str | None
+        try:
+            if project_context is not None:
+                relative_model_directory = project_relative_path(
+                    project_context, model_directory
+                )
+            else:
+                current_project_relative = relative_path_if_within(
+                    project_root, model_directory
+                )
+                relative_model_directory = (
+                    current_project_relative.as_posix()
+                    if current_project_relative is not None
+                    else None
+                )
+        except ProjectRegistrationError as error:
+            logging.error("%s", error)
+            return False
         if relative_model_directory is None:
             logging.error(
                 "--project-relative output must remain within the current project directory"
             )
             return False
-        arguments["project_relative_3d_path"] = relative_model_directory.as_posix()
+        arguments["project_relative_3d_path"] = relative_model_directory
+        if project_context is not None:
+            arguments["project_file"] = str(project_context.project_file)
+            arguments["project_root"] = str(project_context.project_root)
 
     if metadata_mode and _manifest_collides_with_selected_cad_output(arguments):
         return False
 
     if create_default_folder:
         base_folder.mkdir(parents=True, exist_ok=True)
-    elif not base_folder.is_dir():
+    elif not base_folder.is_dir() and not arguments.get("dry_run"):
         logging.error(f"Can't find the folder : {base_folder}")
         return False
+
+    if arguments.get("register_project_libraries"):
+        try:
+            arguments["project_registration_plan"] = plan_project_registration(
+                arguments["project"],
+                arguments["output"],
+                require_artifacts=False,
+            )
+        except ProjectRegistrationError as error:
+            logging.error("%s", error)
+            return False
 
     return True
 
@@ -1041,6 +1143,55 @@ def _show_metadata_conflicts(merged: MergedPart) -> None:
     )
 
 
+def _log_project_registration_plan(
+    plan: ProjectRegistrationPlan,
+    *,
+    prefix: str,
+) -> None:
+    logging.info("%s project: %s", prefix, plan.context.project_file)
+    for update in plan.updates:
+        logging.info(
+            "%s %s: %s -> %s (%s; target=%s)",
+            prefix,
+            update.root_name,
+            update.entry.nickname,
+            update.entry.uri,
+            update.action,
+            update.path,
+        )
+
+
+def _run_project_registration_dry_run(arguments: dict[str, Any]) -> int:
+    plan = arguments.get("project_registration_plan")
+    if not isinstance(plan, ProjectRegistrationPlan):
+        logging.error("Project registration plan was not validated")
+        return 1
+    _log_project_registration_plan(plan, prefix="DRY-RUN")
+    return 0
+
+
+def _register_project_libraries(arguments: dict[str, Any]) -> bool:
+    try:
+        plan = plan_project_registration(
+            arguments["project"],
+            arguments["output"],
+            require_artifacts=True,
+        )
+        result = apply_project_registration(plan)
+    except ProjectRegistrationError as error:
+        logging.error("%s", error)
+        return False
+    _log_project_registration_plan(plan, prefix="REGISTER")
+    if result.changed_paths:
+        logging.info(
+            "Updated project library tables: %s",
+            ", ".join(str(path) for path in result.changed_paths),
+        )
+    else:
+        logging.info("Project libraries were already registered; no table changes")
+    return True
+
+
 def _log_metadata_diagnostics(merged: MergedPart, *, require_cad: bool) -> None:
     """Make safe internal diagnostics visible without requiring a manifest."""
 
@@ -1132,6 +1283,7 @@ def _run_metadata_mode(arguments: dict[str, Any]) -> int:
 
     merged = result.to_merged(verification_status)
     export_failed = False
+    cad_export_succeeded = False
 
     can_export = (
         result.cad_data is not None
@@ -1183,13 +1335,29 @@ def _run_metadata_mode(arguments: dict[str, Any]) -> int:
             else:
                 _update_cad_artifact_paths(result, arguments, symbol, footprint)
                 merged = result.to_merged(VERIFIED)
+                cad_export_succeeded = True
+
+    registration_failed = False
+    if arguments.get("register_project_libraries"):
+        if not cad_export_succeeded:
+            logging.error(
+                "Project libraries were not registered because CAD export did not succeed"
+            )
+            registration_failed = True
+        elif not _register_project_libraries(arguments):
+            registration_failed = True
 
     _log_metadata_diagnostics(merged, require_cad=arguments["require_cad"])
     manifests_ok = _write_requested_manifests(merged, arguments)
     if arguments.get("show_conflicts"):
         _show_metadata_conflicts(merged)
 
-    if not manifests_ok or export_failed or result.blocking_error:
+    if (
+        not manifests_ok
+        or export_failed
+        or registration_failed
+        or result.blocking_error
+    ):
         return 1
     if merged.verification_status == CAD_PIN_PAD_MISMATCH:
         return 1
@@ -1211,6 +1379,17 @@ def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
         mpn=mpn,
         source=arguments["cad_source"],
     )
+    model_relative_path = arguments.get("project_relative_3d_path")
+    if not isinstance(model_relative_path, str):
+        relative_model_directory = relative_path_if_within(
+            Path.cwd().resolve(),
+            Path("{0}.3dshapes".format(arguments["output"])).resolve(),
+        )
+        model_relative_path = (
+            relative_model_directory.as_posix()
+            if relative_model_directory is not None
+            else None
+        )
     try:
         result = ingest_cad_package(
             Path(arguments["cad_package"]),
@@ -1218,9 +1397,15 @@ def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
             request=request,
             output_base=Path(arguments["output"]),
             overwrite=arguments["overwrite"],
+            project_relative_model_path=model_relative_path,
         )
     except CadPackageError as error:
         logging.error("%s", error)
+        return 1
+
+    if arguments.get("register_project_libraries") and not _register_project_libraries(
+        arguments
+    ):
         return 1
 
     merged = MergedPart(
@@ -1266,6 +1451,9 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     if not valid_arguments(arguments=arguments):
         return 1
 
+    if arguments.get("dry_run"):
+        return _run_project_registration_dry_run(arguments)
+
     if arguments["metadata_mode"]:
         return _run_metadata_mode(arguments)
 
@@ -1275,6 +1463,13 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     for component_id in arguments["lcsc_id"]:
         if not _process_component(component_id, arguments, api):
             had_errors = True
+
+    if (
+        arguments.get("register_project_libraries")
+        and not had_errors
+        and not _register_project_libraries(arguments)
+    ):
+        had_errors = True
 
     return 1 if had_errors else 0
 

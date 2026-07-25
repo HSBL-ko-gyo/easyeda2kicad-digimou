@@ -1,14 +1,16 @@
 # Current state
 
-Last updated: 2026-07-25 (Asia/Tokyo)
+Last updated: 2026-07-26 (Asia/Tokyo)
 
 ## Current phase
 
 The post-beta issue sequence is now active on the actual default branch.
 Issues #2 and #1 are merged and closed; Issue #4 Phase A and Issue #7 Phase A
 are merged while their parent issues remain open. Issue #7 Phase B implements
-the intermediate, local-package intake milestone. It is not the completion of
-DigiKey/Ultra Librarian or Mouser/SamacSys service acquisition.
+the intermediate, local-package intake milestone. Issue #5 adds explicit,
+project-local library registration after validated CAD generation. These are
+not the completion of DigiKey/Ultra Librarian or Mouser/SamacSys service
+acquisition.
 
 RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
 limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
@@ -20,6 +22,23 @@ gates remain.
 
 ## Completed
 
+- Added opt-in `--project PATH --register-project-libraries` registration for
+  `sym-lib-table` and `fp-lib-table`, with `${KIPRJMOD}` URIs and nicknames
+  derived from the output stem. `--project-relative` alone never registers a
+  library or changes a project.
+- Added read-only `--dry-run`, exact idempotency, nickname/URI collision
+  detection, malformed/ambiguous project rejection, concurrent-change checks,
+  fsync-backed temporary siblings, atomic replacement, and cross-table
+  rollback. The `.kicad_pro` file is never modified.
+- Retargeted imported native symbols to the installed footprint-library
+  nickname after verifying one exact Footprint property. Missing or duplicate
+  Footprint properties now fail closed before output.
+- Verified a disposable KiCad 10 project end to end: the registered symbol
+  appeared in the symbol chooser with pins 1/2, its `parts:SYNTH_FP` footprint
+  resolved with pads 1/2 and courtyard, and the project-relative WRL loaded,
+  centered, and rotated in 3D Viewer. KiCad CLI 7/9/10 parsed and rendered the
+  registered symbol and footprint; KiCad CLI 10 also exported the schematic
+  and rendered the PCB. No user-owned project was used or modified.
 - Added a fail-closed local ZIP intake path for native KiCad packages using
   `--cad-package`, exact `--manufacturer`/`--mpn`, and explicit
   `--cad-source digikey|mouser`. Versioned Ultra Librarian and SamacSys adapters
@@ -154,8 +173,9 @@ no partial output.
 ## Remaining
 
 - DigiKey/Ultra Librarian and Mouser/SamacSys service discovery/handoff,
-  user-owned real-package intake, project registration, and real KiCad GUI
-  verification remain required before Issue #7 can close.
+  user-owned real-package intake through the completed registration path, and
+  real-package KiCad GUI verification remain required before Issue #7 can
+  close.
 - Credentialed DigiKey/Mouser live calls and native Linux process E2E remain
   disclosed external validation gaps.
 

@@ -51,3 +51,18 @@ def test_readme_describes_local_package_as_an_intermediate_safe_handoff() -> Non
     assert "CLI input alone is insufficient" in readme
     assert "more than 4096 entries" in readme
     assert "does not automate provider website search, login, agreements, or" in readme
+
+
+def test_readme_documents_opt_in_project_registration_and_dry_run() -> None:
+    readme = readme_text()
+    section = readme[readme.index("### Registering libraries in one KiCad project") :]
+
+    assert "--project ./myproject" in section
+    assert "--register-project-libraries" in section
+    assert "--dry-run" in section
+    assert "${KIPRJMOD}/libs/my_lib.kicad_sym" in section
+    assert "${KIPRJMOD}/libs/my_lib.pretty" in section
+    assert "does not edit the `.kicad_pro` file" in section
+    assert "`--project-relative` by itself" in section
+    assert "atomic" in section
+    assert "roll back" in section

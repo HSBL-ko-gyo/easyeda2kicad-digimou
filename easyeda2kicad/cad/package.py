@@ -9,7 +9,7 @@ import re
 import shutil
 import tempfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 # Local imports
@@ -32,6 +32,7 @@ from .kicad import (
     extract_properties,
     merge_symbol_library,
     rewrite_footprint_model,
+    rewrite_symbol_footprint,
     select_exact_symbol,
     select_footprint,
     validate_model,
@@ -101,6 +102,7 @@ def ingest_cad_package(
     request: CadRequest,
     output_base: Path,
     overwrite: bool = False,
+    project_relative_model_path: Optional[str] = None,
 ) -> CadPackageIngestResult:
     """Validate an untrusted package completely before changing output libraries."""
 
@@ -136,6 +138,7 @@ def ingest_cad_package(
             prepared,
             output_base,
             overwrite=overwrite,
+            project_relative_model_path=project_relative_model_path,
         )
     discovery = CadDiscoveryResult(
         requested_source=request.source,
@@ -295,6 +298,7 @@ def _install_prepared_package(
     output_base: Path,
     *,
     overwrite: bool,
+    project_relative_model_path: Optional[str],
 ) -> CadRecord:
     _safe_artifact_filename(output_base.name)
     symbol_target = Path("{0}.kicad_sym".format(output_base))
@@ -322,8 +326,11 @@ def _install_prepared_package(
         ),
         prepared.model_paths[0],
     )
-    portable_model_path = "${{KIPRJMOD}}/{0}.3dshapes/{1}".format(
-        output_base.name,
+    portable_model_directory = _safe_project_relative_model_path(
+        project_relative_model_path or "{0}.3dshapes".format(output_base.name)
+    )
+    portable_model_path = "${{KIPRJMOD}}/{0}/{1}".format(
+        portable_model_directory,
         primary_model.name,
     )
     rewritten_footprint = rewrite_footprint_model(
@@ -335,12 +342,18 @@ def _install_prepared_package(
         prepared.request,
         prepared.footprint.name,
     )
-    verify_pin_pad_identity(prepared.symbol, parse_target)
+    installed_symbol = rewrite_symbol_footprint(
+        prepared.symbol,
+        prepared.request,
+        output_base.name,
+        parse_target.name,
+    )
+    verify_pin_pad_identity(installed_symbol, parse_target)
 
     existing_symbol_text = _read_text(symbol_target) if symbol_target.exists() else None
     merged_symbol_text = merge_symbol_library(
         existing_symbol_text,
-        prepared.symbol,
+        installed_symbol,
         prepared.request,
         overwrite=overwrite,
     )
@@ -708,6 +721,22 @@ def _safe_artifact_filename(value: str) -> str:
             "package-derived artifact name is not portable",
         )
     return value
+
+
+def _safe_project_relative_model_path(value: str) -> str:
+    portable = value.replace("\\", "/")
+    path = PurePosixPath(portable)
+    if (
+        not portable
+        or path.is_absolute()
+        or any(part in ("", ".", "..") for part in path.parts)
+        or any(ord(character) < 32 or ord(character) == 127 for character in portable)
+    ):
+        raise CadPackageError(
+            "CAD_PROJECT_MODEL_PATH_UNSAFE",
+            "project-relative 3D model path is not portable",
+        )
+    return path.as_posix()
 
 
 def _artifact_kind(path: Path) -> str:

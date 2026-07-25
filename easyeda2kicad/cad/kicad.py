@@ -233,6 +233,70 @@ def rewrite_footprint_model(text: str, portable_model_path: str) -> str:
     )
 
 
+def rewrite_symbol_footprint(
+    selection: SymbolSelection,
+    request: CadRequest,
+    library_nickname: str,
+    footprint_name: str,
+) -> SymbolSelection:
+    """Retarget one selected symbol to its installed project-library footprint."""
+
+    document = parse_document(selection.block, "symbol")
+    matches: List[Tuple[FormSpan, re.Match[str]]] = []
+    for form in document.forms:
+        if form.head != "property":
+            continue
+        match = _PROPERTY_RE.search(form.text)
+        if match is None or _unescape(match.group(1)).strip().casefold() != "footprint":
+            continue
+        matches.append((form, match))
+    if len(matches) != 1:
+        raise CadPackageError(
+            "CAD_SYMBOL_FOOTPRINT_PROPERTY_INVALID",
+            "selected symbol must contain exactly one Footprint property",
+        )
+
+    property_form, property_match = matches[0]
+    value_start, value_end = property_match.span(2)
+    installed_reference = "{0}:{1}".format(library_nickname, footprint_name)
+    rewritten_property = (
+        property_form.text[:value_start]
+        + _escape(installed_reference)
+        + property_form.text[value_end:]
+    )
+    rewritten_block = (
+        selection.block[: property_form.start]
+        + rewritten_property
+        + selection.block[property_form.end :]
+    )
+
+    source = parse_document(selection.source_library, "kicad_symbol_lib")
+    selected_forms = [
+        form
+        for form in source.forms
+        if form.head == "symbol"
+        and _form_quoted_name(form.text, "CAD_SYMBOL_INVALID") == selection.name
+    ]
+    if len(selected_forms) != 1:
+        raise CadPackageError(
+            "CAD_SYMBOL_AMBIGUOUS",
+            "selected symbol cannot be retargeted uniquely",
+        )
+    selected_form = selected_forms[0]
+    rewritten_library = (
+        selection.source_library[: selected_form.start]
+        + rewritten_block
+        + selection.source_library[selected_form.end :]
+    )
+    rewritten = select_exact_symbol(rewritten_library, request)
+    if rewritten.footprint_name != footprint_name:
+        raise CadPackageError(
+            "CAD_SYMBOL_FOOTPRINT_PROPERTY_INVALID",
+            "rewritten symbol does not reference the selected footprint",
+        )
+    return rewritten
+
+
 def merge_symbol_library(
     existing_text: Optional[str],
     selection: SymbolSelection,
@@ -556,6 +620,7 @@ __all__ = [
     "merge_symbol_library",
     "parse_document",
     "rewrite_footprint_model",
+    "rewrite_symbol_footprint",
     "select_exact_symbol",
     "select_footprint",
     "validate_model",
