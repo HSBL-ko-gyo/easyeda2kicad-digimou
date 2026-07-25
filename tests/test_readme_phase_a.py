@@ -21,10 +21,12 @@ def test_readme_states_current_cad_boundaries_near_the_top() -> None:
     installation = readme.index("## 💾 Installation")
 
     assert capabilities < installation
-    assert "CAD acquisition is fixed to EasyEDA" in readme
+    assert "CAD acquisition defaults to EasyEDA" in readme
     assert "Ultra Librarian" in readme
     assert "SamacSys" in readme
-    assert "does not provide complete\nDigiKey or Mouser CAD support" in readme
+    assert "does not provide complete DigiKey or Mouser CAD support" in (
+        readme.replace("\n", " ")
+    )
 
 
 def test_readme_warns_before_the_first_three_provider_command() -> None:
@@ -38,3 +40,14 @@ def test_readme_warns_before_the_first_three_provider_command() -> None:
     assert "status `0`" in preamble
     assert "`PARTIAL`" in preamble
     assert "provider_errors" in preamble
+
+
+def test_readme_describes_local_package_as_an_intermediate_safe_handoff() -> None:
+    readme = readme_text()
+
+    assert "--cad-package ./downloads/official-ultralibrarian-kicad.zip" in readme
+    assert "--cad-package-format ultralibrarian-kicad" in readme
+    assert "--cad-source mouser --cad-package-format samacsys-kicad" in readme
+    assert "CLI input alone is insufficient" in readme
+    assert "more than 4096 entries" in readme
+    assert "does not automate provider website search, login, agreements, or" in readme

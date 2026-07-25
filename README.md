@@ -18,15 +18,17 @@
 | Provider path | Distributor metadata | CAD acquisition today | Account requirement |
 | --- | --- | --- | --- |
 | LCSC / JLCPCB + EasyEDA | Exact LCSC/JLCPCB catalogue metadata | Symbol, footprint, and 3D model from EasyEDA | None |
-| DigiKey | Official Product Information V4 API metadata | No DigiKey CAD retrieval; CAD remains EasyEDA-only | User-owned DigiKey developer app credentials |
-| Mouser | Official Search API V2 metadata | No Mouser CAD retrieval; CAD remains EasyEDA-only | User-owned Mouser API key |
+| DigiKey | Official Product Information V4 API metadata | Safe local import of a user-downloaded native KiCad Ultra Librarian ZIP; service retrieval is not implemented | User-owned DigiKey developer app credentials for metadata; official-site interaction for package download |
+| Mouser | Official Search API V2 metadata | Safe local import of a user-downloaded native KiCad SamacSys ZIP; service retrieval is not implemented | User-owned Mouser API key for metadata; official-site interaction or Library Loader for package download |
 
 `--providers` currently selects **metadata providers**, not alternative CAD
-sources. CAD acquisition is fixed to EasyEDA and requires an exact LCSC
-mapping. Ultra Librarian delivery through DigiKey and SamacSys delivery through
-Mouser are not yet implemented for discovery, download, or import. Until those
-paths are implemented and validated, this project does not provide complete
-DigiKey or Mouser CAD support.
+sources. CAD acquisition defaults to EasyEDA and requires an exact LCSC
+mapping. `--cad-source` is a separate CAD contract: an explicit `digikey` or
+`mouser` selection never falls back to EasyEDA. Local package validation and
+import are available, but Ultra Librarian delivery through DigiKey and SamacSys
+delivery through Mouser are not yet implemented for service discovery or
+download. Until those paths are implemented and validated with real packages
+in KiCad, this project does not provide complete DigiKey or Mouser CAD support.
 
 This beta preserves the existing `easyeda2kicad` Python package, CLI command,
 public API, legacy `--lcsc_id` path, and legacy KiCad output while adding
@@ -119,7 +121,7 @@ easyeda2kicad --svg --lcsc_id=C2040 --output ~/libs/my_lib
 ### Exact-MPN distributor metadata
 
 The extended CLI can resolve an exact manufacturer part number through LCSC,
-DigiKey, and Mouser while continuing to obtain CAD only from EasyEDA:
+DigiKey, and Mouser. Without `--cad-package`, CAD still defaults to EasyEDA:
 
 An API is the machine-readable product-search interface used by this CLI; it is
 not the same as browsing a public product page. DigiKey and Mouser require
@@ -158,6 +160,47 @@ when no metadata option is present:
 ```bash
 easyeda2kicad --full --lcsc_id C30878 --output ./libs/project_parts
 ```
+
+### Import a locally downloaded CAD package
+
+The local importer is an intermediate handoff for packages that the user
+obtained through an official DigiKey/Ultra Librarian or Mouser/SamacSys
+workflow. It does not automate provider website search, login, agreements, or
+download, and it does not make the DigiKey/Mouser CAD service path complete.
+Only native KiCad `.kicad_sym` and `.kicad_mod` packages with STEP/STP or WRL
+models are accepted; legacy `.lib` conversion and Library Loader internals are
+not guessed.
+
+Create the output parent first, then provide the exact manufacturer and full
+ordering MPN shown by the package itself:
+
+```bash
+mkdir -p ./libs
+easyeda2kicad \
+  --manufacturer "Example Manufacturer" \
+  --mpn "EXACT-MPN-INCLUDING-SUFFIX" \
+  --cad-source digikey \
+  --cad-package ./downloads/official-ultralibrarian-kicad.zip \
+  --cad-package-format ultralibrarian-kicad \
+  --output ./libs/project_parts \
+  --manifest-json ./build/cad-package.json
+```
+
+Use `--cad-source mouser --cad-package-format samacsys-kicad` for the
+corresponding SamacSys handoff. `--cad-package-format auto` is the default and
+accepts a package only when exactly one supported adapter is proven by package
+notices/layout. The distributor, delivery partner, and model creator remain
+separate provenance fields.
+
+The ZIP is inspected before extraction: absolute, UNC, drive and parent paths,
+links, duplicate/case-colliding paths, nested archives, more than 4096 entries,
+more than 512 MiB expanded data, files over 256 MiB, and compression ratios
+over 200:1 are rejected. Manufacturer and exact MPN must be proven by native
+symbol properties; CLI input alone is insufficient. Ambiguous symbols,
+footprints or models, malformed KiCad data, and pin/pad mismatches fail closed.
+Installation stages and validates all files before atomically replacing the
+target `.kicad_sym`, `.pretty`, and `.3dshapes` paths. Existing non-empty,
+conflicting Manufacturer/MPN values are never overwritten.
 
 `--providers` is a comma-separated list of distributor metadata to return.
 Metadata mode defaults to `lcsc` when the option is omitted. In MPN-only mode,
