@@ -1,64 +1,47 @@
-name: Publish
+name: Build distribution artifacts
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - "easyeda2kicad/_version.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-distribution-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  publish:
-    name: Publish to PyPI
+  build:
+    name: Build and verify distributions
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # required for creating tags and GitHub releases
-      id-token: write  # required for OIDC trusted publishing to PyPI
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Read version
-        id: version
-        run: |
-          VERSION=$(grep -m1 '__version__' easyeda2kicad/_version.py | cut -d'"' -f2)
-          if [ -z "$VERSION" ]; then
-            echo "Error: could not read __version__ from _version.py" >&2
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Check tag does not exist
-        run: |
-          TAG="v${{ steps.version.outputs.version }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Error: tag $TAG already exists - was _version.py changed without bumping the version?" >&2
-            exit 1
-          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+          cache: "pip"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
 
       - name: Build package
         run: |
-          python -m pip install build
           python -m build
 
-      - name: Create tag
+      - name: Verify distributions
         run: |
-          git tag "v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}"
+          python -m twine check dist/*
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: "v${{ steps.version.outputs.version }}"
-          name: "v${{ steps.version.outputs.version }}"
-          generate_release_notes: true
-          files: dist/*
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+          name: easyeda2kicad-distributions-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
