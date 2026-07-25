@@ -64,6 +64,28 @@ def manifest_to_dict(
         identity["manufacturer_datasheet_url"] = sanitize_public_url(
             identity.get("manufacturer_datasheet_url")
         )
+    cad = result.get("cad")
+    if isinstance(cad, dict) and "landing_url" in cad:
+        cad["landing_url"] = sanitize_public_url(cad.get("landing_url"))
+    cad_discovery = result.get("cad_discovery")
+    if isinstance(cad_discovery, dict):
+        provenance = cad_discovery.get("provenance")
+        if isinstance(provenance, dict):
+            provenance["landing_url"] = sanitize_public_url(
+                provenance.get("landing_url")
+            )
+        action_required = cad_discovery.get("action_required")
+        if isinstance(action_required, dict):
+            action_required["setup_url"] = sanitize_public_url(
+                action_required.get("setup_url")
+            )
+        package = cad_discovery.get("package")
+        if isinstance(package, dict):
+            package_provenance = package.get("provenance")
+            if isinstance(package_provenance, dict):
+                package_provenance["landing_url"] = sanitize_public_url(
+                    package_provenance.get("landing_url")
+                )
     for record in result["distributor_records"]:
         record["product_url"] = sanitize_public_url(record.get("product_url"))
         record["datasheet_url"] = sanitize_public_url(record.get("datasheet_url"))
