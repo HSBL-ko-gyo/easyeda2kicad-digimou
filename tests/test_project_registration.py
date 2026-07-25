@@ -239,7 +239,7 @@ def test_nickname_and_uri_conflicts_fail_without_changes(
     assert not (project.parent / "fp-lib-table").exists()
 
 
-def test_windows_and_posix_uri_spellings_are_idempotent_on_windows(
+def test_windows_and_posix_uri_spellings_are_idempotent_on_all_platforms(
     tmp_path: Path,
 ) -> None:
     project = _project(tmp_path / "project")
@@ -256,10 +256,7 @@ def test_windows_and_posix_uri_spellings_are_idempotent_on_windows(
     symbol_update = next(
         update for update in plan.updates if update.root_name == "sym_lib_table"
     )
-    if os.name == "nt":
-        assert symbol_update.action == "unchanged"
-    else:
-        assert symbol_update.action == "update"
+    assert symbol_update.action == "unchanged"
     footprint_update = next(
         update for update in plan.updates if update.root_name == "fp_lib_table"
     )
