@@ -943,11 +943,12 @@ def _write_requested_manifests(merged: MergedPart, arguments: dict[str, Any]) ->
 
 
 def _write_console_json(value: Any, *, stream: TextIO | None = None) -> None:
-    """Write one JSON line without partially encoding it to the console."""
+    """Write one credential-safe JSON line without partial console encoding."""
 
     target = sys.stdout if stream is None else stream
+    safe_value = strip_secrets(value)
     serialized = json.dumps(
-        value,
+        safe_value,
         ensure_ascii=False,
         allow_nan=False,
         sort_keys=True,
@@ -959,7 +960,7 @@ def _write_console_json(value: Any, *, stream: TextIO | None = None) -> None:
             (serialized + "\n").encode(encoding)
         except UnicodeEncodeError:
             serialized = json.dumps(
-                value,
+                safe_value,
                 ensure_ascii=True,
                 allow_nan=False,
                 sort_keys=True,
@@ -970,13 +971,11 @@ def _write_console_json(value: Any, *, stream: TextIO | None = None) -> None:
 
 def _show_metadata_conflicts(merged: MergedPart) -> None:
     _write_console_json(
-        strip_secrets(
-            {
-                "conflicts": model_to_dict(merged.conflicts),
-                "provider_errors": merged.provider_errors,
-                "provider_diagnostics": model_to_dict(merged.provider_diagnostics),
-            }
-        )
+        {
+            "conflicts": model_to_dict(merged.conflicts),
+            "provider_errors": merged.provider_errors,
+            "provider_diagnostics": model_to_dict(merged.provider_diagnostics),
+        }
     )
 
 

@@ -644,12 +644,19 @@ def test_console_json_writer_falls_back_to_ascii_for_cp932() -> None:
     raw = io.BytesIO()
     stream = io.TextIOWrapper(raw, encoding="cp932", newline="\n")
 
-    cli._write_console_json({"manufacturer": "TI(德州仪器)"}, stream=stream)
+    cli._write_console_json(
+        {
+            "manufacturer": "TI(德州仪器)",
+            "client_secret": "console-secret-canary",
+        },
+        stream=stream,
+    )
     stream.flush()
 
     output = raw.getvalue().decode("cp932")
     assert json.loads(output) == {"manufacturer": "TI(德州仪器)"}
     assert "\\u5fb7\\u5dde\\u4eea\\u5668" in output
+    assert "console-secret-canary" not in output
 
 
 def test_console_json_writer_preserves_unicode_for_utf8() -> None:
