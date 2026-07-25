@@ -109,7 +109,11 @@ def test_synthetic_provider_layout_imports_atomically_and_is_idempotent(
         second.package.provenance.package_hash == first.package.provenance.package_hash
     )
     assert before == after
-    assert output.with_suffix(".kicad_sym").is_file()
+    symbol = output.with_suffix(".kicad_sym")
+    assert symbol.is_file()
+    assert '(property "Footprint" "parts:SYNTH_FP"' in symbol.read_text(
+        encoding="utf-8"
+    )
     footprint = output.with_suffix(".pretty") / "SYNTH_FP.kicad_mod"
     assert footprint.is_file()
     assert "${KIPRJMOD}/parts.3dshapes/SYNTH_FP.wrl" in footprint.read_text(
@@ -122,6 +126,46 @@ def test_synthetic_provider_layout_imports_atomically_and_is_idempotent(
         "wrl",
     }
     assert all(len(artifact.sha256) == 64 for artifact in first.cad.artifacts)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate"])
+def test_symbol_footprint_property_must_be_unique(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    def mutate_footprint_property(relative: str, value: bytes) -> bytes:
+        if not relative.endswith(".kicad_sym"):
+            return value
+        property_block = (
+            b'    (property "Footprint" "Synthetic:SYNTH_FP" (at 0 0 0)\n'
+            b"      (effects (font (size 1.27 1.27)) hide)\n"
+            b"    )\n"
+        )
+        if mutation == "missing":
+            return value.replace(property_block, b"")
+        return value.replace(property_block, property_block + property_block)
+
+    archive = _zip_tree(
+        FIXTURE_ROOT / "ultralibrarian-kicad-v1",
+        tmp_path / "{0}.zip".format(mutation),
+        mutate=mutate_footprint_property,
+    )
+    output = tmp_path / "parts"
+
+    with pytest.raises(
+        CadPackageError,
+        match="CAD_SYMBOL_FOOTPRINT_PROPERTY_INVALID",
+    ):
+        ingest_cad_package(
+            archive,
+            package_format="auto",
+            request=_request(),
+            output_base=output,
+        )
+
+    assert not output.with_suffix(".kicad_sym").exists()
+    assert not output.with_suffix(".pretty").exists()
+    assert not output.with_suffix(".3dshapes").exists()
 
 
 def test_identity_mismatch_fails_before_any_output(tmp_path: Path) -> None:

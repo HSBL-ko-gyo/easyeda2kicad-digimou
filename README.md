@@ -350,6 +350,53 @@ absolute filesystem path, making the project portable. The resolved output must
 remain inside the current project directory; out-of-tree and different-drive
 paths are rejected before conversion.
 
+### Registering libraries in one KiCad project
+
+Project library registration is opt-in. Pass either one `.kicad_pro` file or a
+directory containing exactly one `.kicad_pro`, keep the output inside that
+project, and add `--register-project-libraries`:
+
+```bash
+easyeda2kicad --full --lcsc_id=C2040 \
+  --output ./myproject/libs/my_lib \
+  --project ./myproject \
+  --register-project-libraries
+```
+
+On PowerShell, the same operation can use explicit Windows paths:
+
+```powershell
+easyeda2kicad --full --lcsc_id=C2040 `
+  --output C:\work\myproject\libs\my_lib `
+  --project C:\work\myproject\board.kicad_pro `
+  --register-project-libraries
+```
+
+After successful CAD generation and validation, the command adds `my_lib` to
+the project's `sym-lib-table` and `fp-lib-table` using
+`${KIPRJMOD}/libs/my_lib.kicad_sym` and
+`${KIPRJMOD}/libs/my_lib.pretty`. It does not edit the `.kicad_pro` file.
+An identical registration is an idempotent no-op. A reused nickname or path
+that points somewhere else is a conflict and stops without changing either
+table. Existing entries, their order, and unknown table fields are preserved.
+
+Preview the exact target files and entries without making a network request,
+generating CAD, writing a Manifest, or changing project tables:
+
+```bash
+easyeda2kicad --full --lcsc_id=C2040 \
+  --output ./myproject/libs/my_lib \
+  --project ./myproject \
+  --register-project-libraries \
+  --dry-run
+```
+
+`--project-relative` by itself only makes generated 3D paths portable; it never
+registers libraries. Project table writes occur only after explicit
+`--register-project-libraries`, use temporary sibling files plus atomic
+replacement, detect concurrent changes, and roll back if either table update
+fails.
+
 ### Multiple IDs at once
 
 You can import several components in a single call:
