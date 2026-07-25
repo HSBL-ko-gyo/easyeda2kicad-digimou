@@ -190,11 +190,13 @@ no partial output.
   authenticated Product Information V4 `Media` result for AD5314BRM has not
   been exercised. A credential-gated `network` smoke test now performs one
   exact lookup and one official `Media` handoff request without retaining raw
-  responses or credentials. The owner must configure those variables, run the
-  documented smoke and handoff commands, review the Ultra Librarian agreement,
-  and provide the downloaded KiCad+STEP/WRL ZIP. Phase C remains incomplete
-  until that real package passes import, project registration, KiCad CLI, and
-  KiCad GUI checks.
+  responses or credentials. A separate package-gated smoke uses only a
+  disposable project to import and register the owner-downloaded ZIP
+  idempotently and render its real symbol/footprint with KiCad CLI 7/9/10. The
+  owner must configure those variables, run the documented smoke and handoff
+  commands, review the Ultra Librarian agreement, and provide the downloaded
+  KiCad+STEP/WRL ZIP. Phase C remains incomplete until those live smokes and
+  the real-package KiCad GUI checks pass.
 - Mouser/SamacSys service discovery/handoff remains unimplemented. DigiKey and
   Mouser both still require user-owned real-package intake through the completed
   registration path and real-package KiCad GUI verification before Issue #7

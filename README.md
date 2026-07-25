@@ -187,6 +187,22 @@ python -m pytest -q -m network \
   tests/test_provider_live.py::test_digikey_live_ad5314_cad_handoff_smoke
 ```
 
+After the owner downloads the real ZIP, set
+`DIGIKEY_AD5314_CAD_PACKAGE` to its local path and run the package-gated smoke:
+
+```bash
+python -m pytest -q -m network \
+  tests/test_provider_live.py::test_digikey_live_ad5314_package_project_e2e
+```
+
+That test uses only a disposable temporary project. It proves fail-closed
+package identity, atomic/idempotent import, project-table registration,
+portable paths and hashes, then parses and renders the real symbol and
+footprint with the locally installed KiCad 7, 9, and 10 CLIs. It never modifies
+an existing project and does not persist or commit the provider ZIP. Visual
+symbol/pin, footprint/pad, and 3D alignment inspection in the KiCad 10 GUI
+remains an explicit owner-visible final check.
+
 The command calls only the official Product Information V4 API. It revalidates
 the exact manufacturer and full MPN, then accepts only an API response whose
 `MediaType` is `Model` and whose URL is an unambiguous recognized Ultra
@@ -204,10 +220,10 @@ EasyEDA.
 
 The primary validation candidate is Analog Devices `AD5314BRM`. Its EasyEDA CAD
 absence and public DigiKey-linked Ultra Librarian page were reconfirmed on
-2026-07-25. The credential-gated smoke test is ready but has not run;
-authenticated API discovery and real-package KiCad validation still require
-owner credentials and a user-downloaded package. This is not yet an end-to-end
-completion claim.
+2026-07-25. The credential- and package-gated smoke tests are ready but have not
+run; authenticated API discovery and real-package KiCad validation still
+require owner credentials and a user-downloaded package. This is not yet an
+end-to-end completion claim.
 
 ### Import a locally downloaded CAD package
 

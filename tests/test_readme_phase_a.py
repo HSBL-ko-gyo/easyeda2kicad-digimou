@@ -72,6 +72,13 @@ def test_readme_documents_api_only_digikey_manual_handoff_boundary() -> None:
         "tests/test_provider_live.py::test_digikey_live_ad5314_cad_handoff_smoke"
         in section
     )
+    assert (
+        "tests/test_provider_live.py::test_digikey_live_ad5314_package_project_e2e"
+        in section
+    )
+    assert "`DIGIKEY_AD5314_CAD_PACKAGE`" in section
+    assert "disposable temporary project" in section
+    assert "KiCad 7, 9, and 10 CLIs" in section
     assert "writes no response or credential artifact" in section.replace("\n", " ")
     assert "This is not yet an end-to-end completion claim" in section.replace(
         "\n", " "
