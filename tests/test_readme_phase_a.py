@@ -66,3 +66,27 @@ def test_readme_documents_opt_in_project_registration_and_dry_run() -> None:
     assert "`--project-relative` by itself" in section
     assert "atomic" in section
     assert "roll back" in section
+
+
+def test_readme_documents_same_command_jlcpcb_resolution_contract() -> None:
+    readme = readme_text()
+    section = readme.split(
+        "### JLCPCB/LCSC resolution in the same command", maxsplit=1
+    )[1].split("### Import a locally downloaded CAD package", maxsplit=1)[0]
+    flattened = section.replace("\n", " ")
+
+    assert "regardless of `--providers` or" in section
+    assert "`--cad-source`" in section
+    assert "No `--pcba-target` flag or second command" in section
+    assert "`JLCPCB Part #` and `LCSC Part #`" in section
+    assert "`JLCPCB_PART_FOUND`" in section
+    assert "stock is zero" in flattened
+    assert "`MANUAL_GLOBAL_SOURCING_REQUIRED`" in section
+    assert "Search/order exact MPN in JLCPCB Parts Manager > Global Sourcing" in section
+    assert "`JLCPCB_LOOKUP_FAILED`" in section
+    assert "`JLCPCB_IDENTITY_AMBIGUOUS`" in section
+    assert "`JLCPCB_IDENTITY_CONFLICT`" in section
+    assert "`LIVE`, `CACHED`, and `OFFLINE_MISS`" in section
+    assert "existing native `LCSC Part` field" in flattened
+    assert "workflow hints" in section
+    assert "do not claim" in section

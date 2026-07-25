@@ -161,6 +161,44 @@ when no metadata option is present:
 easyeda2kicad --full --lcsc_id C30878 --output ./libs/project_parts
 ```
 
+### JLCPCB/LCSC resolution in the same command
+
+Every online exact-`--mpn` acquisition queries the public JLCPCB/LCSC
+catalogue during that invocation, regardless of `--providers` or
+`--cad-source`. No `--pcba-target` flag or second command is required. The
+result is stored under `jlcpcb` in JSON and in permanent generic CSV columns:
+
+- `JLCPCB Part #` and `LCSC Part #`
+- `JLCPCB Match Status`, `JLCPCB Checked At`, and `JLCPCB Cache State`
+- `JLCPCB Stock` and `Manual Action Required`
+- `Global Sourcing Candidates`
+
+`JLCPCB_PART_FOUND` means one exact manufacturer/full-MPN result proved a
+canonical `C...` identifier. The identifier remains FOUND when public stock is
+zero; identifier existence and stock are separate facts. Both part-number
+cells contain only a proven canonical identifier or an empty string—never
+`NOT_FOUND` or another sentinel.
+
+When a live lookup completes with no exact assigned number, the status is
+`MANUAL_GLOBAL_SOURCING_REQUIRED` and the action is:
+
+```text
+Search/order exact MPN in JLCPCB Parts Manager > Global Sourcing
+```
+
+Exact DigiKey/Mouser records from the same invocation remain as sanitized
+Global Sourcing candidates, but are only workflow hints. They do not claim
+that JLCPCB has approved, purchased, received, stocked, or made the part
+assemblable. `JLCPCB_LOOKUP_FAILED`, `JLCPCB_IDENTITY_AMBIGUOUS`, and
+`JLCPCB_IDENTITY_CONFLICT` remain separate fail-closed states and are never
+converted to manual sourcing or not-found.
+
+`JLCPCB Cache State` distinguishes `LIVE`, `CACHED`, and `OFFLINE_MISS`.
+`--refresh-metadata` forces a live re-check; `--offline` never makes a network
+request. The generated KiCad symbol continues to use only the existing native
+`LCSC Part` field, populated solely by a proven canonical value. Sourcing
+status, stock, actions, and candidates remain Manifest-only.
+
 ### Import a locally downloaded CAD package
 
 The local importer is an intermediate handoff for packages that the user

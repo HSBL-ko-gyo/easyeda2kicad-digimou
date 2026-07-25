@@ -15,6 +15,7 @@ from easyeda2kicad.providers import (
     EasyedaProvider,
     InvalidResponseError,
     LcscProvider,
+    MpnMismatchError,
     NetworkError,
     NotFoundError,
     OfflineCacheMissError,
@@ -132,6 +133,29 @@ def test_lcsc_prefers_english_manufacturer_from_same_catalogue_record() -> None:
     record = provider.search_exact_mpn(None, "OPA333AIDBVR")
 
     assert record.manufacturer == "Texas Instruments"
+
+
+def test_lcsc_exact_mpn_with_conflicting_manufacturer_is_not_no_match() -> None:
+    api = _FakeApi(
+        pages={
+            1: {
+                "total": 1,
+                "results": [
+                    _search_item(
+                        "C30878",
+                        "OPA333AIDBVR",
+                        manufacturer="Different Manufacturer",
+                    )
+                ],
+            }
+        }
+    )
+    provider = LcscProvider(api=cast(Any, api), sleeper=lambda _delay: None)
+
+    with pytest.raises(MpnMismatchError) as error:
+        provider.search_exact_mpn("Texas Instruments", "OPA333AIDBVR")
+
+    assert error.value.operation == "manufacturer-exact-match"
 
 
 def test_lcsc_empty_normalized_exact_query_stops_before_search() -> None:

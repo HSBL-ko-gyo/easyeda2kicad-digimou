@@ -7,6 +7,7 @@ import pytest
 
 from easyeda2kicad.__main__ import get_parser, valid_arguments
 from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad.metadata.cache import MetadataCache
 from easyeda2kicad.metadata.manifest import manifest_to_dict
 from easyeda2kicad.metadata.models import (
     CAD_IDENTITY_UNRESOLVED,
@@ -58,6 +59,7 @@ def test_unspecified_cad_source_keeps_legacy_lcsc_mode(tmp_path: Path) -> None:
 @pytest.mark.parametrize("source", ["digikey", "mouser"])
 def test_explicit_external_cad_source_never_constructs_easyeda_provider(
     source: str,
+    tmp_path: Path,
 ) -> None:
     def fail_if_called(_api: EasyedaApi) -> Any:
         raise AssertionError("explicit external source fell back to EasyEDA")
@@ -69,6 +71,8 @@ def test_explicit_external_cad_source_never_constructs_easyeda_provider(
         provider_names=(),
         cad_api=EasyedaApi(offline=True),
         cad_source=source,
+        cache=MetadataCache(tmp_path / "cache"),
+        offline=True,
         provider_factory=_provider_factory,
         cad_provider_factory=fail_if_called,
     )
@@ -85,7 +89,7 @@ def test_explicit_external_cad_source_never_constructs_easyeda_provider(
     )
 
 
-def test_external_cad_request_requires_complete_identity() -> None:
+def test_external_cad_request_requires_complete_identity(tmp_path: Path) -> None:
     result = resolve_metadata(
         requested_mpn="OPA333AIDBVR",
         requested_manufacturer=None,
@@ -93,6 +97,8 @@ def test_external_cad_request_requires_complete_identity() -> None:
         provider_names=(),
         cad_api=EasyedaApi(offline=True),
         cad_source="digikey",
+        cache=MetadataCache(tmp_path / "cache"),
+        offline=True,
         provider_factory=_provider_factory,
         cad_provider_factory=lambda _api: pytest.fail("EasyEDA fallback"),
     )
@@ -108,7 +114,7 @@ def test_external_cad_request_requires_complete_identity() -> None:
     [("digikey", "ultralibrarian"), ("mouser", "samacsys")],
 )
 def test_manifest_keeps_cad_provenance_roles_separate(
-    source: str, delivery_partner: str
+    source: str, delivery_partner: str, tmp_path: Path
 ) -> None:
     resolution = resolve_metadata(
         requested_mpn="OPA333AIDBVR",
@@ -117,6 +123,8 @@ def test_manifest_keeps_cad_provenance_roles_separate(
         provider_names=(),
         cad_api=EasyedaApi(offline=True),
         cad_source=source,
+        cache=MetadataCache(tmp_path / "cache"),
+        offline=True,
         provider_factory=_provider_factory,
         cad_provider_factory=lambda _api: pytest.fail("EasyEDA fallback"),
     )

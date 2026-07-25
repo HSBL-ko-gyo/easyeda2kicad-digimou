@@ -40,10 +40,14 @@ def build_native_symbol_fields(
     if not isinstance(merged, MergedPart):
         merged = MergedPart.from_dict(merged)
     lcsc_part = (
-        merged.cad.lcsc_part_number
-        if merged.cad is not None and merged.cad.lcsc_part_number
-        else _record_value(
-            _provider_records(merged).get("lcsc"), "distributor_part_number"
+        (merged.jlcpcb.lcsc_part_number or merged.jlcpcb.jlcpcb_part_number)
+        if merged.jlcpcb is not None
+        else (
+            merged.cad.lcsc_part_number
+            if merged.cad is not None and merged.cad.lcsc_part_number
+            else _record_value(
+                _provider_records(merged).get("lcsc"), "distributor_part_number"
+            )
         )
     )
     candidates = OrderedDict(
