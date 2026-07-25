@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# Global imports
+import io
+import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 from typing import Any, cast
@@ -635,6 +638,37 @@ def test_relative_path_helper_handles_posix_in_tree_and_out_of_tree() -> None:
 def test_show_conflicts_is_a_meaningful_metadata_action() -> None:
     arguments = _arguments("--mpn", "PART", "--show-conflicts")
     assert valid_arguments(arguments)
+
+
+def test_console_json_writer_falls_back_to_ascii_for_cp932() -> None:
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp932", newline="\n")
+
+    cli._write_console_json(
+        {
+            "manufacturer": "TI(德州仪器)",
+            "client_secret": "console-secret-canary",
+        },
+        stream=stream,
+    )
+    stream.flush()
+
+    output = raw.getvalue().decode("cp932")
+    assert json.loads(output) == {"manufacturer": "TI(德州仪器)"}
+    assert "\\u5fb7\\u5dde\\u4eea\\u5668" in output
+    assert "console-secret-canary" not in output
+
+
+def test_console_json_writer_preserves_unicode_for_utf8() -> None:
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="utf-8", newline="\n")
+
+    cli._write_console_json({"manufacturer": "TI(德州仪器)"}, stream=stream)
+    stream.flush()
+
+    output = raw.getvalue().decode("utf-8")
+    assert json.loads(output) == {"manufacturer": "TI(德州仪器)"}
+    assert "TI(德州仪器)" in output
 
 
 def test_same_custom_field_remains_valid_in_legacy_mode(tmp_path: Path) -> None:
