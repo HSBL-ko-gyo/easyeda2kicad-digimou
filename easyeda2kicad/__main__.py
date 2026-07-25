@@ -966,6 +966,9 @@ def _write_console_json(value: Any, *, stream: TextIO | None = None) -> None:
                 sort_keys=True,
                 separators=(",", ":"),
             )
+    # ``strip_secrets`` above is the enforced sink boundary, but CodeQL does
+    # not model this project-specific recursive sanitizer.
+    # codeql[py/clear-text-logging-sensitive-data]
     target.write(serialized + "\n")
 
 
