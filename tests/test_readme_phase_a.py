@@ -53,6 +53,26 @@ def test_readme_describes_local_package_as_an_intermediate_safe_handoff() -> Non
     assert "does not automate provider website search, login, agreements, or" in readme
 
 
+def test_readme_documents_api_only_digikey_manual_handoff_boundary() -> None:
+    readme = readme_text()
+    section = readme[
+        readme.index("### Discover the DigiKey / Ultra Librarian CAD handoff") :
+    ]
+
+    assert "--providers digikey" in section
+    assert "--cad-source digikey" in section
+    assert "Product Information V4 API" in section
+    assert "`MediaType` is `Model`" in section
+    assert "never fetches or scrapes" in section
+    assert "`CAD_MANUAL_DOWNLOAD_REQUIRED`" in section
+    assert "`CAD_AUTH_REQUIRED`" in section
+    assert "`CAD_DOWNLOAD_UNAVAILABLE`" in section
+    assert "review the Ultra Librarian agreement" in section
+    assert "This is not yet an end-to-end completion claim" in section.replace(
+        "\n", " "
+    )
+
+
 def test_readme_documents_opt_in_project_registration_and_dry_run() -> None:
     readme = readme_text()
     section = readme[readme.index("### Registering libraries in one KiCad project") :]

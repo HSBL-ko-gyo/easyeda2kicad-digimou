@@ -22,6 +22,20 @@ gates remain.
 
 ## Completed
 
+- Added DigiKey Product Information V4 `Media` discovery for explicit
+  `--cad-source digikey`. The CAD source reuses or performs an exact
+  manufacturer/full-MPN lookup, requests media only for the proven DigiKey part
+  number, accepts one recognized Ultra Librarian `Model` URL, sanitizes it, and
+  returns `CAD_MANUAL_DOWNLOAD_REQUIRED`. It does not fetch or scrape the
+  returned page and never falls back to EasyEDA.
+- Added typed `CAD_AUTH_REQUIRED` and `CAD_DOWNLOAD_UNAVAILABLE` DigiKey
+  outcomes, credential-safe CLI handoff logging, unsafe/ambiguous URL rejection,
+  and tests proving OAuth/media requests do not place credentials in URLs or
+  retain raw CAD-discovery responses.
+- Reconfirmed on 2026-07-25 that `Analog Devices Inc. / AD5314BRM` has no
+  LCSC/EasyEDA CAD result while its public DigiKey-linked Ultra Librarian page
+  still advertises symbol, footprint, KiCad v6+, and STEP availability. The
+  page currently requires login to download.
 - Added opt-in `--project PATH --register-project-libraries` registration for
   `sym-lib-table` and `fp-lib-table`, with `${KIPRJMOD}` URIs and nicknames
   derived from the output stem. `--project-relative` alone never registers a
@@ -172,10 +186,16 @@ no partial output.
 
 ## Remaining
 
-- DigiKey/Ultra Librarian and Mouser/SamacSys service discovery/handoff,
-  user-owned real-package intake through the completed registration path, and
-  real-package KiCad GUI verification remain required before Issue #7 can
-  close.
+- This checkout has no `DIGIKEY_CLIENT_ID` or `DIGIKEY_CLIENT_SECRET`, so the
+  authenticated Product Information V4 `Media` result for AD5314BRM has not
+  been exercised. The owner must configure those variables, run the documented
+  handoff command, review the Ultra Librarian agreement, and provide the
+  downloaded KiCad+STEP/WRL ZIP. Phase C remains incomplete until that real
+  package passes import, project registration, KiCad CLI, and KiCad GUI checks.
+- Mouser/SamacSys service discovery/handoff remains unimplemented. DigiKey and
+  Mouser both still require user-owned real-package intake through the completed
+  registration path and real-package KiCad GUI verification before Issue #7
+  can close.
 - Credentialed DigiKey/Mouser live calls and native Linux process E2E remain
   disclosed external validation gaps.
 
@@ -186,8 +206,9 @@ no partial output.
   fixtures and mocked authentication/retry/error tests pass.
 - The real OPA333AIDBVR and LM321MF/NOPB examples therefore contain LCSC
   metadata plus EasyEDA CAD, not live DigiKey/Mouser records.
-- The distributor-present/CAD-absent example is an explicitly labeled mock;
-  a real such part was not verified without distributor credentials.
+- AD5314BRM is now the real distributor-present/EasyEDA-CAD-absent candidate,
+  but its authenticated DigiKey `Media` response and downloaded package remain
+  unverified without owner credentials and official-site interaction.
 - The local package importer has synthetic-layout, KiCad 7/9/10 CLI, and
   disposable KiCad 10 GUI coverage, but it does not scrape or automate Ultra
   Librarian/SamacSys websites and does not claim service download support.

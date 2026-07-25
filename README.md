@@ -18,17 +18,19 @@
 | Provider path | Distributor metadata | CAD acquisition today | Account requirement |
 | --- | --- | --- | --- |
 | LCSC / JLCPCB + EasyEDA | Exact LCSC/JLCPCB catalogue metadata | Symbol, footprint, and 3D model from EasyEDA | None |
-| DigiKey | Official Product Information V4 API metadata | Safe local import of a user-downloaded native KiCad Ultra Librarian ZIP; service retrieval is not implemented | User-owned DigiKey developer app credentials for metadata; official-site interaction for package download |
+| DigiKey | Official Product Information V4 API metadata | API-only exact model discovery and sanitized Ultra Librarian handoff, plus safe local import of the user-downloaded native KiCad ZIP; download remains manual | User-owned DigiKey developer app credentials; user review of the Ultra Librarian agreement and official-site download |
 | Mouser | Official Search API V2 metadata | Safe local import of a user-downloaded native KiCad SamacSys ZIP; service retrieval is not implemented | User-owned Mouser API key for metadata; official-site interaction or Library Loader for package download |
 
 `--providers` currently selects **metadata providers**, not alternative CAD
 sources. CAD acquisition defaults to EasyEDA and requires an exact LCSC
 mapping. `--cad-source` is a separate CAD contract: an explicit `digikey` or
 `mouser` selection never falls back to EasyEDA. Local package validation and
-import are available, but Ultra Librarian delivery through DigiKey and SamacSys
-delivery through Mouser are not yet implemented for service discovery or
-download. Until those paths are implemented and validated with real packages
-in KiCad, this project does not provide complete DigiKey or Mouser CAD support.
+import are available. DigiKey can now discover one exact Ultra Librarian model
+handoff from the official Product Information V4 `Media` response, but it does
+not scrape the product/model page or automate login, agreement acceptance, or
+download. Mouser/SamacSys service discovery is not implemented yet. Until both
+paths are validated end to end with real packages in KiCad, this project does
+not provide complete DigiKey or Mouser CAD support.
 
 This beta preserves the existing `easyeda2kicad` Python package, CLI command,
 public API, legacy `--lcsc_id` path, and legacy KiCad output while adding
@@ -160,6 +162,41 @@ when no metadata option is present:
 ```bash
 easyeda2kicad --full --lcsc_id C30878 --output ./libs/project_parts
 ```
+
+### Discover the DigiKey / Ultra Librarian CAD handoff
+
+With user-owned DigiKey developer credentials configured, request the exact
+official model handoff and write the typed result to a Manifest:
+
+```bash
+easyeda2kicad \
+  --manufacturer "Analog Devices Inc." \
+  --mpn AD5314BRM \
+  --providers digikey \
+  --cad-source digikey \
+  --manifest-json ./build/AD5314BRM-handoff.json
+```
+
+The command calls only the official Product Information V4 API. It revalidates
+the exact manufacturer and full MPN, then accepts only an API response whose
+`MediaType` is `Model` and whose URL is an unambiguous recognized Ultra
+Librarian handoff. It never fetches or scrapes that returned page. A successful
+discovery therefore reports `CAD_MANUAL_DOWNLOAD_REQUIRED`, exits nonzero, and
+prints the same credential-free URL stored under
+`cad_discovery.action_required.setup_url`.
+
+Open that URL yourself, review the Ultra Librarian agreement, select KiCad v6+
+and STEP or WRL, and download the ZIP. If credentials are missing, the typed
+result is `CAD_AUTH_REQUIRED` with the DigiKey OAuth setup page. If the official
+API supplies no unique recognized handoff, the result is
+`CAD_DOWNLOAD_UNAVAILABLE`; the CLI never guesses a URL or falls back to
+EasyEDA.
+
+The primary validation candidate is Analog Devices `AD5314BRM`. Its EasyEDA CAD
+absence and public DigiKey-linked Ultra Librarian page were reconfirmed on
+2026-07-25, but authenticated API discovery and real-package KiCad validation
+still require owner credentials and a user-downloaded package. This is not yet
+an end-to-end completion claim.
 
 ### Import a locally downloaded CAD package
 

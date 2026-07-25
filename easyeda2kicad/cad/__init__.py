@@ -1,6 +1,7 @@
 """Safe local CAD package ingestion."""
 
 from .archive import ArchiveLimits, extract_zip_safely
+from .digikey import DigiKeyCadSource, DigiKeyProductApi
 from .errors import CadPackageError
 from .package import (
     CAD_PACKAGE_FORMATS,
@@ -13,6 +14,8 @@ __all__ = [
     "CAD_PACKAGE_FORMATS",
     "CadPackageError",
     "CadPackageIngestResult",
+    "DigiKeyCadSource",
+    "DigiKeyProductApi",
     "extract_zip_safely",
     "ingest_cad_package",
 ]
