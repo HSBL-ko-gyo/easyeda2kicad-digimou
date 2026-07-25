@@ -188,10 +188,13 @@ no partial output.
 
 - This checkout has no `DIGIKEY_CLIENT_ID` or `DIGIKEY_CLIENT_SECRET`, so the
   authenticated Product Information V4 `Media` result for AD5314BRM has not
-  been exercised. The owner must configure those variables, run the documented
-  handoff command, review the Ultra Librarian agreement, and provide the
-  downloaded KiCad+STEP/WRL ZIP. Phase C remains incomplete until that real
-  package passes import, project registration, KiCad CLI, and KiCad GUI checks.
+  been exercised. A credential-gated `network` smoke test now performs one
+  exact lookup and one official `Media` handoff request without retaining raw
+  responses or credentials. The owner must configure those variables, run the
+  documented smoke and handoff commands, review the Ultra Librarian agreement,
+  and provide the downloaded KiCad+STEP/WRL ZIP. Phase C remains incomplete
+  until that real package passes import, project registration, KiCad CLI, and
+  KiCad GUI checks.
 - Mouser/SamacSys service discovery/handoff remains unimplemented. DigiKey and
   Mouser both still require user-owned real-package intake through the completed
   registration path and real-package KiCad GUI verification before Issue #7

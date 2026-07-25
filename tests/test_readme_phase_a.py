@@ -68,6 +68,11 @@ def test_readme_documents_api_only_digikey_manual_handoff_boundary() -> None:
     assert "`CAD_AUTH_REQUIRED`" in section
     assert "`CAD_DOWNLOAD_UNAVAILABLE`" in section
     assert "review the Ultra Librarian agreement" in section
+    assert (
+        "tests/test_provider_live.py::test_digikey_live_ad5314_cad_handoff_smoke"
+        in section
+    )
+    assert "writes no response or credential artifact" in section.replace("\n", " ")
     assert "This is not yet an end-to-end completion claim" in section.replace(
         "\n", " "
     )

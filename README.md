@@ -177,6 +177,16 @@ easyeda2kicad \
   --manifest-json ./build/AD5314BRM-handoff.json
 ```
 
+An opt-in live smoke test exercises only the exact DigiKey lookup and official
+`Media` handoff. It is skipped by the normal suite when the two DigiKey
+variables are absent, makes a single attempt per operation, does not fetch the
+returned page, and writes no response or credential artifact:
+
+```bash
+python -m pytest -q -m network \
+  tests/test_provider_live.py::test_digikey_live_ad5314_cad_handoff_smoke
+```
+
 The command calls only the official Product Information V4 API. It revalidates
 the exact manufacturer and full MPN, then accepts only an API response whose
 `MediaType` is `Model` and whose URL is an unambiguous recognized Ultra
@@ -194,9 +204,10 @@ EasyEDA.
 
 The primary validation candidate is Analog Devices `AD5314BRM`. Its EasyEDA CAD
 absence and public DigiKey-linked Ultra Librarian page were reconfirmed on
-2026-07-25, but authenticated API discovery and real-package KiCad validation
-still require owner credentials and a user-downloaded package. This is not yet
-an end-to-end completion claim.
+2026-07-25. The credential-gated smoke test is ready but has not run;
+authenticated API discovery and real-package KiCad validation still require
+owner credentials and a user-downloaded package. This is not yet an end-to-end
+completion claim.
 
 ### Import a locally downloaded CAD package
 
