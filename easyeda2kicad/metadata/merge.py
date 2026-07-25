@@ -222,6 +222,15 @@ def merge_records(
             "footprint_path",
             "model_3d_path",
             "verification_status",
+            "distributor",
+            "delivery_partner",
+            "model_creator",
+            "landing_url",
+            "retrieval_mode",
+            "package_hash",
+            "license",
+            "notice",
+            "artifacts",
         ):
             if getattr(cad, field_name):
                 provenance["cad.{0}".format(field_name)] = [

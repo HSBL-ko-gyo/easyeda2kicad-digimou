@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl, urlsplit
 import pytest
 
 # Local imports
+from easyeda2kicad.metadata.manifest import manifest_to_dict
 from easyeda2kicad.metadata.models import MergedPart, normalize_mpn
 from easyeda2kicad.metadata.symbol_fields import build_symbol_fields
 
@@ -32,6 +33,7 @@ def test_documented_manifest_is_lossless_and_exact(filename: str) -> None:
     merged = MergedPart.from_dict(document)
 
     assert merged.to_dict() == document
+    assert manifest_to_dict(merged) == document
     assert all(
         normalize_mpn(record.mpn) == merged.identity.mpn_normalized
         for record in merged.distributor_records

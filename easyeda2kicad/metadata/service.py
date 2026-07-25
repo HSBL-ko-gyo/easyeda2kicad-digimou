@@ -28,7 +28,14 @@ from .cache import CacheError, MetadataCache, sanitize_public_url
 from .cad_identity import CadIdentity, CadIdentityError, extract_cad_identity
 from .merge import CAD_NOT_FOUND, PARTIAL, VERIFIED, merge_records
 from .models import (
+    CAD_IDENTITY_UNRESOLVED,
+    CAD_NOT_ACQUIRED,
+    SUPPORTED_CAD_SOURCES,
+    CadActionRequired,
+    CadDiscoveryResult,
+    CadProvenance,
     CadRecord,
+    CadRequest,
     DistributorRecord,
     MergedPart,
     PartIdentity,
@@ -72,6 +79,7 @@ class MetadataResolution:
     rejected_manufacturers: Dict[str, str] = field(default_factory=dict)
     provider_errors: Dict[str, str] = field(default_factory=dict)
     provider_diagnostics: Dict[str, ProviderDiagnostic] = field(default_factory=dict)
+    cad_discovery: Optional[CadDiscoveryResult] = None
     blocking_error: Optional[str] = None
 
     def to_merged(
@@ -122,6 +130,7 @@ class MetadataResolution:
                 manufacturer_diagnostic_values=self.rejected_manufacturers,
             )
             _set_identity_provenance(merged, "mpn", self.mpn_source)
+            merged.cad_discovery = self.cad_discovery
             return merged
 
         # An ID-only confirmed CAD miss can legitimately lack any MPN evidence.
@@ -139,6 +148,7 @@ class MetadataResolution:
         )
         _set_identity_provenance(merged, "mpn", self.mpn_source)
         _set_identity_provenance(merged, "manufacturer", self.manufacturer_source)
+        merged.cad_discovery = self.cad_discovery
         return merged
 
 
@@ -175,6 +185,7 @@ def resolve_metadata(
     requested_lcsc_id: Optional[str],
     provider_names: Sequence[str],
     cad_api: EasyedaApi,
+    cad_source: str = "easyeda",
     metadata_api: Optional[EasyedaApi] = None,
     cache: Optional[MetadataCache] = None,
     offline: bool = False,
@@ -182,10 +193,14 @@ def resolve_metadata(
     provider_factory: MetadataProviderFactory = create_metadata_provider,
     cad_provider_factory: CadProviderFactory = create_cad_provider,
 ) -> MetadataResolution:
-    """Resolve exact distributor metadata and EasyEDA-only CAD identity."""
+    """Resolve exact distributor metadata independently from the CAD source."""
 
     if offline and refresh_metadata:
         raise ValueError("offline and refresh_metadata are mutually exclusive")
+    selected_cad_source = cad_source.strip().lower()
+    if selected_cad_source not in SUPPORTED_CAD_SOURCES:
+        raise ValueError("unsupported CAD source: {0}".format(cad_source))
+    use_easyeda_cad = selected_cad_source in ("easyeda", "auto")
     if offline:
         # Enforce strict offline behavior for direct service callers too.
         cad_api.offline = True
@@ -209,9 +224,14 @@ def resolve_metadata(
     lcsc_id_lookup_attempted = False
     lcsc_id = _clean(requested_lcsc_id)
 
-    # MPN-only requests need a conservative LCSC exact match to identify the
-    # sole permitted CAD source.  A provider/network failure is not CAD_NOT_FOUND.
-    if lcsc_id is None and result.trusted_mpn:
+    # EasyEDA/auto MPN requests need a conservative LCSC exact match to identify
+    # the component. An explicitly selected LCSC metadata provider needs the
+    # same lookup independently of the selected CAD source.
+    if (
+        lcsc_id is None
+        and result.trusted_mpn
+        and (use_easyeda_cad or "lcsc" in selected)
+    ):
         try:
             lcsc_record = _cached_exact_lookup(
                 lcsc_provider,
@@ -234,8 +254,13 @@ def resolve_metadata(
             if result.manufacturer_source is None and result.trusted_manufacturer:
                 result.manufacturer_source = "lcsc"
             _remember_manufacturer_evidence(result, "lcsc", lcsc_record.manufacturer)
-        except NotFoundError:
-            result.cad = CadRecord(source="easyeda", verification_status=CAD_NOT_FOUND)
+        except NotFoundError as error:
+            if use_easyeda_cad:
+                result.cad = CadRecord(
+                    source="easyeda", verification_status=CAD_NOT_FOUND
+                )
+            else:
+                _record_provider_error(result, "lcsc", error)
         except (AmbiguousMatchError, MpnMismatchError) as error:
             raise _fatal_provider_error(error) from None
         except (ProviderError, CacheError) as error:
@@ -245,7 +270,7 @@ def resolve_metadata(
 
     # Fetch CAD before contacting DigiKey/Mouser so an explicit LCSC/MPN
     # mismatch stops without creating files or making unnecessary requests.
-    if lcsc_id is not None and result.blocking_error is None:
+    if use_easyeda_cad and lcsc_id is not None and result.blocking_error is None:
         cad_provider = cad_provider_factory(cad_api)
         try:
             cad_record, cad_data = cad_provider.get_cad_data(lcsc_id)
@@ -465,7 +490,65 @@ def resolve_metadata(
         except (ProviderError, CacheError) as error:
             _record_provider_error(result, name, error)
 
+    if selected_cad_source in ("digikey", "mouser"):
+        result.cad_discovery = _external_cad_not_acquired(
+            selected_cad_source,
+            result.trusted_manufacturer,
+            result.trusted_mpn,
+        )
+        result.blocking_error = result.cad_discovery.status
+
     return result
+
+
+def _external_cad_not_acquired(
+    source: str,
+    manufacturer: Optional[str],
+    mpn: Optional[str],
+) -> CadDiscoveryResult:
+    """Return the Phase-A fail-closed result without touching EasyEDA CAD."""
+
+    partners = {
+        "digikey": ("ultralibrarian", "DigiKey / Ultra Librarian"),
+        "mouser": ("samacsys", "Mouser / SamacSys"),
+    }
+    delivery_partner, label = partners[source]
+    provenance = CadProvenance(
+        distributor=source,
+        delivery_partner=delivery_partner,
+        model_creator=None,
+        retrieval_mode="official-handoff",
+    )
+    exact_manufacturer = _clean(manufacturer)
+    exact_mpn = _clean(mpn)
+    if exact_manufacturer is None or exact_mpn is None:
+        return CadDiscoveryResult(
+            requested_source=source,
+            status=CAD_IDENTITY_UNRESOLVED,
+            provenance=provenance,
+            action_required=CadActionRequired(
+                code=CAD_IDENTITY_UNRESOLVED,
+                detail=(
+                    "A complete manufacturer and exact MPN are required before "
+                    "{0} CAD discovery".format(label)
+                ),
+            ),
+        )
+    request = CadRequest(
+        manufacturer=exact_manufacturer,
+        mpn=exact_mpn,
+        source=source,
+    )
+    return CadDiscoveryResult(
+        requested_source=source,
+        status=CAD_NOT_ACQUIRED,
+        request=request,
+        provenance=provenance,
+        action_required=CadActionRequired(
+            code=CAD_NOT_ACQUIRED,
+            detail="{0} CAD retrieval is not implemented yet".format(label),
+        ),
+    )
 
 
 def _cached_exact_lookup(

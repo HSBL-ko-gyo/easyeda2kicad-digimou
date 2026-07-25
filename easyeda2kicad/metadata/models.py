@@ -4,13 +4,14 @@ from __future__ import annotations
 
 # Global imports
 import math
+import re
 import unicodedata
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from dataclasses import fields, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from pathlib import PurePath
+from pathlib import PurePath, PurePosixPath, PureWindowsPath
 from typing import Any, Dict, List, Mapping, Optional, Type, TypeVar, Union, cast
 
 _MPN_MINUS_EQUIVALENTS = str.maketrans(
@@ -23,6 +24,25 @@ _MPN_MINUS_EQUIVALENTS = str.maketrans(
         "\N{FULLWIDTH HYPHEN-MINUS}": "-",
     }
 )
+
+SUPPORTED_CAD_SOURCES = frozenset(("easyeda", "digikey", "mouser", "auto"))
+CAD_PACKAGE_READY = "CAD_PACKAGE_READY"
+CAD_NOT_ACQUIRED = "CAD_NOT_ACQUIRED"
+CAD_AUTH_REQUIRED = "CAD_AUTH_REQUIRED"
+CAD_DOWNLOAD_UNAVAILABLE = "CAD_DOWNLOAD_UNAVAILABLE"
+CAD_MANUAL_DOWNLOAD_REQUIRED = "CAD_MANUAL_DOWNLOAD_REQUIRED"
+CAD_IDENTITY_UNRESOLVED = "CAD_IDENTITY_UNRESOLVED"
+CAD_DISCOVERY_STATUSES = frozenset(
+    (
+        CAD_PACKAGE_READY,
+        CAD_NOT_ACQUIRED,
+        CAD_AUTH_REQUIRED,
+        CAD_DOWNLOAD_UNAVAILABLE,
+        CAD_MANUAL_DOWNLOAD_REQUIRED,
+        CAD_IDENTITY_UNRESOLVED,
+    )
+)
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 
 def identity_text(value: Any, field_name: str = "identity") -> str:
@@ -239,6 +259,299 @@ class DistributorRecord:
 
 
 @dataclass
+class CadRequest:
+    """One fail-closed CAD request for a complete manufacturer/MPN identity."""
+
+    manufacturer: str
+    mpn: str
+    source: str
+
+    def __post_init__(self) -> None:
+        self.manufacturer = identity_text(self.manufacturer, "CadRequest.manufacturer")
+        self.mpn = identity_text(self.mpn, "CadRequest.mpn")
+        self.source = identity_text(self.source, "CadRequest.source").lower()
+        if self.source not in SUPPORTED_CAD_SOURCES:
+            raise ValueError("unsupported CAD source: {0}".format(self.source))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], model_to_dict(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CadRequest":
+        mapping = _mapping(data, "CadRequest")
+        return cls(
+            manufacturer=identity_text(
+                mapping.get("manufacturer"), "CadRequest.manufacturer"
+            ),
+            mpn=identity_text(mapping.get("mpn"), "CadRequest.mpn"),
+            source=identity_text(mapping.get("source"), "CadRequest.source"),
+        )
+
+
+@dataclass
+class CadArtifact:
+    """A portable package artifact identified by content rather than machine path."""
+
+    kind: str
+    relative_path: str
+    sha256: str
+
+    def __post_init__(self) -> None:
+        self.kind = identity_text(self.kind, "CadArtifact.kind").lower()
+        portable_path = identity_text(
+            self.relative_path, "CadArtifact.relative_path"
+        ).replace("\\", "/")
+        parsed_path = PurePosixPath(portable_path)
+        if (
+            parsed_path.is_absolute()
+            or PureWindowsPath(portable_path).drive
+            or any(part in ("", ".", "..") for part in parsed_path.parts)
+        ):
+            raise ValueError("CadArtifact.relative_path must be a safe relative path")
+        self.relative_path = parsed_path.as_posix()
+        self.sha256 = identity_text(self.sha256, "CadArtifact.sha256").lower()
+        if _SHA256_RE.fullmatch(self.sha256) is None:
+            raise ValueError("CadArtifact.sha256 must be a lowercase SHA-256 digest")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], model_to_dict(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CadArtifact":
+        mapping = _mapping(data, "CadArtifact")
+        return cls(
+            kind=identity_text(mapping.get("kind"), "CadArtifact.kind"),
+            relative_path=identity_text(
+                mapping.get("relative_path"), "CadArtifact.relative_path"
+            ),
+            sha256=identity_text(mapping.get("sha256"), "CadArtifact.sha256"),
+        )
+
+
+@dataclass
+class CadProvenance:
+    """Keep the distributor, delivery partner, and model creator distinct."""
+
+    distributor: Optional[str] = None
+    delivery_partner: Optional[str] = None
+    model_creator: Optional[str] = None
+    landing_url: Optional[str] = None
+    retrieval_mode: Optional[str] = None
+    package_hash: Optional[str] = None
+    license: Optional[str] = None
+    notice: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        for field_name in ("distributor", "delivery_partner", "model_creator"):
+            value = getattr(self, field_name)
+            if value is not None:
+                setattr(
+                    self,
+                    field_name,
+                    identity_text(
+                        value, "CadProvenance.{0}".format(field_name)
+                    ).lower(),
+                )
+        self.retrieval_mode = _optional_identity_text(
+            self.retrieval_mode, "CadProvenance.retrieval_mode"
+        )
+        self.package_hash = _optional_identity_text(
+            self.package_hash, "CadProvenance.package_hash"
+        )
+        if self.package_hash is not None:
+            self.package_hash = self.package_hash.lower()
+            if _SHA256_RE.fullmatch(self.package_hash) is None:
+                raise ValueError(
+                    "CadProvenance.package_hash must be a lowercase SHA-256 digest"
+                )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], model_to_dict(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CadProvenance":
+        mapping = _mapping(data, "CadProvenance")
+        return cls(
+            distributor=_optional_identity_text(
+                mapping.get("distributor"), "CadProvenance.distributor"
+            ),
+            delivery_partner=_optional_identity_text(
+                mapping.get("delivery_partner"), "CadProvenance.delivery_partner"
+            ),
+            model_creator=_optional_identity_text(
+                mapping.get("model_creator"), "CadProvenance.model_creator"
+            ),
+            landing_url=_optional_string(mapping.get("landing_url")),
+            retrieval_mode=_optional_identity_text(
+                mapping.get("retrieval_mode"), "CadProvenance.retrieval_mode"
+            ),
+            package_hash=_optional_identity_text(
+                mapping.get("package_hash"), "CadProvenance.package_hash"
+            ),
+            license=_optional_string(mapping.get("license")),
+            notice=_optional_string(mapping.get("notice")),
+        )
+
+
+@dataclass
+class NormalizedCadPackage:
+    """A source-neutral, content-addressed CAD package."""
+
+    request: CadRequest
+    format_name: str
+    format_version: str
+    artifacts: List[CadArtifact]
+    provenance: CadProvenance
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.request, CadRequest):
+            self.request = CadRequest.from_dict(self.request)
+        self.format_name = identity_text(
+            self.format_name, "NormalizedCadPackage.format_name"
+        )
+        self.format_version = identity_text(
+            self.format_version, "NormalizedCadPackage.format_version"
+        )
+        self.artifacts = [
+            artifact
+            if isinstance(artifact, CadArtifact)
+            else CadArtifact.from_dict(artifact)
+            for artifact in self.artifacts
+        ]
+        if not self.artifacts:
+            raise ValueError("NormalizedCadPackage requires at least one artifact")
+        if not isinstance(self.provenance, CadProvenance):
+            self.provenance = CadProvenance.from_dict(self.provenance)
+        if self.provenance.package_hash is None:
+            raise ValueError("NormalizedCadPackage requires a package hash")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], model_to_dict(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "NormalizedCadPackage":
+        mapping = _mapping(data, "NormalizedCadPackage")
+        raw_artifacts = mapping.get("artifacts")
+        raw_request = mapping.get("request")
+        raw_provenance = mapping.get("provenance")
+        if not isinstance(raw_artifacts, (list, tuple)):
+            raise ValueError("NormalizedCadPackage.artifacts must be a list")
+        if not isinstance(raw_request, Mapping):
+            raise ValueError("NormalizedCadPackage.request must be an object")
+        if not isinstance(raw_provenance, Mapping):
+            raise ValueError("NormalizedCadPackage.provenance must be an object")
+        return cls(
+            request=CadRequest.from_dict(raw_request),
+            format_name=identity_text(
+                mapping.get("format_name"), "NormalizedCadPackage.format_name"
+            ),
+            format_version=identity_text(
+                mapping.get("format_version"), "NormalizedCadPackage.format_version"
+            ),
+            artifacts=[CadArtifact.from_dict(item) for item in raw_artifacts],
+            provenance=CadProvenance.from_dict(raw_provenance),
+        )
+
+
+@dataclass
+class CadActionRequired:
+    """A credential-safe instruction describing why CAD is not yet available."""
+
+    code: str
+    detail: str
+    setup_url: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.code = identity_text(self.code, "CadActionRequired.code")
+        self.detail = identity_text(self.detail, "CadActionRequired.detail")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], model_to_dict(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CadActionRequired":
+        mapping = _mapping(data, "CadActionRequired")
+        return cls(
+            code=identity_text(mapping.get("code"), "CadActionRequired.code"),
+            detail=identity_text(mapping.get("detail"), "CadActionRequired.detail"),
+            setup_url=_optional_string(mapping.get("setup_url")),
+        )
+
+
+@dataclass
+class CadDiscoveryResult:
+    """A typed discovery result that never implies an unverified CAD package."""
+
+    requested_source: str
+    status: str
+    request: Optional[CadRequest] = None
+    provenance: CadProvenance = dataclass_field(default_factory=CadProvenance)
+    action_required: Optional[CadActionRequired] = None
+    package: Optional[NormalizedCadPackage] = None
+
+    def __post_init__(self) -> None:
+        self.requested_source = identity_text(
+            self.requested_source, "CadDiscoveryResult.requested_source"
+        ).lower()
+        if self.requested_source not in SUPPORTED_CAD_SOURCES:
+            raise ValueError(
+                "unsupported CAD source: {0}".format(self.requested_source)
+            )
+        self.status = identity_text(self.status, "CadDiscoveryResult.status").upper()
+        if self.status not in CAD_DISCOVERY_STATUSES:
+            raise ValueError(
+                "unsupported CAD discovery status: {0}".format(self.status)
+            )
+        if self.request is not None and not isinstance(self.request, CadRequest):
+            self.request = CadRequest.from_dict(self.request)
+        if not isinstance(self.provenance, CadProvenance):
+            self.provenance = CadProvenance.from_dict(self.provenance)
+        if self.action_required is not None and not isinstance(
+            self.action_required, CadActionRequired
+        ):
+            self.action_required = CadActionRequired.from_dict(self.action_required)
+        if self.package is not None and not isinstance(
+            self.package, NormalizedCadPackage
+        ):
+            self.package = NormalizedCadPackage.from_dict(self.package)
+        if self.status == CAD_PACKAGE_READY and self.package is None:
+            raise ValueError("CAD_PACKAGE_READY requires a normalized package")
+        if self.status != CAD_PACKAGE_READY and self.package is not None:
+            raise ValueError("an unready CAD result cannot contain a package")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], model_to_dict(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CadDiscoveryResult":
+        mapping = _mapping(data, "CadDiscoveryResult")
+        raw_request = mapping.get("request")
+        raw_action = mapping.get("action_required")
+        raw_package = mapping.get("package")
+        return cls(
+            requested_source=identity_text(
+                mapping.get("requested_source"),
+                "CadDiscoveryResult.requested_source",
+            ),
+            status=identity_text(mapping.get("status"), "CadDiscoveryResult.status"),
+            request=(
+                CadRequest.from_dict(raw_request) if raw_request is not None else None
+            ),
+            provenance=CadProvenance.from_dict(mapping.get("provenance", {})),
+            action_required=(
+                CadActionRequired.from_dict(raw_action)
+                if raw_action is not None
+                else None
+            ),
+            package=(
+                NormalizedCadPackage.from_dict(raw_package)
+                if raw_package is not None
+                else None
+            ),
+        )
+
+
+@dataclass
 class CadRecord:
     source: str
     lcsc_part_number: Optional[str] = None
@@ -250,6 +563,15 @@ class CadRecord:
     footprint_path: Optional[Union[str, PurePath]] = None
     model_3d_path: Optional[Union[str, PurePath]] = None
     verification_status: str = "CAD_NOT_FOUND"
+    distributor: Optional[str] = None
+    delivery_partner: Optional[str] = None
+    model_creator: Optional[str] = None
+    landing_url: Optional[str] = None
+    retrieval_mode: Optional[str] = None
+    package_hash: Optional[str] = None
+    license: Optional[str] = None
+    notice: Optional[str] = None
+    artifacts: List[CadArtifact] = dataclass_field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.source = identity_text(self.source, "CadRecord.source").lower()
@@ -261,9 +583,32 @@ class CadRecord:
                     field_name,
                     identity_text(value, "CadRecord.{0}".format(field_name)),
                 )
+        provenance = CadProvenance(
+            distributor=self.distributor,
+            delivery_partner=self.delivery_partner,
+            model_creator=self.model_creator,
+            landing_url=self.landing_url,
+            retrieval_mode=self.retrieval_mode,
+            package_hash=self.package_hash,
+            license=self.license,
+            notice=self.notice,
+        )
+        self.distributor = provenance.distributor
+        self.delivery_partner = provenance.delivery_partner
+        self.model_creator = provenance.model_creator
+        self.retrieval_mode = provenance.retrieval_mode
+        self.package_hash = provenance.package_hash
+        self.artifacts = [
+            artifact
+            if isinstance(artifact, CadArtifact)
+            else CadArtifact.from_dict(artifact)
+            for artifact in self.artifacts
+        ]
 
     def to_dict(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], model_to_dict(self))
+        document = cast(Dict[str, Any], model_to_dict(self))
+        _omit_empty_cad_extensions(document)
+        return document
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "CadRecord":
@@ -288,6 +633,28 @@ class CadRecord:
                 mapping.get("verification_status", "CAD_NOT_FOUND"),
                 "verification_status",
             ),
+            distributor=_optional_identity_text(
+                mapping.get("distributor"), "CadRecord.distributor"
+            ),
+            delivery_partner=_optional_identity_text(
+                mapping.get("delivery_partner"), "CadRecord.delivery_partner"
+            ),
+            model_creator=_optional_identity_text(
+                mapping.get("model_creator"), "CadRecord.model_creator"
+            ),
+            landing_url=_optional_string(mapping.get("landing_url")),
+            retrieval_mode=_optional_identity_text(
+                mapping.get("retrieval_mode"), "CadRecord.retrieval_mode"
+            ),
+            package_hash=_optional_identity_text(
+                mapping.get("package_hash"), "CadRecord.package_hash"
+            ),
+            license=_optional_string(mapping.get("license")),
+            notice=_optional_string(mapping.get("notice")),
+            artifacts=[
+                CadArtifact.from_dict(item)
+                for item in _list(mapping.get("artifacts", []), "CadRecord.artifacts")
+            ],
         )
 
 
@@ -372,6 +739,7 @@ class MergedPart:
     provider_diagnostics: Dict[str, ProviderDiagnostic] = dataclass_field(
         default_factory=dict
     )
+    cad_discovery: Optional[CadDiscoveryResult] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, PartIdentity):
@@ -417,9 +785,18 @@ class MergedPart:
             self.provider_diagnostics.setdefault(
                 provider, ProviderDiagnostic(code=code)
             )
+        if self.cad_discovery is not None and not isinstance(
+            self.cad_discovery, CadDiscoveryResult
+        ):
+            self.cad_discovery = CadDiscoveryResult.from_dict(self.cad_discovery)
 
     def to_dict(self) -> Dict[str, Any]:
         document = cast(Dict[str, Any], model_to_dict(self))
+        cad = document.get("cad")
+        if isinstance(cad, dict):
+            _omit_empty_cad_extensions(cad)
+        if document.get("cad_discovery") is None:
+            document.pop("cad_discovery", None)
         diagnostics = cast(Dict[str, Any], document["provider_diagnostics"])
         for provider, code in self.provider_errors.items():
             diagnostics.setdefault(provider, ProviderDiagnostic(code=code).to_dict())
@@ -435,6 +812,7 @@ class MergedPart:
         raw_provenance = mapping.get("provenance", {})
         raw_errors = mapping.get("provider_errors", {})
         raw_diagnostics = mapping.get("provider_diagnostics", {})
+        raw_cad_discovery = mapping.get("cad_discovery")
         if not isinstance(raw_records, (list, tuple)):
             raise ValueError("distributor_records must be a list")
         if not isinstance(raw_conflicts, (list, tuple)):
@@ -470,6 +848,11 @@ class MergedPart:
                 str(key): ProviderDiagnostic.from_dict(value)
                 for key, value in raw_diagnostics.items()
             },
+            cad_discovery=(
+                CadDiscoveryResult.from_dict(raw_cad_discovery)
+                if raw_cad_discovery is not None
+                else None
+            ),
         )
 
 
@@ -522,10 +905,35 @@ def model_from_dict(model_type: Type[ModelType], data: Mapping[str, Any]) -> Mod
     return cast(ModelType, from_dict(data))
 
 
+def _omit_empty_cad_extensions(document: Dict[str, Any]) -> None:
+    """Keep pre-contract CAD JSON byte-compatible when extensions are unused."""
+
+    for field_name in (
+        "distributor",
+        "delivery_partner",
+        "model_creator",
+        "landing_url",
+        "retrieval_mode",
+        "package_hash",
+        "license",
+        "notice",
+    ):
+        if document.get(field_name) is None:
+            document.pop(field_name, None)
+    if document.get("artifacts") == []:
+        document.pop("artifacts", None)
+
+
 def _mapping(value: Any, name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError("{0} must be an object".format(name))
     return value
+
+
+def _list(value: Any, name: str) -> List[Any]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("{0} must be a list".format(name))
+    return list(value)
 
 
 def _string(value: Any, name: str) -> str:

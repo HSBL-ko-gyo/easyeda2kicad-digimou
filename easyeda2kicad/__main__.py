@@ -34,6 +34,7 @@ from .metadata.merge import (
 )
 from .metadata.models import (
     MergedPart,
+    SUPPORTED_CAD_SOURCES,
     model_to_dict,
     normalize_manufacturer,
     normalize_mpn,
@@ -45,6 +46,7 @@ from .metadata.symbol_fields import (
 )
 
 SUPPORTED_PROVIDERS = ("lcsc", "digikey", "mouser")
+SUPPORTED_CAD_SOURCE_CHOICES = ("easyeda", "digikey", "mouser", "auto")
 RESERVED_METADATA_FIELDS = {
     "Reference",
     "Value",
@@ -231,6 +233,17 @@ def get_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--cad-source",
+        choices=SUPPORTED_CAD_SOURCE_CHOICES,
+        default="easyeda",
+        help=(
+            "CAD source; explicit digikey/mouser never fall back to EasyEDA "
+            "(default: easyeda)"
+        ),
+        required=False,
+    )
+
+    parser.add_argument(
         "--datasheet-link",
         choices=("manufacturer", "lcsc", "digikey", "mouser"),
         help="Select the KiCad Datasheet property source",
@@ -397,6 +410,7 @@ def is_metadata_mode(arguments: dict[str, Any]) -> bool:
         arguments.get("mpn")
         or arguments.get("manufacturer")
         or arguments.get("providers") is not None
+        or arguments.get("cad_source", "easyeda") != "easyeda"
         or arguments.get("datasheet_link") is not None
         or arguments.get("manifest_json")
         or arguments.get("manifest_csv")
@@ -475,6 +489,9 @@ def _manifest_collides_with_selected_cad_output(arguments: dict[str, Any]) -> bo
 def valid_arguments(arguments: dict[str, Any]) -> bool:
     metadata_mode = is_metadata_mode(arguments)
     arguments["metadata_mode"] = metadata_mode
+    if arguments.get("cad_source") not in SUPPORTED_CAD_SOURCES:
+        logging.error("Unsupported CAD source")
+        return False
 
     if not arguments["lcsc_id"] and not arguments.get("mpn"):
         logging.error("At least one of --lcsc_id or --mpn is required")
@@ -1006,6 +1023,13 @@ def _log_metadata_diagnostics(merged: MergedPart, *, require_cad: bool) -> None:
             status,
         )
 
+    if merged.cad_discovery is not None:
+        logging.warning(
+            "CAD source %s: %s",
+            merged.cad_discovery.requested_source,
+            merged.cad_discovery.status,
+        )
+
     if merged.verification_status == CAD_NOT_FOUND:
         if require_cad:
             logging.error(
@@ -1031,6 +1055,7 @@ def _run_metadata_mode(arguments: dict[str, Any]) -> int:
             ),
             provider_names=arguments["provider_names"],
             cad_api=cad_api,
+            cad_source=arguments["cad_source"],
             metadata_api=metadata_api,
             offline=arguments["offline"],
             refresh_metadata=arguments["refresh_metadata"],
