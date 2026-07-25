@@ -13,6 +13,21 @@
 [![Git hook: pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
+## Current capabilities
+
+| Provider path | Distributor metadata | CAD acquisition today | Account requirement |
+| --- | --- | --- | --- |
+| LCSC / JLCPCB + EasyEDA | Exact LCSC/JLCPCB catalogue metadata | Symbol, footprint, and 3D model from EasyEDA | None |
+| DigiKey | Official Product Information V4 API metadata | No DigiKey CAD retrieval; CAD remains EasyEDA-only | User-owned DigiKey developer app credentials |
+| Mouser | Official Search API V2 metadata | No Mouser CAD retrieval; CAD remains EasyEDA-only | User-owned Mouser API key |
+
+`--providers` currently selects **metadata providers**, not alternative CAD
+sources. CAD acquisition is fixed to EasyEDA and requires an exact LCSC
+mapping. Ultra Librarian delivery through DigiKey and SamacSys delivery through
+Mouser are not yet implemented for discovery, download, or import. Until those
+paths are implemented and validated, this project does not provide complete
+DigiKey or Mouser CAD support.
+
 This beta preserves the existing `easyeda2kicad` Python package, CLI command,
 public API, legacy `--lcsc_id` path, and legacy KiCad output while adding
 LCSC/DigiKey/Mouser distributor metadata. Exact MPN matching is fail-closed.
@@ -43,32 +58,44 @@ Install the downloaded wheel in the environment that runs KiCad:
 python -m pip install ./easyeda2kicad-1.1.0b1-py3-none-any.whl
 ```
 
-This beta is not published to PyPI. `pip install easyeda2kicad` installs the
-separate upstream release, not +DigiMou. For an editable checkout instead:
+This beta is not published to PyPI. Installing the `easyeda2kicad` distribution
+name from PyPI installs the separate upstream release, not +DigiMou. For an
+editable checkout instead:
 
 ```bash
 python -m pip install -e .
 ```
 
-The KiCad-specific commands below likewise install the published package unless
-their final package name is replaced with the path to this checkout (for
-example, `python -m pip install -e C:\path\to\easyeda2kicad-fork`).
-
 ### Installation using the KiCad Command Prompt
 
-KiCad ships with its own Python interpreter. If you don't have a separate Python installation, you can use KiCad's bundled Python to install easyeda2kicad.
+Use the Python interpreter that will run this CLI, and install either the
+downloaded +DigiMou wheel or an editable checkout. Do not substitute a PyPI
+package name in these commands.
 
-**Windows:** KiCad bundles its own Python. Search for *KiCad Command Prompt* in the Start Menu, then run `pip install easyeda2kicad`. Note: KiCad's Scripts folder is not on PATH, so use `python -m easyeda2kicad` to run the tool from the KiCad Command Prompt.
+**Windows:** Open *KiCad Command Prompt*, then install the downloaded wheel:
 
-**Linux:** On most distributions, KiCad uses the system Python — `pip install easyeda2kicad` works directly.
+```powershell
+python -m pip install C:\path\to\easyeda2kicad-1.1.0b1-py3-none-any.whl
+```
+
+**Linux:** Install the downloaded wheel with the same system Python used by
+KiCad:
+
+```bash
+python3 -m pip install ./easyeda2kicad-1.1.0b1-py3-none-any.whl
+```
 
 **macOS:** KiCad bundles its own Python. Install into it with:
 
 ```bash
-/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 -m pip install easyeda2kicad
+/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 \
+  -m pip install ./easyeda2kicad-1.1.0b1-py3-none-any.whl
 ```
 
-> **Tip:** In the PCB Editor, open *Tools → Scripting Console* and run `import sys; print(sys.executable)` to get KiCad's Python path. Then run that path with `-m pip install easyeda2kicad` in a terminal.
+> **Tip:** In the PCB Editor, open *Tools → Scripting Console* and run
+> `import sys; print(sys.executable)` to find KiCad's Python path. Use that
+> interpreter with the downloaded wheel path or `-m pip install -e
+> /path/to/this/checkout`.
 
 After installation, run `easyeda2kicad` from the same terminal or KiCad Command Prompt.
 
@@ -93,6 +120,24 @@ easyeda2kicad --svg --lcsc_id=C2040 --output ~/libs/my_lib
 
 The extended CLI can resolve an exact manufacturer part number through LCSC,
 DigiKey, and Mouser while continuing to obtain CAD only from EasyEDA:
+
+An API is the machine-readable product-search interface used by this CLI; it is
+not the same as browsing a public product page. DigiKey and Mouser require
+credentials issued for the user's own account/application. This project does
+not provide shared credentials:
+
+- DigiKey requires `DIGIKEY_CLIENT_ID` and `DIGIKEY_CLIENT_SECRET` from a
+  [DigiKey developer application](https://developer.digikey.com/products). The
+  CLI performs the short-lived OAuth token exchange; do not paste or persist an
+  access token manually.
+- Mouser requires `MOUSER_API_KEY` requested through the
+  [Mouser API portal](https://www.mouser.com/en/apihome/).
+
+The three-provider example below can still exit with status `0` and generate
+valid EasyEDA CAD when either credential is missing. In that case the overall
+result can be `PARTIAL`; inspect `distributor_records`, `provider_errors`, and
+`provider_diagnostics` in the JSON manifest before treating all requested
+metadata providers as successful.
 
 Create the parent directory named by `--output` before conversion (for example,
 `mkdir -p ./libs` on Linux/macOS or `New-Item -ItemType Directory -Force ./libs`
