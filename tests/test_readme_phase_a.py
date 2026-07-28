@@ -47,8 +47,10 @@ def test_readme_describes_local_package_as_an_intermediate_safe_handoff() -> Non
 
     assert "--cad-package ./downloads/official-ultralibrarian-kicad.zip" in readme
     assert "--cad-package-format ultralibrarian-kicad" in readme
+    assert "--cad-package-evidence" in readme
     assert "--cad-source mouser --cad-package-format samacsys-kicad" in readme
     assert "CLI input alone is insufficient" in readme
+    assert "hash-bound" in readme
     assert "more than 4096 entries" in readme
     assert "does not automate provider website search, login, agreements, or" in readme
 
@@ -67,7 +69,7 @@ def test_readme_documents_api_only_digikey_manual_handoff_boundary() -> None:
     assert "`CAD_MANUAL_DOWNLOAD_REQUIRED`" in section
     assert "`CAD_AUTH_REQUIRED`" in section
     assert "`CAD_DOWNLOAD_UNAVAILABLE`" in section
-    assert "review the Ultra Librarian agreement" in section
+    assert "review the model download agreement" in section.replace("\n", " ")
     assert (
         "tests/test_provider_live.py::test_digikey_live_ad5314_cad_handoff_smoke"
         in section
@@ -77,6 +79,8 @@ def test_readme_documents_api_only_digikey_manual_handoff_boundary() -> None:
         in section
     )
     assert "`DIGIKEY_AD5314_CAD_PACKAGE`" in section
+    assert "guest download" in section
+    assert "2026-07-29" in section
     assert "disposable temporary project" in section
     assert "KiCad 7, 9, and 10 CLIs" in section
     assert "writes no response or credential artifact" in section.replace("\n", " ")

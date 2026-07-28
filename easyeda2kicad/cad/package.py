@@ -8,7 +8,7 @@ import os
 import re
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -25,6 +25,7 @@ from easyeda2kicad.metadata.models import (
 )
 
 from .archive import extract_zip_safely
+from .evidence import CadPackageEvidence, load_package_evidence
 from .errors import CadPackageError
 from .kicad import (
     FootprintSelection,
@@ -33,6 +34,7 @@ from .kicad import (
     merge_symbol_library,
     rewrite_footprint_model,
     rewrite_symbol_footprint,
+    select_attested_symbol,
     select_exact_symbol,
     select_footprint,
     validate_model,
@@ -103,6 +105,7 @@ def ingest_cad_package(
     output_base: Path,
     overwrite: bool = False,
     project_relative_model_path: Optional[str] = None,
+    evidence_path: Optional[Path] = None,
 ) -> CadPackageIngestResult:
     """Validate an untrusted package completely before changing output libraries."""
 
@@ -117,22 +120,39 @@ def ingest_cad_package(
             "CAD_OUTPUT_PARENT_MISSING",
             "output parent directory must already exist",
         )
+    package_hash = _sha256_file(archive_path)
+    evidence = (
+        load_package_evidence(
+            evidence_path,
+            request=request,
+            archive_sha256=package_hash,
+            requested_format=normalized_format,
+        )
+        if evidence_path is not None
+        else None
+    )
     with tempfile.TemporaryDirectory(prefix="easyeda2kicad-cad-package-") as temporary:
         temporary_root = Path(temporary)
         extraction_root = temporary_root / "extracted"
         extracted = extract_zip_safely(archive_path, extraction_root)
-        adapter = _select_adapter(extracted, extraction_root, normalized_format)
+        adapter = _select_adapter(
+            extracted,
+            extraction_root,
+            normalized_format,
+            evidence,
+        )
         if request.source != adapter.source:
             raise CadPackageError(
                 "CAD_PACKAGE_SOURCE_MISMATCH",
                 "package format does not match the explicit CAD source",
             )
         prepared = _prepare_package(
-            archive_path,
             extraction_root,
             extracted,
             adapter,
             request,
+            package_hash,
+            evidence,
         )
         cad_record = _install_prepared_package(
             prepared,
@@ -155,11 +175,12 @@ def ingest_cad_package(
 
 
 def _prepare_package(
-    archive_path: Path,
     extraction_root: Path,
     extracted: Sequence[Path],
     adapter: PackageAdapter,
     request: CadRequest,
+    package_hash: str,
+    evidence: Optional[CadPackageEvidence],
 ) -> PreparedCadPackage:
     symbol_files = sorted(
         (path for path in extracted if path.suffix.casefold() == ".kicad_sym"),
@@ -188,7 +209,11 @@ def _prepare_package(
     if not model_files:
         raise CadPackageError("CAD_3D_MISSING", "package has no STEP or WRL model")
 
-    symbol = _select_symbol_files(symbol_files, request)
+    symbol = _select_symbol_files(
+        symbol_files,
+        request,
+        attested=evidence is not None,
+    )
     footprint_texts = [(path, _read_text(path)) for path in footprint_files]
     footprint = select_footprint(
         footprint_texts,
@@ -235,15 +260,31 @@ def _prepare_package(
         )
     ]
     properties = extract_properties(symbol.block)
-    model_creator = _property_by_key(properties, "modelcreator")
-    package_hash = _sha256_file(archive_path)
+    package_model_creator = _property_by_key(properties, "modelcreator")
+    evidence_model_creator = evidence.model_creator if evidence is not None else None
+    if (
+        package_model_creator is not None
+        and evidence_model_creator is not None
+        and package_model_creator.casefold() != evidence_model_creator.casefold()
+    ):
+        raise CadPackageError(
+            "CAD_MODEL_CREATOR_MISMATCH",
+            "package and manual handoff evidence name different model creators",
+        )
+    model_creator = package_model_creator or evidence_model_creator
+    license_items = sorted(license_paths)
+    if evidence is not None and evidence.agreement_url is not None:
+        license_items.append(evidence.agreement_url)
     provenance = CadProvenance(
         distributor=request.source,
         delivery_partner=adapter.delivery_partner,
         model_creator=model_creator,
-        retrieval_mode="local-package",
+        landing_url=(evidence.landing_url if evidence is not None else None),
+        retrieval_mode=(
+            evidence.retrieval_mode if evidence is not None else "local-package"
+        ),
         package_hash=package_hash,
-        license=";".join(sorted(license_paths)) or None,
+        license=";".join(license_items) or None,
         notice=";".join(sorted(notice_paths)) or None,
     )
     artifacts = [
@@ -264,7 +305,12 @@ def _prepare_package(
             sha256=_sha256_file(path),
         )
         for path in symbol_files
-        if _symbol_file_matches(path, symbol, request)
+        if _symbol_file_matches(
+            path,
+            symbol,
+            request,
+            attested=evidence is not None,
+        )
     ]
     artifacts = [
         *symbol_artifacts,
@@ -448,23 +494,34 @@ def _select_adapter(
     files: Sequence[Path],
     root: Path,
     requested_format: str,
+    evidence: Optional[CadPackageEvidence],
 ) -> PackageAdapter:
     marker_text = "\n".join(_read_marker_text(path) for path in _notice_files(files))
     relative_names = "\n".join(_relative(path, root) for path in files)
-    evidence = (relative_names + "\n" + marker_text).casefold()
+    package_evidence_text = (relative_names + "\n" + marker_text).casefold()
     matches = [
         adapter
         for adapter in _ADAPTERS.values()
-        if any(marker in evidence for marker in adapter.marker_phrases)
+        if any(marker in package_evidence_text for marker in adapter.marker_phrases)
     ]
     if requested_format != "auto":
         selected = _ADAPTERS[requested_format]
         if selected not in matches:
+            if (
+                evidence is not None
+                and evidence.package_format == selected.format_name
+                and _matches_attested_layout(selected, files, root)
+            ):
+                return replace(selected, format_version="2")
             raise CadPackageError(
                 "CAD_PACKAGE_FORMAT_UNPROVEN",
                 "package does not contain evidence for the selected adapter",
             )
         return selected
+    if not matches and evidence is not None:
+        selected = _ADAPTERS[evidence.package_format]
+        if _matches_attested_layout(selected, files, root):
+            return replace(selected, format_version="2")
     if len(matches) != 1:
         raise CadPackageError(
             "CAD_PACKAGE_FORMAT_AMBIGUOUS",
@@ -473,15 +530,47 @@ def _select_adapter(
     return matches[0]
 
 
+def _matches_attested_layout(
+    adapter: PackageAdapter,
+    files: Sequence[Path],
+    root: Path,
+) -> bool:
+    if adapter.format_name != "ultralibrarian-kicad":
+        return False
+    relative_paths = [PurePosixPath(_relative(path, root)) for path in files]
+    symbol_paths = [
+        path
+        for path in relative_paths
+        if path.suffix.casefold() == ".kicad_sym"
+        and path.parts
+        and path.parts[0].casefold() == "kicadv6"
+    ]
+    footprint_paths = [
+        path
+        for path in relative_paths
+        if path.suffix.casefold() == ".kicad_mod"
+        and any(part.casefold().endswith(".pretty") for part in path.parts[:-1])
+    ]
+    model_paths = [
+        path
+        for path in relative_paths
+        if path.suffix.casefold() in (".step", ".stp", ".wrl")
+    ]
+    return len(symbol_paths) == 1 and bool(footprint_paths) and bool(model_paths)
+
+
 def _select_symbol_files(
     symbol_files: Sequence[Path],
     request: CadRequest,
+    *,
+    attested: bool = False,
 ) -> SymbolSelection:
     selections: List[SymbolSelection] = []
     mismatch_seen = False
     for path in symbol_files:
         try:
-            selections.append(select_exact_symbol(_read_text(path), request))
+            selector = select_attested_symbol if attested else select_exact_symbol
+            selections.append(selector(_read_text(path), request))
         except CadPackageError as error:
             if error.code == "CAD_IDENTITY_MISMATCH":
                 mismatch_seen = True
@@ -510,9 +599,12 @@ def _symbol_file_matches(
     path: Path,
     selection: SymbolSelection,
     request: CadRequest,
+    *,
+    attested: bool = False,
 ) -> bool:
     try:
-        candidate = select_exact_symbol(_read_text(path), request)
+        selector = select_attested_symbol if attested else select_exact_symbol
+        candidate = selector(_read_text(path), request)
     except CadPackageError:
         return False
     return candidate.name == selection.name and candidate.block == selection.block

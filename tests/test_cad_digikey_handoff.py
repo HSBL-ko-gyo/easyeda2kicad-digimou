@@ -170,6 +170,44 @@ def test_official_media_handoff_is_manual_sanitized_and_never_scraped() -> None:
     assert "secret" not in json.dumps(result.to_dict(), sort_keys=True)
 
 
+def test_empty_media_falls_back_to_exact_official_product_page_handoff() -> None:
+    requests: List[urllib.request.Request] = []
+    provider = _provider(
+        [
+            {"access_token": "memory-only-token", "expires_in": 3600},
+            {"MediaLinks": []},
+        ],
+        requests=requests,
+    )
+
+    result = DigiKeyCadSource(provider).discover(
+        CadRequest(
+            manufacturer="Analog Devices Inc.",
+            mpn="AD5314BRM",
+            source="digikey",
+        ),
+        exact_record=_record(),
+    )
+
+    product_url = (
+        "https://www.digikey.com/en/products/detail/analog-devices-inc/AD5314BRM/617418"
+    )
+    assert result.status == CAD_MANUAL_DOWNLOAD_REQUIRED
+    assert result.action_required is not None
+    assert result.action_required.setup_url == product_url
+    assert result.provenance == CadProvenance(
+        distributor="digikey",
+        delivery_partner="ultralibrarian",
+        model_creator=None,
+        landing_url=product_url,
+        retrieval_mode="official-api-product-page-handoff",
+    )
+    assert [request.full_url for request in requests] == [
+        DIGIKEY_TOKEN_URL,
+        DIGIKEY_MEDIA_URL_TEMPLATE.format(product_number="AD5314BRM-ND"),
+    ]
+
+
 @pytest.mark.parametrize(
     "urls",
     [

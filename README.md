@@ -178,9 +178,9 @@ easyeda2kicad \
 ```
 
 An opt-in live smoke test exercises only the exact DigiKey lookup and official
-`Media` handoff. It is skipped by the normal suite when the two DigiKey
-variables are absent, makes a single attempt per operation, does not fetch the
-returned page, and writes no response or credential artifact:
+`Media`/exact-product handoff. It is skipped by the normal suite when the two
+DigiKey variables are absent, makes a single attempt per operation, does not
+fetch the returned page, and writes no response or credential artifact:
 
 ```bash
 python -m pytest -q -m network \
@@ -188,7 +188,10 @@ python -m pytest -q -m network \
 ```
 
 After the owner downloads the real ZIP, set
-`DIGIKEY_AD5314_CAD_PACKAGE` to its local path and run the package-gated smoke:
+`DIGIKEY_AD5314_CAD_PACKAGE` to its local path. The checked-in sanitized
+evidence file is bound to the reviewed package SHA-256; a re-download with a
+different hash requires a newly reviewed evidence file. Then run the
+package-gated smoke:
 
 ```bash
 python -m pytest -q -m network \
@@ -204,26 +207,33 @@ symbol/pin, footprint/pad, and 3D alignment inspection in the KiCad 10 GUI
 remains an explicit owner-visible final check.
 
 The command calls only the official Product Information V4 API. It revalidates
-the exact manufacturer and full MPN, then accepts only an API response whose
-`MediaType` is `Model` and whose URL is an unambiguous recognized Ultra
-Librarian handoff. It never fetches or scrapes that returned page. A successful
-discovery therefore reports `CAD_MANUAL_DOWNLOAD_REQUIRED`, exits nonzero, and
-prints the same credential-free URL stored under
-`cad_discovery.action_required.setup_url`.
+the exact manufacturer and full MPN. One unambiguous recognized URL whose
+`MediaType` is `Model` is preferred. When the API returns no model entry, the
+sanitized exact `ProductUrl` from that same authenticated record is returned as
+the manual product-page handoff; an unknown or ambiguous model entry still
+fails closed. The CLI never fetches or scrapes either page. A manual discovery
+reports `CAD_MANUAL_DOWNLOAD_REQUIRED`, exits nonzero, and stores the same
+credential-free URL under `cad_discovery.action_required.setup_url`.
 
-Open that URL yourself, review the Ultra Librarian agreement, select KiCad v6+
-and STEP or WRL, and download the ZIP. If credentials are missing, the typed
-result is `CAD_AUTH_REQUIRED` with the DigiKey OAuth setup page. If the official
-API supplies no unique recognized handoff, the result is
-`CAD_DOWNLOAD_UNAVAILABLE`; the CLI never guesses a URL or falls back to
-EasyEDA.
+Open that URL, verify the exact manufacturer and MPN, review the model download
+agreement, select KiCad v6+ and STEP or WRL, and download the ZIP. If
+credentials are missing, the typed result is `CAD_AUTH_REQUIRED` with the
+DigiKey OAuth setup page. Unsafe, malformed, or ambiguous official handoffs
+produce `CAD_DOWNLOAD_UNAVAILABLE`; the CLI never guesses a URL or falls back
+to EasyEDA.
 
-The primary validation candidate is Analog Devices `AD5314BRM`. Its EasyEDA CAD
-absence and public DigiKey-linked Ultra Librarian page were reconfirmed on
-2026-07-25. The credential- and package-gated smoke tests are ready but have not
-run; authenticated API discovery and real-package KiCad validation still
-require owner credentials and a user-downloaded package. This is not yet an
-end-to-end completion claim.
+The primary validation candidate is Analog Devices `AD5314BRM`. On 2026-07-29,
+authenticated exact API discovery succeeded, the API `Media` response contained
+no recognized model entry, and the exact official product-page handoff was
+used. DigiKey then permitted a guest download from the public models page
+(the completion dialog showed two guest downloads remaining that day). The
+unmodified KiCad v6+ and STEP package passed archive, exact-identity,
+registration, idempotency, and KiCad CLI 7/9/10 parse/render checks. API
+metadata still requires the user's developer credentials, and guest download
+limits can change. The real package's symbol and all ten pins were inspected in
+the KiCad 10 Symbol Editor; footprint/pad/courtyard and 3D geometry/alignment
+remain an owner-visible GUI check. This is not yet an end-to-end completion
+claim.
 
 ### Import a locally downloaded CAD package
 
@@ -236,7 +246,9 @@ models are accepted; legacy `.lib` conversion and Library Loader internals are
 not guessed.
 
 Create the output parent first, then provide the exact manufacturer and full
-ordering MPN shown by the package itself:
+ordering MPN. If the untouched official package omits provider/manufacturer
+properties, also provide a separately reviewed, sanitized JSON receipt that
+binds the official product/model URLs and exact identity to the package hash:
 
 ```bash
 mkdir -p ./libs
@@ -246,6 +258,7 @@ easyeda2kicad \
   --cad-source digikey \
   --cad-package ./downloads/official-ultralibrarian-kicad.zip \
   --cad-package-format ultralibrarian-kicad \
+  --cad-package-evidence ./docs/evidence/issue-7c-digikey-ad5314brm.json \
   --output ./libs/project_parts \
   --manifest-json ./build/cad-package.json
 ```
@@ -253,15 +266,23 @@ easyeda2kicad \
 Use `--cad-source mouser --cad-package-format samacsys-kicad` for the
 corresponding SamacSys handoff. `--cad-package-format auto` is the default and
 accepts a package only when exactly one supported adapter is proven by package
-notices/layout. The distributor, delivery partner, and model creator remain
-separate provenance fields.
+notices/layout or a matching hash-bound receipt plus the versioned provider
+layout. Receipt JSON rejects unknown fields, unsafe/secret-bearing URLs,
+identity/source/format mismatches, and a different package hash. The receipt
+does not turn the delivery partner into the model creator; distributor,
+delivery partner, and model creator remain separate provenance fields.
 
 The ZIP is inspected before extraction: absolute, UNC, drive and parent paths,
 links, duplicate/case-colliding paths, nested archives, more than 4096 entries,
 more than 512 MiB expanded data, files over 256 MiB, and compression ratios
-over 200:1 are rejected. Manufacturer and exact MPN must be proven by native
-symbol properties; CLI input alone is insufficient. Ambiguous symbols,
-footprints or models, malformed KiCad data, and pin/pad mismatches fail closed.
+over 200:1 are rejected. Normally manufacturer and exact MPN must be proven by
+native symbol properties. For an official package with a hash-bound manual
+handoff receipt, the native symbol must still independently contain at least
+two exact full-MPN signals before missing Manufacturer/MPN fields are added
+from the receipt; CLI input alone is insufficient. Provider footprint variants
+are selected only when the symbol's Footprint value and exactly one package
+filename match exactly. Ambiguous symbols, footprints or models, malformed
+KiCad data, and pin/pad mismatches fail closed.
 Installation stages and validates all files before atomically replacing the
 target `.kicad_sym`, `.pretty`, and `.3dshapes` paths. Existing non-empty,
 conflicting Manufacturer/MPN values are never overwritten.

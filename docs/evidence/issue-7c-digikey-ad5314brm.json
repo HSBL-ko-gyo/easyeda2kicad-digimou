@@ -1,0 +1,15 @@
+{
+  "agreement_url": "https://www.digikey.com/en/models/617418?tab=ultralibrarian",
+  "delivery_partner": "ultralibrarian",
+  "landing_url": "https://www.digikey.com/en/models/617418?tab=ultralibrarian",
+  "manufacturer": "Analog Devices Inc.",
+  "model_creator": null,
+  "mpn": "AD5314BRM",
+  "package_format": "ultralibrarian-kicad",
+  "package_sha256": "e9e9786e238068db0f08253a3f5384b3a45201bee9cee35c6440e892d2ef6edd",
+  "product_url": "https://www.digikey.com/en/products/detail/analog-devices-inc/AD5314BRM/617418",
+  "retrieval_mode": "manual-official-download",
+  "retrieved_at_utc": "2026-07-28T16:34:01Z",
+  "schema_version": 1,
+  "source": "digikey"
+}

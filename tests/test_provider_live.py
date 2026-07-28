@@ -100,6 +100,7 @@ def test_digikey_live_ad5314_cad_handoff_smoke() -> None:
     assert handoff.fragment == ""
     assert handoff.hostname in {
         "mm.digikey.com",
+        "www.digikey.com",
         "ultralibrarian.com",
         "app.ultralibrarian.com",
     } or (handoff.hostname or "").endswith(".ultralibrarian.com")
@@ -131,6 +132,14 @@ def test_digikey_live_ad5314_package_project_e2e(
     package_path = Path(configured_path).expanduser()
     if not package_path.is_file():
         pytest.fail("DIGIKEY_AD5314_CAD_PACKAGE must name an existing regular file")
+    evidence_path = Path(
+        os.environ.get(
+            "DIGIKEY_AD5314_CAD_EVIDENCE",
+            "docs/evidence/issue-7c-digikey-ad5314brm.json",
+        )
+    ).expanduser()
+    if not evidence_path.is_file():
+        pytest.fail("DIGIKEY_AD5314_CAD_EVIDENCE must name an existing regular file")
 
     missing_versions = [
         version for version, executable in KICAD_CLI.items() if not executable.is_file()
@@ -165,6 +174,8 @@ def test_digikey_live_ad5314_package_project_e2e(
         str(package_path),
         "--cad-package-format",
         "ultralibrarian-kicad",
+        "--cad-package-evidence",
+        str(evidence_path),
         "--output",
         str(output),
         "--manifest-json",
@@ -189,7 +200,11 @@ def test_digikey_live_ad5314_package_project_e2e(
     assert after_rerun == before_rerun
 
     manifest_text = manifest.read_text(encoding="utf-8")
-    for absolute_path in (tmp_path.resolve(), package_path.resolve()):
+    for absolute_path in (
+        tmp_path.resolve(),
+        package_path.resolve(),
+        evidence_path.resolve(),
+    ):
         assert str(absolute_path) not in manifest_text
         assert absolute_path.as_posix() not in manifest_text
     payload = cast(Mapping[str, Any], json.loads(manifest_text))
@@ -207,7 +222,11 @@ def test_digikey_live_ad5314_package_project_e2e(
     assert provenance["distributor"] == "digikey"
     assert provenance["delivery_partner"] == "ultralibrarian"
     assert isinstance(provenance["model_creator"], (str, type(None)))
-    assert provenance["retrieval_mode"] == "local-package"
+    assert provenance["retrieval_mode"] == "manual-official-download"
+    assert (
+        provenance["landing_url"]
+        == "https://www.digikey.com/en/models/617418?tab=ultralibrarian"
+    )
     assert isinstance(provenance["package_hash"], str)
     assert len(provenance["package_hash"]) == 64
     artifacts = cast(list[Mapping[str, Any]], package["artifacts"])

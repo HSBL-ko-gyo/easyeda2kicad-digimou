@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 # Global imports
-from typing import Any, List, Mapping, Optional, Protocol, Sequence, runtime_checkable
+from typing import (
+    Any,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    cast,
+    runtime_checkable,
+)
 from urllib.parse import urlsplit
 
 # Local imports
@@ -74,6 +83,35 @@ class DigiKeyCadSource:
 
         response = self._product_api.get_product_media(product_number)
         handoff_urls = _ultralibrarian_model_urls(response)
+        product_page = _digikey_product_page_url(record.product_url)
+        if (
+            not handoff_urls
+            and not _has_model_media(response)
+            and product_page is not None
+        ):
+            provenance = CadProvenance(
+                distributor="digikey",
+                delivery_partner="ultralibrarian",
+                model_creator=None,
+                landing_url=product_page,
+                retrieval_mode="official-api-product-page-handoff",
+            )
+            return CadDiscoveryResult(
+                requested_source=self.name,
+                status=CAD_MANUAL_DOWNLOAD_REQUIRED,
+                request=request,
+                provenance=provenance,
+                action_required=CadActionRequired(
+                    code=CAD_MANUAL_DOWNLOAD_REQUIRED,
+                    detail=(
+                        "Open the exact official DigiKey product page, verify that "
+                        "its EDA/CAD Models entry identifies the requested part, "
+                        "review the model agreement, select KiCad v6+ and STEP or "
+                        "WRL, then rerun with the ZIP and a hash-bound evidence file"
+                    ),
+                    setup_url=product_page,
+                ),
+            )
         provenance = CadProvenance(
             distributor="digikey",
             delivery_partner=("ultralibrarian" if handoff_urls else None),
@@ -107,7 +145,7 @@ class DigiKeyCadSource:
                 detail=(
                     "Open the official DigiKey-linked Ultra Librarian handoff, "
                     "review its agreement, select KiCad v6+ and STEP or WRL, then "
-                    "rerun with the downloaded ZIP via --cad-package"
+                    "rerun with the ZIP and a hash-bound evidence file"
                 ),
                 setup_url=handoff_url,
             ),
@@ -162,6 +200,18 @@ def _safe_https_url(value: str) -> Optional[str]:
     return sanitize_public_url(value)
 
 
+def _has_model_media(response: Mapping[str, Any]) -> bool:
+    raw_links = response.get("MediaLinks")
+    if not isinstance(raw_links, list):
+        return False
+    return any(
+        isinstance(raw_link, Mapping)
+        and isinstance(raw_link.get("MediaType"), str)
+        and cast(str, raw_link["MediaType"]).strip().casefold() == "model"
+        for raw_link in raw_links
+    )
+
+
 def _delivery_partner(value: str) -> Optional[str]:
     parsed = urlsplit(value)
     hostname = (parsed.hostname or "").casefold()
@@ -171,6 +221,22 @@ def _delivery_partner(value: str) -> Optional[str]:
     if hostname == "mm.digikey.com" and "/opasdata/" in path:
         return "ultralibrarian"
     return None
+
+
+def _digikey_product_page_url(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    safe_url = _safe_https_url(value)
+    if safe_url is None:
+        return None
+    parsed = urlsplit(safe_url)
+    if (
+        parsed.hostname or ""
+    ).casefold() != "www.digikey.com" or not parsed.path.casefold().startswith(
+        "/en/products/detail/"
+    ):
+        return None
+    return safe_url
 
 
 __all__ = [
