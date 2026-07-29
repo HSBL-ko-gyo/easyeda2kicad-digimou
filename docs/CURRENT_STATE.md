@@ -71,6 +71,26 @@ gates remain.
   project: the exact AD5314BRM symbol and all ten pins, the selected
   `RM_10_ADI` footprint's ten pads and courtyard, and STEP geometry/alignment
   were confirmed. No user-owned project was used or modified.
+- Added Mouser Search API V2 exact Product Detail handoff discovery for
+  explicit `--cad-source mouser`. The source revalidates exact manufacturer and
+  full MPN, accepts only a sanitized official `mouser.com` Product Detail URL,
+  reports `CAD_MANUAL_DOWNLOAD_REQUIRED`, and never fetches the returned page
+  or falls back to EasyEDA.
+- Kept Mouser as distributor, SamacSys as delivery partner, and the
+  package-proven model creator as separate provenance roles. SamacSys automated
+  search, login, request, and download remain deliberately unimplemented under
+  the current service terms.
+- Mouser API metadata and CAD handoff lookups are live-only because the current
+  API terms prohibit caching or storing API content. The adapter does not
+  retain its raw response, service orchestration writes neither raw nor
+  normalized Mouser cache entries, and offline mode performs no Mouser request.
+- Reconfirmed on 2026-07-26 that `Rectron / FM220A-W` had no exact public LCSC
+  match. Its official Mouser page exposed the ECAD/Library Loader flow but
+  labelled the action “Build or request PCB Symbol, Footprint or Model”; an
+  already downloadable package was not proven. Per the Phase D plan, no
+  alternative candidate was selected. Credential- and package-gated smokes
+  cover the remaining checks without retaining responses, credentials, or
+  provider packages.
 - Added opt-in `--project PATH --register-project-libraries` registration for
   `sym-lib-table` and `fp-lib-table`, with `${KIPRJMOD}` URIs and nicknames
   derived from the output stem. `--project-relative` alone never registers a
@@ -219,20 +239,41 @@ three Provider live-shaped/raw replay overflow paths, schema-3
 online/offline/refresh handling, JSON/CSV child-of-symbol-file collisions, and
 no partial output.
 
+## Issue #7 Phase D quality evidence
+
+| Gate | Result |
+| --- | --- |
+| Mouser/DigiKey/package/docs focused tests | `108 passed, 2 skipped` |
+| Python 3.12.13 full pytest | `837 passed, 75 skipped` |
+| Ruff format check | PASS, 77 files |
+| Ruff lint | PASS |
+| Python 3.12 strict mypy | PASS, 77 source files |
+| `git diff --check` | PASS |
+| Build and Twine check | PASS for sdist and wheel |
+| Changed source and unpacked distribution secret/path scan | PASS |
+
+The two focused skips remain deliberate external gates:
+`MOUSER_API_KEY` for the single-request official API smoke and
+`MOUSER_FM220A_CAD_PACKAGE` for real-package import, project registration, and
+KiCad CLI 7/9/10 rendering. A skip is not counted as live success.
+
 ## Remaining
 
-- Mouser/SamacSys service discovery/handoff remains unimplemented.
-  DigiKey/Ultra Librarian Phase C is complete, while Mouser still requires
-  user-owned real-package intake through the completed registration path and
-  real-package KiCad GUI verification before Issue #7 can close.
+- Mouser/SamacSys exact official Product Detail discovery is implemented, but
+  this checkout has not yet completed its credentialed FM220A-W smoke or
+  received an owner-exported `MOUSER_FM220A_CAD_PACKAGE`. A real package must
+  pass the completed import and project-registration path, KiCad CLI 7/9/10,
+  and real KiCad GUI validation before Phase D can complete.
+- Phase E auto-source selection, conflict handling, source locking, and final
+  DigiKey plus Mouser real-service E2E remain required before Issue #7 closes.
 - Credentialed Mouser live calls and native Linux process E2E remain disclosed
   external validation gaps.
 
 ## Explicit limitations and risks
 
 - DigiKey credentials are configured only in the owner's environment and its
-  exact live smoke now passes. `MOUSER_API_KEY` remains out of scope for the
-  current hold, so Mouser live tests remain skipped.
+  exact live smoke now passes. The Mouser live and package tests remain
+  credential/package gated and are not counted as successful when skipped.
 - The real OPA333AIDBVR and LM321MF/NOPB examples therefore contain LCSC
   metadata plus EasyEDA CAD, not live DigiKey/Mouser records.
 - AD5314BRM is now the verified distributor-present/EasyEDA-CAD-absent
@@ -244,7 +285,7 @@ no partial output.
   Librarian/SamacSys websites and does not claim service download support.
   Real provider packages are intentionally not committed. The DigiKey real
   package has complete KiCad CLI and symbol/pin/footprint/pad/courtyard/3D GUI
-  coverage.
+  coverage; the corresponding Mouser real-package proof remains outstanding.
 - Runtime E2E was performed on Windows. POSIX path behavior has deterministic
   unit coverage, but native Linux runtime E2E was not available.
 - The upstream golden resource directory remains absent; the extension adds a

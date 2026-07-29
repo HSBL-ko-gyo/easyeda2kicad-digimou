@@ -102,3 +102,38 @@ def test_readme_documents_opt_in_project_registration_and_dry_run() -> None:
     assert "`--project-relative` by itself" in section
     assert "atomic" in section
     assert "roll back" in section
+
+
+def test_readme_documents_policy_safe_mouser_handoff_boundary() -> None:
+    readme = readme_text()
+    section = readme.split(
+        "### Discover the Mouser / SamacSys CAD handoff", maxsplit=1
+    )[1].split("### Import a locally downloaded CAD package", maxsplit=1)[0]
+    flattened = section.replace("\n", " ")
+
+    assert "--manufacturer Rectron" in section
+    assert "--mpn FM220A-W" in section
+    assert "--cad-source mouser" in section
+    assert "CAD_MANUAL_DOWNLOAD_REQUIRED" in section
+    assert "CAD_AUTH_REQUIRED" in section
+    assert "CAD_DOWNLOAD_UNAVAILABLE" in section
+    assert "never fetches or scrapes" in section
+    assert "never falls back to EasyEDA" in section
+    assert "SamacSys automated" in section
+    assert "live-only" in section
+    assert "neither the raw response nor normalized Mouser record" in flattened
+    assert "reports an offline provider diagnostic" in flattened
+    assert (
+        "tests/test_cad_mouser_live.py::"
+        "test_mouser_live_fm220a_cad_handoff_smoke" in section
+    )
+    assert (
+        "tests/test_cad_mouser_live.py::"
+        "test_mouser_live_fm220a_package_project_e2e" in section
+    )
+    assert "`MOUSER_FM220A_CAD_PACKAGE`" in section
+    assert "disposable temporary project" in flattened
+    assert "KiCad CLI 7/9/10" in section
+    assert "Build or request PCB Symbol" in flattened
+    assert "no replacement was chosen" in flattened
+    assert "cannot claim end-to-end completion" in flattened

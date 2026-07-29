@@ -30,6 +30,10 @@ MOUSER_AUTH_HELP_URL = "https://www.mouser.com/api-search/"
 
 class MouserProvider(BaseMetadataProvider):
     name = "mouser"
+    # The currently linked Mouser Search API terms prohibit caching or storing
+    # API content. Service orchestration honors this provider capability and
+    # performs live-only lookups without writing raw or normalized responses.
+    persistent_cache_allowed = False
 
     @staticmethod
     def _candidate_preference(record: DistributorRecord) -> Tuple[int, str]:
@@ -93,7 +97,6 @@ class MouserProvider(BaseMetadataProvider):
             ):
                 raise AuthFailedError(self.name, operation="part-search")
             raise InvalidResponseError(self.name, operation="part-search")
-        self.last_raw_response = response
         return response
 
     @staticmethod

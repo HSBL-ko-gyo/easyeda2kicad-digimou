@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, cast
 
 # Local imports
 from easyeda2kicad.cad.digikey import DigiKeyCadSource, DigiKeyProductApi
+from easyeda2kicad.cad.mouser import MouserCadSource, MouserProductApi
 from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
 from easyeda2kicad.providers import (
     AmbiguousMatchError,
@@ -20,6 +21,7 @@ from easyeda2kicad.providers import (
     MouserProvider,
     MpnMismatchError,
     NotFoundError,
+    OfflineCacheMissError,
     ProviderError,
 )
 from easyeda2kicad.providers.lcsc_client import JlcpcbCatalogueClient
@@ -508,10 +510,13 @@ def resolve_metadata(
         )
         result.blocking_error = result.cad_discovery.status
     elif selected_cad_source == "mouser":
-        result.cad_discovery = _external_cad_not_acquired(
-            selected_cad_source,
-            result.trusted_manufacturer,
-            result.trusted_mpn,
+        result.cad_discovery = _discover_mouser_cad(
+            result,
+            provider_instances.get("mouser"),
+            provider_records.get("mouser"),
+            provider_factory=provider_factory,
+            metadata_api=metadata_api,
+            offline=offline,
         )
         result.blocking_error = result.cad_discovery.status
 
@@ -615,6 +620,111 @@ def _digikey_discovery_failure(
             model_creator=None,
             landing_url=None,
             retrieval_mode="official-api-handoff",
+        ),
+        action_required=CadActionRequired(
+            code=status,
+            detail=detail,
+            setup_url=setup_url,
+        ),
+    )
+
+
+def _discover_mouser_cad(
+    result: MetadataResolution,
+    provider: Optional[MetadataProvider],
+    record: Optional[DistributorRecord],
+    *,
+    provider_factory: MetadataProviderFactory,
+    metadata_api: EasyedaApi,
+    offline: bool,
+) -> CadDiscoveryResult:
+    exact_manufacturer = _clean(result.trusted_manufacturer)
+    exact_mpn = _clean(result.trusted_mpn)
+    if exact_manufacturer is None or exact_mpn is None:
+        return _external_cad_not_acquired(
+            "mouser",
+            exact_manufacturer,
+            exact_mpn,
+        )
+    request = CadRequest(
+        manufacturer=exact_manufacturer,
+        mpn=exact_mpn,
+        source="mouser",
+    )
+    if offline:
+        return CadDiscoveryResult(
+            requested_source="mouser",
+            status=CAD_NOT_ACQUIRED,
+            request=request,
+            provenance=CadProvenance(
+                distributor="mouser",
+                delivery_partner=None,
+                model_creator=None,
+                retrieval_mode="offline",
+            ),
+            action_required=CadActionRequired(
+                code=CAD_NOT_ACQUIRED,
+                detail=(
+                    "Offline mode cannot query Mouser Search API V2 for an "
+                    "official product handoff"
+                ),
+            ),
+        )
+
+    selected_provider = provider or provider_factory("mouser", metadata_api)
+    existing_error = result.provider_errors.get("mouser")
+    if record is None and existing_error is not None:
+        return _mouser_discovery_failure(
+            request,
+            selected_provider,
+            existing_error,
+        )
+    if not isinstance(selected_provider, MouserProductApi):
+        return _external_cad_not_acquired(
+            "mouser",
+            exact_manufacturer,
+            exact_mpn,
+        )
+    try:
+        return MouserCadSource(selected_provider).discover(
+            request,
+            exact_record=record,
+        )
+    except (AmbiguousMatchError, MpnMismatchError) as error:
+        raise _fatal_provider_error(error) from None
+    except ProviderError as error:
+        _record_provider_error(result, "mouser", error)
+        return _mouser_discovery_failure(
+            request,
+            selected_provider,
+            _error_code(error),
+        )
+
+
+def _mouser_discovery_failure(
+    request: CadRequest,
+    provider: MetadataProvider,
+    code: str,
+) -> CadDiscoveryResult:
+    auth_required = code in ("AUTH_MISSING", "AUTH_FAILED")
+    status = CAD_AUTH_REQUIRED if auth_required else CAD_DOWNLOAD_UNAVAILABLE
+    requirements = provider.describe_auth_requirements()
+    setup_url = requirements.help_url if auth_required else None
+    detail = (
+        "A user-owned Mouser Search API key is required before CAD handoff discovery"
+        if auth_required
+        else "Mouser Search API V2 product handoff discovery failed safely"
+    )
+    return CadDiscoveryResult(
+        requested_source="mouser",
+        status=status,
+        request=request,
+        provenance=CadProvenance(
+            distributor="mouser",
+            delivery_partner=None,
+            model_creator=None,
+            landing_url=None,
+            retrieval_mode="official-api-product-handoff",
         ),
         action_required=CadActionRequired(
             code=status,
@@ -747,6 +857,26 @@ def _cached_lookup(
     offline: bool,
     refresh: bool,
 ) -> DistributorRecord:
+    if getattr(provider, "persistent_cache_allowed", True) is False:
+        if offline:
+            raise OfflineCacheMissError(
+                provider.name,
+                operation="persistent-cache-disabled",
+            )
+        record = fetch()
+        try:
+            validator(record)
+        except (OverflowError, TypeError, ValueError) as error:
+            raise MetadataServiceError(
+                "INVALID_RESPONSE",
+                "provider returned a record that failed exact validation",
+                provider.name,
+            ) from error
+        record.product_url = sanitize_public_url(record.product_url)
+        record.datasheet_url = sanitize_public_url(record.datasheet_url)
+        record.raw_response_cache_key = None
+        return record
+
     key = cache.get_cache_key(provider.name, request)
     cached = cache.read_normalized(provider.name, key, offline=offline, refresh=refresh)
     if cached is not None:
