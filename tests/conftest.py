@@ -1,4 +1,4 @@
-"""Pytest configuration for easyeda2kicad tests."""
+"""Pytest configuration for easyeda2kicad_digimou tests."""
 
 import shutil
 import tempfile
@@ -49,7 +49,7 @@ def create_reference(request: pytest.FixtureRequest) -> bool:
 @pytest.fixture
 def temp_output_dir() -> Iterator[str]:
     """Create a temporary directory for test outputs."""
-    temp_dir = tempfile.mkdtemp(prefix="easyeda2kicad_test_")
+    temp_dir = tempfile.mkdtemp(prefix="easyeda2kicad_digimou_test_")
     yield temp_dir
     shutil.rmtree(temp_dir, ignore_errors=True)
 

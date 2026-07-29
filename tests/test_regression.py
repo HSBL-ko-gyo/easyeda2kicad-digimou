@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 import pytest
-from easyeda2kicad.__main__ import main
+from easyeda2kicad_digimou.__main__ import main
 
 # Test component IDs - these should be stable components from LCSC
 TEST_COMPONENTS = [
@@ -55,8 +55,8 @@ class TestRegression:
                 continue
 
             # Normalize temporary paths to a standard format
-            # Replace /tmp/easyeda2kicad_test_XXXXX/ with /tmp/test/
-            line = re.sub(r"/tmp/easyeda2kicad_test_[^/]+/", "/tmp/test/", line)
+            # Replace /tmp/easyeda2kicad_digimou_test_XXXXX/ with /tmp/test/
+            line = re.sub(r"/tmp/easyeda2kicad_digimou_test_[^/]+/", "/tmp/test/", line)
             # Also normalize other temp paths like /tmp/tmpXXXXX/
             line = re.sub(r"/tmp/tmp[a-z0-9_]+/", "/tmp/test/", line)
 
@@ -261,7 +261,9 @@ def _copy_normalized(src: Path, dst: Path) -> None:
         shutil.copy2(src, dst)
     else:
         content = src.read_text(encoding="utf-8", errors="ignore")
-        content = re.sub(r"/tmp/easyeda2kicad_test_[^/]+/", "/tmp/test/", content)
+        content = re.sub(
+            r"/tmp/easyeda2kicad_digimou_test_[^/]+/", "/tmp/test/", content
+        )
         content = re.sub(r"/tmp/tmp[a-z0-9_]+/", "/tmp/test/", content)
         dst.write_text(content, encoding="utf-8")
 
@@ -275,7 +277,7 @@ def test_create_reference_files(
         pytest.skip("Run with --create-reference to generate reference files")
 
     for component_id in TEST_COMPONENTS:
-        with tempfile.TemporaryDirectory(prefix="easyeda2kicad_test_") as tmp:
+        with tempfile.TemporaryDirectory(prefix="easyeda2kicad_digimou_test_") as tmp:
             output_path = Path(tmp) / "test_lib"
             args = [
                 "--lcsc_id",

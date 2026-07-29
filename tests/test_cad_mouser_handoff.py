@@ -11,12 +11,12 @@ from typing import Any, Dict, List, Mapping, Optional, cast
 import pytest
 
 # Local imports
-from easyeda2kicad import __main__ as cli
-from easyeda2kicad.cad import MouserCadSource
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata.cache import MetadataCache
-from easyeda2kicad.metadata.manifest import manifest_to_dict
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou import __main__ as cli
+from easyeda2kicad_digimou.cad import MouserCadSource
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata.cache import MetadataCache
+from easyeda2kicad_digimou.metadata.manifest import manifest_to_dict
+from easyeda2kicad_digimou.metadata.models import (
     CAD_AUTH_REQUIRED,
     CAD_DOWNLOAD_UNAVAILABLE,
     CAD_MANUAL_DOWNLOAD_REQUIRED,
@@ -27,14 +27,14 @@ from easyeda2kicad.metadata.models import (
     CadRequest,
     DistributorRecord,
 )
-from easyeda2kicad.metadata.service import MetadataResolution, resolve_metadata
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.metadata.service import MetadataResolution, resolve_metadata
+from easyeda2kicad_digimou.providers import (
     InvalidResponseError,
     MetadataProvider,
     MouserProvider,
     NotFoundError,
 )
-from easyeda2kicad.providers.mouser import MOUSER_SEARCH_URL
+from easyeda2kicad_digimou.providers.mouser import MOUSER_SEARCH_URL
 
 MANUFACTURER = "Rectron"
 MPN = "FM220A-W"

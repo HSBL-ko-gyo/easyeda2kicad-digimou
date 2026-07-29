@@ -1,12 +1,18 @@
 """
-easyeda2kicad - Convert EasyEDA components to KiCad format
+easyeda2kicad_digimou - +DigiMou EasyEDA-to-KiCad conversion package
 
 A Python tool for converting EasyEDA symbols, footprints, and 3D models
 to KiCad library format.
 """
 
 # Local imports
-from ._version import __version__
+from ._version import (
+    CLI_NAME,
+    DISPLAY_NAME,
+    DISTRIBUTION_NAME,
+    __version__,
+    version_identity,
+)
 
 __author__ = "uPesy"
 __email__ = "contact@upesy.com"
@@ -25,6 +31,10 @@ from .kicad.export_kicad_symbol import ExporterSymbolKicad
 
 __all__ = [
     "__version__",
+    "CLI_NAME",
+    "DISPLAY_NAME",
+    "DISTRIBUTION_NAME",
+    "version_identity",
     "__author__",
     "__email__",
     "EasyedaApi",

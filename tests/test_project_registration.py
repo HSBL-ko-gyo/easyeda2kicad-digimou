@@ -9,10 +9,10 @@ from typing import Any, cast
 
 import pytest
 
-from easyeda2kicad import __main__ as cli
-from easyeda2kicad import project_registration as registration_module
-from easyeda2kicad.cad.kicad import parse_document
-from easyeda2kicad.project_registration import (
+from easyeda2kicad_digimou import __main__ as cli
+from easyeda2kicad_digimou import project_registration as registration_module
+from easyeda2kicad_digimou.cad.kicad import parse_document
+from easyeda2kicad_digimou.project_registration import (
     ProjectRegistrationError,
     apply_project_registration,
     plan_project_registration,

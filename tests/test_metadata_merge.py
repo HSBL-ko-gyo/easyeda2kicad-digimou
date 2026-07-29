@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from easyeda2kicad.metadata.merge import (
+from easyeda2kicad_digimou.metadata.merge import (
     CAD_NOT_FOUND,
     PARTIAL,
     VERIFIED,
@@ -10,7 +10,7 @@ from easyeda2kicad.metadata.merge import (
     merge_metadata,
     merge_records,
 )
-from easyeda2kicad.metadata.models import CadRecord, DistributorRecord
+from easyeda2kicad_digimou.metadata.models import CadRecord, DistributorRecord
 
 
 def _record(provider: str, **values: object) -> DistributorRecord:

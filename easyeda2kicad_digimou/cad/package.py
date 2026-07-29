@@ -13,8 +13,8 @@ from pathlib import Path, PurePosixPath
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 # Local imports
-from easyeda2kicad.metadata.merge import PARTIAL
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.merge import PARTIAL
+from easyeda2kicad_digimou.metadata.models import (
     CAD_PACKAGE_READY,
     CadArtifact,
     CadDiscoveryResult,
@@ -145,7 +145,9 @@ def inspect_cad_package(
         if evidence_path is not None
         else None
     )
-    with tempfile.TemporaryDirectory(prefix="easyeda2kicad-cad-inspect-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="easyeda2kicad_digimou-cad-inspect-"
+    ) as temporary:
         extraction_root = Path(temporary) / "extracted"
         extracted = extract_zip_safely(archive_path, extraction_root)
         adapter = _select_adapter(
@@ -221,7 +223,9 @@ def ingest_cad_package(
         if evidence_path is not None
         else None
     )
-    with tempfile.TemporaryDirectory(prefix="easyeda2kicad-cad-package-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="easyeda2kicad_digimou-cad-package-"
+    ) as temporary:
         temporary_root = Path(temporary)
         extraction_root = temporary_root / "extracted"
         extracted = extract_zip_safely(archive_path, extraction_root)
@@ -488,7 +492,7 @@ def _install_prepared_package(
     )
 
     with tempfile.TemporaryDirectory(
-        prefix=".easyeda2kicad-stage-",
+        prefix=".easyeda2kicad_digimou-stage-",
         dir=output_base.parent,
     ) as transaction_directory:
         transaction_root = Path(transaction_directory)

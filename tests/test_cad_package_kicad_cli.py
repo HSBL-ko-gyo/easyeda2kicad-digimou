@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-import easyeda2kicad.__main__ as cli
-from easyeda2kicad.cad.package import ingest_cad_package
-from easyeda2kicad.metadata.models import CadRequest
+import easyeda2kicad_digimou.__main__ as cli
+from easyeda2kicad_digimou.cad.package import ingest_cad_package
+from easyeda2kicad_digimou.metadata.models import CadRequest
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "cad_packages"
 FIXTURE = FIXTURE_ROOT / "ultralibrarian-kicad-v1"

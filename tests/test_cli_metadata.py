@@ -9,8 +9,8 @@ from typing import Any, cast
 
 import pytest
 
-import easyeda2kicad.__main__ as cli
-from easyeda2kicad.__main__ import (
+import easyeda2kicad_digimou.__main__ as cli
+from easyeda2kicad_digimou.__main__ import (
     get_parser,
     is_safe_cad_artifact_basename,
     main,

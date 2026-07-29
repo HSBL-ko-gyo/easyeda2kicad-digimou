@@ -16,13 +16,13 @@ Each command ran in a fresh temporary directory with a relative `library`
 output, so the legacy and metadata artifacts had the same path context.
 
 ```text
-python -m easyeda2kicad --lcsc_id C30878 --symbol --footprint --output library
-python -m easyeda2kicad --lcsc_id C30878 --mpn OPA333AIDBVR \
+python -m easyeda2kicad_digimou --lcsc_id C30878 --symbol --footprint --output library
+python -m easyeda2kicad_digimou --lcsc_id C30878 --mpn OPA333AIDBVR \
   --manufacturer "Texas Instruments" --providers lcsc --symbol --footprint \
   --manifest-json manifest.json --manifest-csv manifest.csv --output library
 
-python -m easyeda2kicad --lcsc_id C131103 --symbol --footprint --output library
-python -m easyeda2kicad --lcsc_id C131103 --mpn LM321MF/NOPB \
+python -m easyeda2kicad_digimou --lcsc_id C131103 --symbol --footprint --output library
+python -m easyeda2kicad_digimou --lcsc_id C131103 --mpn LM321MF/NOPB \
   --manufacturer "Texas Instruments" --providers lcsc --symbol --footprint \
   --manifest-json manifest.json --manifest-csv manifest.csv --output library
 ```

@@ -12,9 +12,9 @@ from typing import Any, cast
 import jsonschema
 import pytest
 
-import easyeda2kicad.__main__ as cli
-from easyeda2kicad.machine import MachineEventWriter
-from easyeda2kicad.metadata.models import (
+import easyeda2kicad_digimou.__main__ as cli
+from easyeda2kicad_digimou.machine import MachineEventWriter
+from easyeda2kicad_digimou.metadata.models import (
     GUEST_LOOKUP_UNSUPPORTED,
     CadRecord,
     DistributorRecord,
@@ -24,7 +24,7 @@ from easyeda2kicad.metadata.models import (
 )
 
 ROOT = Path(__file__).parents[1]
-SCHEMA_ROOT = ROOT / "easyeda2kicad" / "schemas"
+SCHEMA_ROOT = ROOT / "easyeda2kicad_digimou" / "schemas"
 RESULT_SCHEMA_PATH = SCHEMA_ROOT / "machine-result-v1.schema.json"
 EVENT_SCHEMA_PATH = SCHEMA_ROOT / "machine-event-v1.schema.json"
 HEADLESS_SCHEMA_PATH = SCHEMA_ROOT / "headless-result-v1.schema.json"
@@ -127,10 +127,10 @@ def test_phase_b_commands_are_documented_as_available() -> None:
     contract = (ROOT / "docs" / "MACHINE_JSON.md").read_text(encoding="utf-8")
 
     assert "`--json-events`" in readme
-    assert "python -m easyeda2kicad capabilities" in readme
-    assert "python -m easyeda2kicad inspect-project" in readme
-    assert "python -m easyeda2kicad plan-acquire" in readme
-    assert "python -m easyeda2kicad verify-artifacts" in readme
+    assert "python -m easyeda2kicad_digimou capabilities" in readme
+    assert "python -m easyeda2kicad_digimou inspect-project" in readme
+    assert "python -m easyeda2kicad_digimou plan-acquire" in readme
+    assert "python -m easyeda2kicad_digimou verify-artifacts" in readme
     assert "machine-event-v1.schema.json" in contract
     assert "headless-result-v1.schema.json" in contract
     assert "are planned for Phase B" not in readme

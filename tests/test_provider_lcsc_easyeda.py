@@ -7,9 +7,9 @@ from typing import Any, Dict, List, Mapping, Optional, cast
 
 import pytest
 
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata.service import create_metadata_provider
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata.service import create_metadata_provider
+from easyeda2kicad_digimou.providers import (
     AmbiguousMatchError,
     CacheCorruptError,
     EasyedaProvider,
@@ -20,7 +20,7 @@ from easyeda2kicad.providers import (
     NotFoundError,
     OfflineCacheMissError,
 )
-from easyeda2kicad.providers.lcsc_client import JlcpcbCatalogueClient
+from easyeda2kicad_digimou.providers.lcsc_client import JlcpcbCatalogueClient
 
 
 def _search_item(

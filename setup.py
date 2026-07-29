@@ -8,14 +8,14 @@ with open("README.md", encoding="utf-8") as fh:
     long_description = fh.read()
 
 # Read version from single source of truth
-with open("easyeda2kicad/_version.py", encoding="utf-8") as fh:
+with open("easyeda2kicad_digimou/_version.py", encoding="utf-8") as fh:
     _match = re.search(r'^__version__ = "([^"]+)"', fh.read(), re.MULTILINE)
     if _match is None:
         raise RuntimeError("Cannot find __version__ in _version.py")
     _version = _match.group(1)
 
 setup(
-    name="easyeda2kicad",
+    name="easyeda2kicad-digimou",
     description=(
         "Unofficial EasyEDA-to-KiCad converter with exact-MPN LCSC, DigiKey, and"
         " Mouser metadata"
@@ -36,9 +36,13 @@ setup(
     license_files=["LICENSE", "NOTICE"],
     platforms="any",
     packages=find_packages(exclude=["tests", "utils"]),
-    package_dir={"easyeda2kicad": "easyeda2kicad"},
-    package_data={"easyeda2kicad": ["schemas/*.json"]},
-    entry_points={"console_scripts": ["easyeda2kicad = easyeda2kicad.__main__:main"]},
+    package_dir={"easyeda2kicad_digimou": "easyeda2kicad_digimou"},
+    package_data={"easyeda2kicad_digimou": ["schemas/*.json"]},
+    entry_points={
+        "console_scripts": [
+            "easyeda2kicad-digimou = easyeda2kicad_digimou.__main__:main"
+        ]
+    },
     python_requires=">=3.9",
     install_requires=[],
     extras_require={

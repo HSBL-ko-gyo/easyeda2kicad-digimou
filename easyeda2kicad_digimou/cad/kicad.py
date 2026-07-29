@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 # Local imports
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.models import (
     CadRequest,
     normalize_manufacturer,
     normalize_mpn,

@@ -9,10 +9,10 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, cast
 
 # Local imports
-from easyeda2kicad.cad.digikey import DigiKeyCadSource, DigiKeyProductApi
-from easyeda2kicad.cad.mouser import MouserCadSource, MouserProductApi
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.cad.digikey import DigiKeyCadSource, DigiKeyProductApi
+from easyeda2kicad_digimou.cad.mouser import MouserCadSource, MouserProductApi
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.providers import (
     AmbiguousMatchError,
     AuthMissingError,
     CadProvider,
@@ -26,7 +26,7 @@ from easyeda2kicad.providers import (
     OfflineCacheMissError,
     ProviderError,
 )
-from easyeda2kicad.providers.lcsc_client import JlcpcbCatalogueClient
+from easyeda2kicad_digimou.providers.lcsc_client import JlcpcbCatalogueClient
 
 from .cache import CacheCorruptError as MetadataCacheCorruptError
 from .cache import CacheError, MetadataCache, sanitize_public_url

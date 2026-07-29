@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from easyeda2kicad.easyeda.easyeda_importer import EasyedaSymbolImporter
+from easyeda2kicad_digimou.easyeda.easyeda_importer import EasyedaSymbolImporter
 
 
 def _make_symbol_data(datasheet_url: str, lcsc_id: str) -> dict[str, object]:

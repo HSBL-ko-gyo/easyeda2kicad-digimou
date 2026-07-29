@@ -5,13 +5,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from easyeda2kicad.__main__ import _reconcile_symbol_identity, parse_custom_fields
-from easyeda2kicad.kicad.parameters_kicad_symbol import (
+from easyeda2kicad_digimou.__main__ import (
+    _reconcile_symbol_identity,
+    parse_custom_fields,
+)
+from easyeda2kicad_digimou.kicad.parameters_kicad_symbol import (
     KICAD_SYM_VERSION_20251024,
     KiSymbolInfo,
     escape_kicad_string,
 )
-from easyeda2kicad.metadata.symbol_fields import CUSTOM_SYMBOL_FIELD_ORDER
+from easyeda2kicad_digimou.metadata.symbol_fields import CUSTOM_SYMBOL_FIELD_ORDER
 
 
 def test_parse_custom_fields_last_wins() -> None:

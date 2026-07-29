@@ -10,22 +10,24 @@ from typing import Any, cast
 
 import pytest
 
-from easyeda2kicad import __main__ as cli
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata.cache import MetadataCache
-from easyeda2kicad.metadata.merge import CAD_NOT_FOUND, PARTIAL, VERIFIED
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou import __main__ as cli
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata.cache import MetadataCache
+from easyeda2kicad_digimou.metadata.merge import CAD_NOT_FOUND, PARTIAL, VERIFIED
+from easyeda2kicad_digimou.metadata.models import (
     CadRecord,
     DistributorRecord,
     JLCPCB_CACHE_LIVE,
     JLCPCB_PART_FOUND,
     PriceBreak,
 )
-from easyeda2kicad.metadata.service import (
+from easyeda2kicad_digimou.metadata.service import (
     MetadataResolution,
 )
-from easyeda2kicad.metadata.service import resolve_metadata as resolve_metadata_service
-from easyeda2kicad.providers import CadProvider, MetadataProvider
+from easyeda2kicad_digimou.metadata.service import (
+    resolve_metadata as resolve_metadata_service,
+)
+from easyeda2kicad_digimou.providers import CadProvider, MetadataProvider
 
 
 def distributor(provider: str) -> DistributorRecord:

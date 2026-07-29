@@ -7,22 +7,22 @@ from typing import Any, Callable, cast
 
 import pytest
 
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata.cache import (
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata.cache import (
     CacheCorruptError as MetadataCacheCorruptError,
     MetadataCache,
     OfflineCacheMissError as MetadataOfflineCacheMissError,
 )
-from easyeda2kicad.metadata.manifest import csv_manifest_rows, manifest_to_dict
-from easyeda2kicad.metadata.merge import CAD_NOT_FOUND, PARTIAL, VERIFIED
-from easyeda2kicad.metadata.models import CadRecord, DistributorRecord
-from easyeda2kicad.metadata.service import (
+from easyeda2kicad_digimou.metadata.manifest import csv_manifest_rows, manifest_to_dict
+from easyeda2kicad_digimou.metadata.merge import CAD_NOT_FOUND, PARTIAL, VERIFIED
+from easyeda2kicad_digimou.metadata.models import CadRecord, DistributorRecord
+from easyeda2kicad_digimou.metadata.service import (
     MetadataServiceError,
     _cached_exact_lookup,
     resolve_metadata,
 )
-from easyeda2kicad.metadata.symbol_fields import build_symbol_fields
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.metadata.symbol_fields import build_symbol_fields
+from easyeda2kicad_digimou.providers import (
     AmbiguousMatchError,
     AuthFailedError,
     AuthMissingError,

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from easyeda2kicad.cad.archive import ArchiveLimits, extract_zip_safely
-from easyeda2kicad.cad.errors import CadPackageError
+from easyeda2kicad_digimou.cad.archive import ArchiveLimits, extract_zip_safely
+from easyeda2kicad_digimou.cad.errors import CadPackageError
 
 
 def _zip_with_entries(

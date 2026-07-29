@@ -13,14 +13,14 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, cast
 
 # Local imports
-from easyeda2kicad.metadata.cache import sanitize_public_url
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.cache import sanitize_public_url
+from easyeda2kicad_digimou.metadata.models import (
     DistributorRecord,
     identity_text,
     normalize_manufacturer,
     normalize_mpn,
 )
-from easyeda2kicad.providers import ProviderError
+from easyeda2kicad_digimou.providers import ProviderError
 
 
 LIVE_EVIDENCE_SCHEMA_VERSION = 1

@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.models import (
     DistributorRecord,
     PriceBreak,
     normalize_manufacturer,

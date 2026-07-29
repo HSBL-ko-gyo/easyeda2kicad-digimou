@@ -6,18 +6,18 @@ from typing import Any, cast
 
 import pytest
 
-import easyeda2kicad.__main__ as cli
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata.cache import MetadataCache
-from easyeda2kicad.metadata.manifest import manifest_to_dict
-from easyeda2kicad.metadata.models import (
+import easyeda2kicad_digimou.__main__ as cli
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata.cache import MetadataCache
+from easyeda2kicad_digimou.metadata.manifest import manifest_to_dict
+from easyeda2kicad_digimou.metadata.models import (
     GUEST_LOOKUP_UNSUPPORTED,
     CadRecord,
     DistributorRecord,
     ProviderDiagnostic,
 )
-from easyeda2kicad.metadata.service import MetadataResolution, resolve_metadata
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.metadata.service import MetadataResolution, resolve_metadata
+from easyeda2kicad_digimou.providers import (
     DigiKeyProvider,
     MetadataProvider,
     MouserProvider,

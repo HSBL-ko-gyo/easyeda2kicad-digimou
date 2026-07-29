@@ -49,7 +49,7 @@ jobs:
           DIGIKEY_CLIENT_SECRET: ${{ secrets.DIGIKEY_CLIENT_SECRET }}
           MOUSER_API_KEY: ${{ secrets.MOUSER_API_KEY }}
         run: >-
-          python -m easyeda2kicad.live_provider
+          python -m easyeda2kicad_digimou.live_provider
           --directory provider-live-evidence
           --require-pass digikey
           --require-pass mouser

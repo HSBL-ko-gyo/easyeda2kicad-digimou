@@ -18,6 +18,12 @@ provider packages. Mouser real-package proof and final multi-source live
 completion remain outstanding. Issue #8 has its credentialed live-test
 infrastructure but remains open until both provider runs pass.
 
+The `1.1.0b2` candidate also resolves Issue #11's install-time collision.
+Distribution `easyeda2kicad-digimou`, command `easyeda2kicad-digimou`, and
+Python package `easyeda2kicad_digimou` no longer overwrite upstream's
+`easyeda2kicad` files or command. Generated KiCad library naming and the legacy
+CLI/output contract remain unchanged.
+
 RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
 limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
 The subsequent public-beta field-table audit found and fixed runtime issues.
@@ -490,6 +496,36 @@ optional-provider `PARTIAL`/status-0 behavior is unchanged.
 | Build and Twine check | PASS for sdist and wheel |
 | Changed source and unpacked distribution secret/path scan | PASS |
 
+## Issue #11 distinct install identity and 1.1.0b2 candidate
+
+- Moved all runtime modules to `easyeda2kicad_digimou`; the wheel installs no
+  files below upstream's `easyeda2kicad` package.
+- Changed the distribution to `easyeda2kicad-digimou` and the sole console
+  entry point to `easyeda2kicad-digimou`. No ambiguous upstream command alias is
+  installed.
+- Added `--version` output that includes the command, `1.1.0b2`, the +DigiMou
+  display name, and its unofficial-derivative status.
+- Updated current README, machine-contract, architecture, CI, protected live
+  workflow, packaging manifest, schemas, and import tests for the new
+  namespace.
+- Kept the existing default generated library directory/name,
+  `${EASYEDA2KICAD}`, legacy C2040 symbol/footprint bytes, normal legacy banner,
+  arguments, and exit behavior unchanged.
+- Added an explicit wheel co-install regression. The actual upstream `1.0.1`
+  wheel and candidate wheel work in both installation orders; uninstalling
+  either leaves the other package/module/command working.
+
+| Gate | Result |
+| --- | --- |
+| Distribution identity/co-install focused tests | `5 passed` |
+| Related identity/README/machine/legacy focused tests | `77 passed, 2 gated skips` |
+| Python 3.12.13 full pytest | `961 passed, 77 skipped` |
+| Ruff lint / format | PASS, 93 files |
+| Python 3.12 strict mypy | PASS, 93 source files |
+| Build and Twine check | PASS for renamed sdist and wheel |
+| Wheel contains only new namespace and entry point | PASS |
+| Changed source and unpacked distribution secret/path scan | PASS |
+
 ## Remaining
 
 - Mouser/SamacSys exact official Product Detail discovery is implemented, but
@@ -502,9 +538,10 @@ optional-provider `PARTIAL`/status-0 behavior is unchanged.
   closes. Fixture-only dual-source evidence does not meet that gate.
 - Credentialed Mouser live calls and native Linux process E2E remain disclosed
   external validation gaps.
-- Issue #8's protected `provider-live` workflow still requires owner-provisioned
-  secrets and one confirmed DigiKey plus Mouser passing dispatch. Skips and
-  infrastructure-only CI are not counted as live success.
+- Issue #8's protected `provider-live` environment contains the owner-provided
+  DigiKey client ID and secret. It still requires an owner-provided
+  `MOUSER_API_KEY` and one confirmed DigiKey plus Mouser passing dispatch.
+  Skips and infrastructure-only CI are not counted as live success.
 
 ## Explicit limitations and risks
 
@@ -529,15 +566,15 @@ optional-provider `PARTIAL`/status-0 behavior is unchanged.
   separate, checked-in C2040 compatibility fixture instead of reconstructing
   unspecified upstream resources.
 
-## Oracle status and next action
+## 1.1.0b2 pre-release status and next action
 
-Oracle CLI 0.16.0 completed the public-beta corrective initial audit through
-the browser engine and `--browser-manual-login`. It reported CANARY PASS, no
-release blocker, and RELEASE APPROVED; all post-answer canaries matched.
-Release-prep re-audit 1 is complete and approved. Preserve the audited package,
-runtime, and test hashes while adding only the Oracle answer/disposition and
-final canary records. Then commit on `feature/multi-distributor-metadata`, create
-annotated tag `v1.1.0b1`, and publish a manual GitHub pre-release. Do not push
-the version-changing commit to `master`. The accepted risks remain unchanged:
-no credentialed DigiKey/Mouser live run, no native Linux process E2E, and 69
-inherited reference-output skips.
+The candidate is intentionally releasable without claiming Mouser completion.
+Issues #7 and #8 remain open, the README/release notes identify the missing
+credentialed package/GUI/live proof, and explicit Mouser CAD never falls back
+to EasyEDA.
+
+No Oracle Pro model was used or requested. After the Issue #11/release-prep PR
+passes GitHub CI and CodeQL and is merged into the actual default branch,
+create annotated tag `v1.1.0b2`, build from that exact tag, verify hashes and
+installed identity again, and publish only a manual GitHub pre-release with
+wheel, sdist, release notes, CLI help, and checksums. Do not publish to PyPI.

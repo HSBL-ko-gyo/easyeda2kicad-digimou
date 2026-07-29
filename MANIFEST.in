@@ -1,7 +1,7 @@
 include LICENSE
 include NOTICE
 include README.md
-recursive-include easyeda2kicad/schemas *.json
+recursive-include easyeda2kicad_digimou/schemas *.json
 
 prune devtools
 prune tests

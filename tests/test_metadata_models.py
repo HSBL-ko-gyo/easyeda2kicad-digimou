@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.models import (
     CadRecord,
     Conflict,
     DistributorRecord,

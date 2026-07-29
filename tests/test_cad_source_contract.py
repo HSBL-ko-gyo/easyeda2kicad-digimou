@@ -5,11 +5,11 @@ from typing import Any, cast
 
 import pytest
 
-from easyeda2kicad.__main__ import get_parser, valid_arguments
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata.cache import MetadataCache
-from easyeda2kicad.metadata.manifest import manifest_to_dict
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.__main__ import get_parser, valid_arguments
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata.cache import MetadataCache
+from easyeda2kicad_digimou.metadata.manifest import manifest_to_dict
+from easyeda2kicad_digimou.metadata.models import (
     CAD_IDENTITY_UNRESOLVED,
     CAD_NOT_ACQUIRED,
     CAD_PACKAGE_READY,
@@ -21,8 +21,8 @@ from easyeda2kicad.metadata.models import (
     NormalizedCadPackage,
     PartIdentity,
 )
-from easyeda2kicad.metadata.service import resolve_metadata
-from easyeda2kicad.providers import MetadataProvider, NotFoundError
+from easyeda2kicad_digimou.metadata.service import resolve_metadata
+from easyeda2kicad_digimou.providers import MetadataProvider, NotFoundError
 
 
 class _UnusedMetadataProvider:

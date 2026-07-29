@@ -8,7 +8,7 @@ from typing import Any, Mapping
 import pytest
 
 # Local imports
-from easyeda2kicad.live_provider import (
+from easyeda2kicad_digimou.live_provider import (
     LIVE_EVIDENCE_SCHEMA_VERSION,
     build_live_provider_evidence,
     classify_provider_failure,
@@ -17,8 +17,8 @@ from easyeda2kicad.live_provider import (
     verify_live_evidence_directory,
     write_live_provider_evidence,
 )
-from easyeda2kicad.metadata.models import DistributorRecord
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.metadata.models import DistributorRecord
+from easyeda2kicad_digimou.providers import (
     AuthFailedError,
     InvalidResponseError,
     NetworkError,

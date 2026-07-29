@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from easyeda2kicad.metadata.cad_identity import (
+from easyeda2kicad_digimou.metadata.cad_identity import (
     CadIdentityConflictError,
     CadIdentityError,
     CadIdentityMismatchError,

@@ -10,12 +10,12 @@ from typing import Any, Callable, Optional, cast
 
 import pytest
 
-import easyeda2kicad.cad.package as package_module
-from easyeda2kicad import __main__ as cli
-from easyeda2kicad.cad.errors import CadPackageError
-from easyeda2kicad.cad.kicad import parse_document
-from easyeda2kicad.cad.package import ingest_cad_package
-from easyeda2kicad.metadata.models import CAD_PACKAGE_READY, CadRequest
+import easyeda2kicad_digimou.cad.package as package_module
+from easyeda2kicad_digimou import __main__ as cli
+from easyeda2kicad_digimou.cad.errors import CadPackageError
+from easyeda2kicad_digimou.cad.kicad import parse_document
+from easyeda2kicad_digimou.cad.package import ingest_cad_package
+from easyeda2kicad_digimou.metadata.models import CAD_PACKAGE_READY, CadRequest
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "cad_packages"
 MANUFACTURER = "Synthetic Devices"

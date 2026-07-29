@@ -677,3 +677,22 @@ the trigger entirely.
 **Compatibility:** No workflow source change is required. A future plan to
 merge this version change to `master` requires a separate publication-workflow
 assessment.
+
+## D037 — Separate +DigiMou's install identity before the second beta
+
+**Status:** Implemented; supersedes D034 only for install-time identity
+**Decision:** Starting with `1.1.0b2`, use distribution
+`easyeda2kicad-digimou`, command `easyeda2kicad-digimou`, Python package
+`easyeda2kicad_digimou`, and module invocation
+`python -m easyeda2kicad_digimou`. Do not install an `easyeda2kicad` package or
+console-script alias. Keep the existing CLI arguments, default generated
+library name/path, `${EASYEDA2KICAD}`, generator compatibility fields, KiCad
+artifacts, and exit behavior.
+**Reason:** `1.1.0b1` reused upstream's distribution, import package, and
+console command. Installation order could overwrite either implementation and
+uninstalling one could remove the other's files. A repository display name
+alone does not provide safe package identity.
+**Compatibility:** The import and command spelling changes for +DigiMou users.
+The built wheel can coexist with upstream in both installation orders, and
+uninstalling either leaves the other working. Generated KiCad compatibility is
+unchanged.

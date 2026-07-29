@@ -16,7 +16,7 @@ from typing import NoReturn
 
 import pytest
 
-from easyeda2kicad.__main__ import main
+from easyeda2kicad_digimou.__main__ import main
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "legacy"

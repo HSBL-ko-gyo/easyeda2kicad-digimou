@@ -7,14 +7,14 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from easyeda2kicad.metadata.manifest import (
+from easyeda2kicad_digimou.metadata.manifest import (
     CSV_COLUMNS,
     csv_manifest_rows,
     manifest_to_dict,
     write_csv_manifest,
     write_json_manifest,
 )
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.models import (
     CadRecord,
     Conflict,
     DistributorRecord,
@@ -23,7 +23,7 @@ from easyeda2kicad.metadata.models import (
     PriceBreak,
     ProvenanceEntry,
 )
-from easyeda2kicad.metadata.symbol_fields import (
+from easyeda2kicad_digimou.metadata.symbol_fields import (
     CUSTOM_SYMBOL_FIELD_ORDER,
     RESERVED_METADATA_FIELDS,
     build_all_symbol_fields,

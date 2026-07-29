@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from easyeda2kicad.metadata.cache import (
+from easyeda2kicad_digimou.metadata.cache import (
     CACHE_SCHEMA_VERSION,
     CacheCorruptError,
     MetadataCache,

@@ -1,6 +1,6 @@
 # Machine JSON contract
 
-`easyeda2kicad acquire --machine-json` is the versioned, non-interactive CLI
+`easyeda2kicad-digimou acquire --machine-json` is the versioned, non-interactive CLI
 surface for scripts, CI, and AI/EDA tooling. The legacy root command remains
 unchanged.
 
@@ -16,12 +16,12 @@ unchanged.
   machine paths are not result fields.
 
 The checked-in and packaged schema is
-`easyeda2kicad/schemas/machine-result-v1.schema.json`.
+`easyeda2kicad_digimou/schemas/machine-result-v1.schema.json`.
 
 ## Example
 
 ```powershell
-python -m easyeda2kicad acquire `
+python -m easyeda2kicad_digimou acquire `
   --manufacturer "Texas Instruments" `
   --mpn OPA333AIDBVR `
   --providers lcsc,digikey `
@@ -32,7 +32,7 @@ python -m easyeda2kicad acquire `
 ```
 
 ```bash
-python -m easyeda2kicad acquire \
+python -m easyeda2kicad_digimou acquire \
   --manufacturer "Texas Instruments" \
   --mpn OPA333AIDBVR \
   --providers lcsc,digikey \
@@ -121,7 +121,7 @@ hash before using it.
 Use `--json-events` instead of `--machine-json` to receive UTF-8 JSON Lines:
 
 ```bash
-python -m easyeda2kicad acquire \
+python -m easyeda2kicad_digimou acquire \
   --manufacturer "Texas Instruments" \
   --mpn OPA333AIDBVR \
   --providers lcsc,digikey \
@@ -137,7 +137,7 @@ under `payload.result`, including provider failures, manual handoffs, invalid
 requests, interruptions, and bounded internal failures.
 
 `--machine-json` and `--json-events` are mutually exclusive. Validate each
-event with `easyeda2kicad/schemas/machine-event-v1.schema.json`, then validate
+event with `easyeda2kicad_digimou/schemas/machine-event-v1.schema.json`, then validate
 the final `payload.result` with `machine-result-v1.schema.json`.
 
 ## Read-only discovery
@@ -156,7 +156,7 @@ Four JSON-only commands expose safe planning and inspection data:
   `--output-root`, or `--cwd-root` for the corresponding `path_base`.
 
 Their result schema is
-`easyeda2kicad/schemas/headless-result-v1.schema.json`. Global paths, secret
+`easyeda2kicad_digimou/schemas/headless-result-v1.schema.json`. Global paths, secret
 values, raw responses, and credential variable names are not returned.
 The commands always emit JSON, while also accepting `--machine-json` for an
 explicit machine-mode spelling. `inspect-project PROJECT` and
@@ -166,14 +166,14 @@ explicit machine-mode spelling. `inspect-project PROJECT` and
 Example:
 
 ```bash
-python -m easyeda2kicad capabilities
-python -m easyeda2kicad inspect-project --project ./board.kicad_pro
-python -m easyeda2kicad plan-acquire \
+python -m easyeda2kicad_digimou capabilities
+python -m easyeda2kicad_digimou inspect-project --project ./board.kicad_pro
+python -m easyeda2kicad_digimou plan-acquire \
   --manufacturer "Texas Instruments" \
   --mpn OPA333AIDBVR \
   --providers lcsc,digikey \
   --offline
-python -m easyeda2kicad verify-artifacts \
+python -m easyeda2kicad_digimou verify-artifacts \
   --result ./result.json \
   --output-root ./libs
 ```

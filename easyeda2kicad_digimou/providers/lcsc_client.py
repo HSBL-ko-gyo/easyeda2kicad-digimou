@@ -112,7 +112,7 @@ class JlcpcbCatalogueClient:
         self.headers = {
             "Accept-Encoding": "gzip, deflate",
             "Accept": "application/json, text/javascript, */*; q=0.01",
-            "User-Agent": "easyeda2kicad catalogue client",
+            "User-Agent": "easyeda2kicad-digimou catalogue client",
             **dict(headers or {}),
         }
         self.last_error: Optional[str] = None

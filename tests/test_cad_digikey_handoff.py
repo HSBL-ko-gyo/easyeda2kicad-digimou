@@ -9,12 +9,12 @@ from typing import Any, List, Mapping, Optional, cast
 
 import pytest
 
-from easyeda2kicad import __main__ as cli
-from easyeda2kicad.cad.digikey import DigiKeyCadSource
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata.cache import MetadataCache
-from easyeda2kicad.metadata.manifest import manifest_to_dict
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou import __main__ as cli
+from easyeda2kicad_digimou.cad.digikey import DigiKeyCadSource
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata.cache import MetadataCache
+from easyeda2kicad_digimou.metadata.manifest import manifest_to_dict
+from easyeda2kicad_digimou.metadata.models import (
     CAD_AUTH_REQUIRED,
     CAD_DOWNLOAD_UNAVAILABLE,
     CAD_MANUAL_DOWNLOAD_REQUIRED,
@@ -24,14 +24,14 @@ from easyeda2kicad.metadata.models import (
     CadRequest,
     DistributorRecord,
 )
-from easyeda2kicad.metadata.service import MetadataResolution, resolve_metadata
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.metadata.service import MetadataResolution, resolve_metadata
+from easyeda2kicad_digimou.providers import (
     DigiKeyProvider,
     InvalidResponseError,
     MetadataProvider,
     NotFoundError,
 )
-from easyeda2kicad.providers.digikey import (
+from easyeda2kicad_digimou.providers.digikey import (
     DIGIKEY_KEYWORD_SEARCH_URL,
     DIGIKEY_MEDIA_URL_TEMPLATE,
     DIGIKEY_TOKEN_URL,
