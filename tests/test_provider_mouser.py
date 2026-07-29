@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Mapping, Optional, cast
 
 import pytest
 
-from easyeda2kicad.metadata.merge import merge_records
-from easyeda2kicad.metadata.symbol_fields import build_symbol_fields
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.metadata.merge import merge_records
+from easyeda2kicad_digimou.metadata.symbol_fields import build_symbol_fields
+from easyeda2kicad_digimou.providers import (
     AmbiguousMatchError,
     AuthFailedError,
     AuthMissingError,
@@ -22,7 +22,7 @@ from easyeda2kicad.providers import (
     MouserProvider,
     NotFoundError,
 )
-from easyeda2kicad.providers.mouser import MOUSER_SEARCH_URL
+from easyeda2kicad_digimou.providers.mouser import MOUSER_SEARCH_URL
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "providers"
 FIXTURE = FIXTURE_DIR / "mouser_search_lm321.json"

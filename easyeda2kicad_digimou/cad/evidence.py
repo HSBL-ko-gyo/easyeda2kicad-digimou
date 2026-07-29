@@ -12,8 +12,8 @@ from typing import Any, Mapping, Optional, Set, cast
 from urllib.parse import urlsplit
 
 # Local imports
-from easyeda2kicad.metadata.cache import sanitize_public_url
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.cache import sanitize_public_url
+from easyeda2kicad_digimou.metadata.models import (
     CadRequest,
     normalize_manufacturer,
     normalize_mpn,

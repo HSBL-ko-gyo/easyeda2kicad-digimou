@@ -4,8 +4,8 @@ from __future__ import annotations
 import urllib.error
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata.models import CadRecord
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata.models import CadRecord
 
 # Local imports
 from .base import (

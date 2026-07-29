@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import pytest
 
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.providers import (
     DigiKeyProvider,
     EasyedaProvider,
     InvalidResponseError,

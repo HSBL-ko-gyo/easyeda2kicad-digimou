@@ -12,8 +12,9 @@ def readme_text() -> str:
 def test_readme_never_recommends_the_upstream_pypi_install_command() -> None:
     readme = readme_text()
 
-    assert "pip install easyeda2kicad" not in readme
-    assert "pip install ./easyeda2kicad-1.1.0b1-py3-none-any.whl" in readme
+    assert "python -m pip install easyeda2kicad\n" not in readme
+    assert "python -m pip install easyeda2kicad " not in readme
+    assert "pip install ./easyeda2kicad_digimou-1.1.0b2-py3-none-any.whl" in readme
     assert "python -m pip install -e ." in readme
     assert "generic distribution from\nPyPI installs the separate upstream" in readme
 
@@ -121,7 +122,7 @@ def test_readme_has_current_session_setup_for_all_shells_and_safe_preflight() ->
     assert "$env:DIGIKEY_CLIENT_ID" in section
     assert 'set "DIGIKEY_CLIENT_ID=<client-id>"' in section
     assert "export DIGIKEY_CLIENT_ID='<client-id>'" in section
-    assert "python -m easyeda2kicad capabilities --machine-json" in section
+    assert "python -m easyeda2kicad_digimou capabilities --machine-json" in section
     assert "authentication_configured" in section
     assert "configured' } else { 'missing" in section
     assert "if defined DIGIKEY_CLIENT_ID" in section
@@ -244,10 +245,10 @@ def test_machine_troubleshooting_and_advanced_links_are_present() -> None:
     assert "--require-provider digikey" in machine
     assert "`70` | Unexpected internal failure" in machine
     assert "--json-events" in machine
-    assert "python -m easyeda2kicad capabilities --machine-json" in machine
-    assert "python -m easyeda2kicad inspect-project" in machine
-    assert "python -m easyeda2kicad plan-acquire" in machine
-    assert "python -m easyeda2kicad verify-artifacts" in machine
+    assert "python -m easyeda2kicad_digimou capabilities --machine-json" in machine
+    assert "python -m easyeda2kicad_digimou inspect-project" in machine
+    assert "python -m easyeda2kicad_digimou plan-acquire" in machine
+    assert "python -m easyeda2kicad_digimou verify-artifacts" in machine
     assert "`OFFLINE_CACHE_MISS`" in troubleshooting
     assert "Windows" in troubleshooting
     assert "[Provider contract" in readme

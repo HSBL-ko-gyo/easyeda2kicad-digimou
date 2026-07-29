@@ -7,8 +7,8 @@ from typing import Any, Callable, Mapping, Optional, cast
 import pytest
 
 # Local imports
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata import (
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata import (
     JLCPCB_CACHE_CACHED,
     JLCPCB_CACHE_ERROR,
     JLCPCB_CACHE_LIVE,
@@ -20,24 +20,24 @@ from easyeda2kicad.metadata import (
     MANUAL_GLOBAL_SOURCING_REQUIRED,
     MetadataCache,
 )
-from easyeda2kicad.metadata.manifest import (
+from easyeda2kicad_digimou.metadata.manifest import (
     CSV_COLUMNS,
     csv_manifest_rows,
     manifest_to_dict,
 )
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.models import (
     DistributorRecord,
     GlobalSourcingCandidate,
     JlcpcbResolution,
     model_from_dict,
 )
-from easyeda2kicad.metadata.service import (
+from easyeda2kicad_digimou.metadata.service import (
     JLCPCB_MANUAL_ACTION,
     MetadataResolution,
     resolve_metadata,
 )
-from easyeda2kicad.metadata.symbol_fields import build_native_symbol_fields
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.metadata.symbol_fields import build_native_symbol_fields
+from easyeda2kicad_digimou.providers import (
     AmbiguousMatchError,
     MetadataProvider,
     MpnMismatchError,
@@ -156,7 +156,7 @@ def _resolve(
 @pytest.fixture(autouse=True)
 def _fixed_check_time(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "easyeda2kicad.metadata.service._jlcpcb_checked_at",
+        "easyeda2kicad_digimou.metadata.service._jlcpcb_checked_at",
         lambda: CHECKED_AT,
     )
 

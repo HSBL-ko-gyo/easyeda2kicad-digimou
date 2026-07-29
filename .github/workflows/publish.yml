@@ -41,7 +41,7 @@ jobs:
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
-          name: easyeda2kicad-distributions-${{ github.sha }}
+          name: easyeda2kicad-digimou-distributions-${{ github.sha }}
           path: dist/*
           if-no-files-found: error
           retention-days: 14

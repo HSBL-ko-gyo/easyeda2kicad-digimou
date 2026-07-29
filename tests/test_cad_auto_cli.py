@@ -9,10 +9,10 @@ from typing import Callable, Optional, cast
 import pytest
 
 # Local imports
-import easyeda2kicad.__main__ as cli
-from easyeda2kicad.metadata.merge import VERIFIED
-from easyeda2kicad.metadata.models import CAD_SOURCE_CONFLICT
-from easyeda2kicad.metadata.service import MetadataResolution
+import easyeda2kicad_digimou.__main__ as cli
+from easyeda2kicad_digimou.metadata.merge import VERIFIED
+from easyeda2kicad_digimou.metadata.models import CAD_SOURCE_CONFLICT
+from easyeda2kicad_digimou.metadata.service import MetadataResolution
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "cad_packages"
 MANUFACTURER = "Synthetic Devices"

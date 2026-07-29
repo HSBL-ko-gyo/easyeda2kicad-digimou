@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
 
 
 # ---------------------------------------------------------------------------

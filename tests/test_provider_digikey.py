@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Mapping, Optional, cast
 
 import pytest
 
-from easyeda2kicad.metadata.merge import merge_records
-from easyeda2kicad.metadata.symbol_fields import build_symbol_fields
-from easyeda2kicad.providers import (
+from easyeda2kicad_digimou.metadata.merge import merge_records
+from easyeda2kicad_digimou.metadata.symbol_fields import build_symbol_fields
+from easyeda2kicad_digimou.providers import (
     AmbiguousMatchError,
     AuthFailedError,
     AuthMissingError,
@@ -22,7 +22,7 @@ from easyeda2kicad.providers import (
     InvalidResponseError,
     NotFoundError,
 )
-from easyeda2kicad.providers.digikey import (
+from easyeda2kicad_digimou.providers.digikey import (
     DIGIKEY_KEYWORD_SEARCH_URL,
     DIGIKEY_TOKEN_URL,
 )

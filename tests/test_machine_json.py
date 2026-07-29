@@ -10,8 +10,8 @@ from typing import Any, cast
 import jsonschema
 import pytest
 
-import easyeda2kicad.__main__ as cli
-from easyeda2kicad.machine import (
+import easyeda2kicad_digimou.__main__ as cli
+from easyeda2kicad_digimou.machine import (
     EXIT_ACTION_REQUIRED,
     EXIT_CAD,
     EXIT_IDENTITY,
@@ -22,8 +22,11 @@ from easyeda2kicad.machine import (
     build_machine_result,
     write_machine_json,
 )
-from easyeda2kicad.metadata.manifest import write_csv_manifest, write_json_manifest
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.manifest import (
+    write_csv_manifest,
+    write_json_manifest,
+)
+from easyeda2kicad_digimou.metadata.models import (
     CAD_MANUAL_DOWNLOAD_REQUIRED,
     GUEST_LOOKUP_UNSUPPORTED,
     JLCPCB_CACHE_LIVE,
@@ -40,7 +43,7 @@ from easyeda2kicad.metadata.models import (
     PartIdentity,
     ProviderDiagnostic,
 )
-from easyeda2kicad.project_registration import (
+from easyeda2kicad_digimou.project_registration import (
     LibraryEntry,
     LibraryTableUpdate,
     ProjectContext,
@@ -50,7 +53,7 @@ from easyeda2kicad.project_registration import (
 
 SCHEMA_PATH = (
     Path(__file__).parents[1]
-    / "easyeda2kicad"
+    / "easyeda2kicad_digimou"
     / "schemas"
     / "machine-result-v1.schema.json"
 )

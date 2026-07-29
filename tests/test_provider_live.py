@@ -14,18 +14,18 @@ from urllib.parse import parse_qsl, urlsplit
 import pytest
 
 # Local imports
-from easyeda2kicad import __main__ as cli
-from easyeda2kicad.cad import DigiKeyCadSource
-from easyeda2kicad.live_provider import (
+from easyeda2kicad_digimou import __main__ as cli
+from easyeda2kicad_digimou.cad import DigiKeyCadSource
+from easyeda2kicad_digimou.live_provider import (
     build_live_provider_evidence,
     classify_provider_failure,
     file_sha256,
     secret_value_hit_names,
     write_live_provider_evidence,
 )
-from easyeda2kicad.metadata.manifest import manifest_to_dict
-from easyeda2kicad.metadata.merge import merge_records
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.manifest import manifest_to_dict
+from easyeda2kicad_digimou.metadata.merge import merge_records
+from easyeda2kicad_digimou.metadata.models import (
     CAD_MANUAL_DOWNLOAD_REQUIRED,
     CAD_PACKAGE_READY,
     CadRequest,
@@ -33,8 +33,12 @@ from easyeda2kicad.metadata.models import (
     normalize_manufacturer,
     normalize_mpn,
 )
-from easyeda2kicad.metadata.cache import sanitize_public_url
-from easyeda2kicad.providers import DigiKeyProvider, MouserProvider, ProviderError
+from easyeda2kicad_digimou.metadata.cache import sanitize_public_url
+from easyeda2kicad_digimou.providers import (
+    DigiKeyProvider,
+    MouserProvider,
+    ProviderError,
+)
 
 
 KICAD_CLI = {

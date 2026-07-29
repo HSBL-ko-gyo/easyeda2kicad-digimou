@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/schemas/headless-result-v1.schema.json",
-  "title": "easyeda2kicad read-only discovery result v1",
+  "title": "easyeda2kicad +DigiMou read-only discovery result v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

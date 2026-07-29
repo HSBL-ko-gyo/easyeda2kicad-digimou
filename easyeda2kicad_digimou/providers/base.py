@@ -26,8 +26,8 @@ from typing import (
     runtime_checkable,
 )
 
-from easyeda2kicad.metadata.cache import sanitize_url
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.cache import sanitize_url
+from easyeda2kicad_digimou.metadata.models import (
     CadRecord,
     DistributorRecord,
     identity_text,

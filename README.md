@@ -1,11 +1,11 @@
 # easyeda2kicad +DigiMou
 
-> **Public beta `1.1.0b1` — unofficial derivative.** This repository modifies
+> **Public beta `1.1.0b2` — unofficial derivative.** This repository modifies
 > [uPesy/easyeda2kicad.py](https://github.com/uPesy/easyeda2kicad.py). See
 > [NOTICE](NOTICE) for attribution. It is not an official DigiKey, Mouser,
 > LCSC, EasyEDA, or upstream release.
 
-[![Public beta](https://img.shields.io/badge/public_beta-1.1.0b1-orange)](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases/tag/v1.1.0b1)
+[![Public beta](https://img.shields.io/badge/public_beta-1.1.0b2-orange)](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases/tag/v1.1.0b2)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](setup.py)
 
@@ -53,11 +53,11 @@ This path needs internet access but no distributor account.
 ### 1. Install this fork
 
 Download the wheel from the
-[v1.1.0b1 GitHub pre-release](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases/tag/v1.1.0b1),
+[v1.1.0b2 GitHub pre-release](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases/tag/v1.1.0b2),
 then install that file with the Python environment that will run the CLI:
 
 ```bash
-python -m pip install ./easyeda2kicad-1.1.0b1-py3-none-any.whl
+python -m pip install ./easyeda2kicad_digimou-1.1.0b2-py3-none-any.whl
 ```
 
 For a repository checkout:
@@ -68,6 +68,26 @@ python -m pip install -e .
 
 This fork is not published on PyPI. Installing the generic distribution from
 PyPI installs the separate upstream project, not +DigiMou.
+
+The install identities are deliberately distinct from upstream:
+
+| Surface | +DigiMou identity |
+| --- | --- |
+| Distribution / wheel | `easyeda2kicad-digimou` |
+| Primary command | `easyeda2kicad-digimou` |
+| Python package | `easyeda2kicad_digimou` |
+| Module command | `python -m easyeda2kicad_digimou` |
+
+The wheel does not install the upstream `easyeda2kicad` package or command, so
+both projects can coexist in one environment. Confirm which command is active:
+
+```bash
+easyeda2kicad-digimou --version
+```
+
+The legacy arguments and generated KiCad naming remain compatible. In
+particular, the default output directory/library name and
+`${EASYEDA2KICAD}` variable are intentionally unchanged.
 
 On Windows, use the KiCad Command Prompt or the interpreter shown by
 `import sys; print(sys.executable)` in KiCad's Scripting Console. On macOS,
@@ -80,7 +100,7 @@ POSIX shell:
 
 ```bash
 mkdir -p ./libs ./build
-python -m easyeda2kicad \
+python -m easyeda2kicad_digimou \
   --manufacturer "Texas Instruments" \
   --mpn OPA333AIDBVR \
   --providers lcsc \
@@ -94,7 +114,7 @@ PowerShell:
 
 ```powershell
 New-Item -ItemType Directory -Force ./libs, ./build | Out-Null
-python -m easyeda2kicad `
+python -m easyeda2kicad_digimou `
   --manufacturer "Texas Instruments" `
   --mpn OPA333AIDBVR `
   --providers lcsc `
@@ -209,7 +229,7 @@ only into the process that runs the CLI.
 The preferred cross-platform preflight prints booleans only:
 
 ```bash
-python -m easyeda2kicad capabilities --machine-json
+python -m easyeda2kicad_digimou capabilities --machine-json
 ```
 
 Look at:
@@ -256,14 +276,14 @@ tests one metadata provider.
 ### LCSC (anonymous)
 
 ```bash
-python -m easyeda2kicad --manufacturer "Texas Instruments" --mpn OPA333AIDBVR --providers lcsc --cad-source easyeda --manifest-json ./build/smoke-lcsc.json --require-providers
+python -m easyeda2kicad_digimou --manufacturer "Texas Instruments" --mpn OPA333AIDBVR --providers lcsc --cad-source easyeda --manifest-json ./build/smoke-lcsc.json --require-providers
 python examples/check_provider_manifest.py ./build/smoke-lcsc.json --manufacturer "Texas Instruments" --mpn OPA333AIDBVR --provider lcsc --verification-status VERIFIED
 ```
 
 ### DigiKey (credentialed)
 
 ```bash
-python -m easyeda2kicad --manufacturer "Texas Instruments" --mpn OPA333AIDBVR --providers digikey --cad-source easyeda --manifest-json ./build/smoke-digikey.json --require-providers
+python -m easyeda2kicad_digimou --manufacturer "Texas Instruments" --mpn OPA333AIDBVR --providers digikey --cad-source easyeda --manifest-json ./build/smoke-digikey.json --require-providers
 python examples/check_provider_manifest.py ./build/smoke-digikey.json --manufacturer "Texas Instruments" --mpn OPA333AIDBVR --provider digikey --verification-status VERIFIED
 ```
 
@@ -273,7 +293,7 @@ a non-empty distributor part number, and no `provider_errors.digikey`.
 ### Mouser (credentialed)
 
 ```bash
-python -m easyeda2kicad --manufacturer "Texas Instruments" --mpn "LM321MF/NOPB" --providers mouser --cad-source easyeda --manifest-json ./build/smoke-mouser.json --require-providers
+python -m easyeda2kicad_digimou --manufacturer "Texas Instruments" --mpn "LM321MF/NOPB" --providers mouser --cad-source easyeda --manifest-json ./build/smoke-mouser.json --require-providers
 python examples/check_provider_manifest.py ./build/smoke-mouser.json --manufacturer "Texas Instruments" --mpn "LM321MF/NOPB" --provider mouser --verification-status VERIFIED
 ```
 
@@ -305,7 +325,7 @@ The three-provider example below is strict: it returns nonzero if any requested
 record is absent.
 
 ```bash
-python -m easyeda2kicad \
+python -m easyeda2kicad_digimou \
   --manufacturer "Texas Instruments" \
   --mpn OPA333AIDBVR \
   --providers lcsc,digikey,mouser \
@@ -349,7 +369,7 @@ Common provider diagnostics:
 ### Discover the DigiKey / Ultra Librarian CAD handoff
 
 ```bash
-python -m easyeda2kicad \
+python -m easyeda2kicad_digimou \
   --manufacturer "Analog Devices Inc." \
   --mpn AD5314BRM \
   --providers digikey \
@@ -371,7 +391,7 @@ AD5314BRM path was completed with a real package in KiCad CLI 7/9/10 and KiCad
 ### Discover the Mouser / SamacSys CAD handoff
 
 ```bash
-python -m easyeda2kicad \
+python -m easyeda2kicad_digimou \
   --manufacturer Rectron \
   --mpn FM220A-W \
   --providers mouser \
@@ -394,7 +414,7 @@ required. No replacement part was chosen.
 Ultra Librarian example:
 
 ```bash
-python -m easyeda2kicad \
+python -m easyeda2kicad_digimou \
   --manufacturer "Analog Devices Inc." \
   --mpn AD5314BRM \
   --cad-source digikey \
@@ -432,7 +452,7 @@ private responses must not be committed.
 then validated Mouser/SamacSys packages:
 
 ```bash
-python -m easyeda2kicad \
+python -m easyeda2kicad_digimou \
   --manufacturer "Example Manufacturer" \
   --mpn "EXACT-MPN-INCLUDING-SUFFIX" \
   --cad-source auto \
@@ -455,7 +475,7 @@ Project modification is explicit opt-in. Keep `--output` inside a disposable or
 selected project and pass `--register-project-libraries`:
 
 ```bash
-python -m easyeda2kicad \
+python -m easyeda2kicad_digimou \
   --full \
   --lcsc_id C2040 \
   --output ./myproject/libs/my_lib \
@@ -466,7 +486,7 @@ python -m easyeda2kicad \
 PowerShell:
 
 ```powershell
-python -m easyeda2kicad `
+python -m easyeda2kicad_digimou `
   --full `
   --lcsc_id C2040 `
   --output C:\work\myproject\libs\my_lib `
@@ -489,7 +509,7 @@ if the two-table update fails. An identical rerun is a no-op.
 Preview without network, CAD output, or table writes:
 
 ```bash
-python -m easyeda2kicad \
+python -m easyeda2kicad_digimou \
   --full \
   --lcsc_id C2040 \
   --output ./myproject/libs/my_lib \
@@ -553,7 +573,7 @@ and must not be inferred from fixtures.
 Use the additive `acquire` subcommand for one stable result:
 
 ```bash
-python -m easyeda2kicad acquire \
+python -m easyeda2kicad_digimou acquire \
   --manufacturer "Texas Instruments" \
   --mpn OPA333AIDBVR \
   --providers lcsc,digikey \
@@ -593,10 +613,10 @@ Use `--json-events` instead for versioned JSON Lines with `started`,
 Read-only discovery:
 
 ```bash
-python -m easyeda2kicad capabilities --machine-json
-python -m easyeda2kicad inspect-project ./board.kicad_pro --machine-json
-python -m easyeda2kicad plan-acquire --manufacturer "Texas Instruments" --mpn OPA333AIDBVR --providers lcsc,digikey --offline --machine-json
-python -m easyeda2kicad verify-artifacts ./result.json --output-root ./libs --machine-json
+python -m easyeda2kicad_digimou capabilities --machine-json
+python -m easyeda2kicad_digimou inspect-project ./board.kicad_pro --machine-json
+python -m easyeda2kicad_digimou plan-acquire --manufacturer "Texas Instruments" --mpn OPA333AIDBVR --providers lcsc,digikey --offline --machine-json
+python -m easyeda2kicad_digimou verify-artifacts ./result.json --output-root ./libs --machine-json
 ```
 
 See [MACHINE_JSON.md](docs/MACHINE_JSON.md) for the result/event/headless
@@ -628,12 +648,12 @@ diagnostics to stderr and still passes through secret redaction.
 Legacy commands remain valid:
 
 ```bash
-python -m easyeda2kicad --full --lcsc_id C2040
-python -m easyeda2kicad --symbol --lcsc_id C2040
-python -m easyeda2kicad --footprint --lcsc_id C2040
-python -m easyeda2kicad --3d --lcsc_id C2040
-python -m easyeda2kicad --full --lcsc_id C2040 C20197 C163691
-python -m easyeda2kicad --svg --lcsc_id C2040 --output ./libs/my_lib
+python -m easyeda2kicad_digimou --full --lcsc_id C2040
+python -m easyeda2kicad_digimou --symbol --lcsc_id C2040
+python -m easyeda2kicad_digimou --footprint --lcsc_id C2040
+python -m easyeda2kicad_digimou --3d --lcsc_id C2040
+python -m easyeda2kicad_digimou --full --lcsc_id C2040 C20197 C163691
+python -m easyeda2kicad_digimou --svg --lcsc_id C2040 --output ./libs/my_lib
 ```
 
 Default output is under the user's `Documents/Kicad/easyeda2kicad` directory.
@@ -664,7 +684,7 @@ Architecture and reference documentation:
 - [Footprint command reference](docs/CMD_FOOTPRINT.md)
 - [Symbol command reference](docs/CMD_SYMBOL.md)
 - [3D command reference](docs/CMD_3D_MODEL.md)
-- [Release notes](docs/releases/v1.1.0b1.md)
+- [Release notes](docs/releases/v1.1.0b2.md)
 
 ## License and warranty
 

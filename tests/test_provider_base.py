@@ -8,8 +8,8 @@ from typing import Any, List, Mapping, Optional
 
 import pytest
 
-from easyeda2kicad.metadata.models import DistributorRecord, normalize_mpn
-from easyeda2kicad.providers.base import (
+from easyeda2kicad_digimou.metadata.models import DistributorRecord, normalize_mpn
+from easyeda2kicad_digimou.providers.base import (
     AmbiguousMatchError,
     BaseMetadataProvider,
     NetworkError,

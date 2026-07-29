@@ -7,8 +7,8 @@ from typing import Optional, Protocol, Sequence, runtime_checkable
 from urllib.parse import urlsplit
 
 # Local imports
-from easyeda2kicad.metadata.cache import sanitize_public_url
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.cache import sanitize_public_url
+from easyeda2kicad_digimou.metadata.models import (
     CAD_DOWNLOAD_UNAVAILABLE,
     CAD_MANUAL_DOWNLOAD_REQUIRED,
     CadActionRequired,
@@ -17,7 +17,7 @@ from easyeda2kicad.metadata.models import (
     CadRequest,
     DistributorRecord,
 )
-from easyeda2kicad.providers.base import InvalidResponseError
+from easyeda2kicad_digimou.providers.base import InvalidResponseError
 
 
 @runtime_checkable

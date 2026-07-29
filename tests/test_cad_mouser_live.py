@@ -12,16 +12,16 @@ from urllib.parse import parse_qsl, urlsplit
 import pytest
 
 # Local imports
-from easyeda2kicad import __main__ as cli
-from easyeda2kicad.cad import MouserCadSource
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou import __main__ as cli
+from easyeda2kicad_digimou.cad import MouserCadSource
+from easyeda2kicad_digimou.metadata.models import (
     CAD_MANUAL_DOWNLOAD_REQUIRED,
     CAD_PACKAGE_READY,
     CadRequest,
     normalize_manufacturer,
     normalize_mpn,
 )
-from easyeda2kicad.providers import MouserProvider
+from easyeda2kicad_digimou.providers import MouserProvider
 
 MANUFACTURER = "Rectron"
 MPN = "FM220A-W"

@@ -9,7 +9,7 @@ from typing import Callable, Optional
 import pytest
 
 # Local imports
-from easyeda2kicad.cad import (
+from easyeda2kicad_digimou.cad import (
     CadPackageCandidate,
     CadPackageError,
     ingest_cad_package,
@@ -17,7 +17,7 @@ from easyeda2kicad.cad import (
     select_auto_cad_package,
     write_source_lock,
 )
-from easyeda2kicad.metadata.models import CadRequest
+from easyeda2kicad_digimou.metadata.models import CadRequest
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "cad_packages"
 MANUFACTURER = "Synthetic Devices"

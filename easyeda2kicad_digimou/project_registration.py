@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 # Local imports
-from easyeda2kicad.cad.errors import CadPackageError
-from easyeda2kicad.cad.kicad import FormSpan, ParsedDocument, parse_document
+from easyeda2kicad_digimou.cad.errors import CadPackageError
+from easyeda2kicad_digimou.cad.kicad import FormSpan, ParsedDocument, parse_document
 
 
 class ProjectRegistrationError(RuntimeError):

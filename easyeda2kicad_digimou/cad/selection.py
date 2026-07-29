@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 # Local imports
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.metadata.models import (
     CadRequest,
     identity_text,
     normalize_manufacturer,

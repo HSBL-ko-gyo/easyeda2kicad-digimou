@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from easyeda2kicad.kicad.export_kicad_footprint import (
+from easyeda2kicad_digimou.kicad.export_kicad_footprint import (
     angle_to_ki,
     compute_arc,
     drill_to_ki,

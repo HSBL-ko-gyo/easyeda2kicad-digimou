@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-import easyeda2kicad.__main__ as cli
+import easyeda2kicad_digimou.__main__ as cli
 
 ROOT = Path(__file__).parents[1]
 README = ROOT / "README.md"

@@ -1,14 +1,15 @@
 # Multi-distributor metadata architecture
 
-Status: public-beta corrective Release Candidate; complete quality matrix
-passes and the new Oracle audit is pending  
+Status: `1.1.0b2` public-beta candidate; complete deterministic quality matrix
+passes
 Baseline: upstream commit `fff10a38619963d7cb1c57d779655a9ea4572e95`  
 License: GNU AGPL-3.0 remains unchanged
 
 ## Goals and constraints
 
-This extension adds exact-MPN metadata from LCSC, DigiKey, and Mouser without
-changing EasyEDA's role as the only CAD source. It must preserve the current
+This extension adds exact-MPN metadata from LCSC, DigiKey, and Mouser, plus
+fail-closed CAD handoff and validated local-package intake for
+DigiKey/Ultra Librarian and Mouser/SamacSys. It must preserve the current
 `--lcsc_id` conversion path, generated KiCad geometry, default datasheet value,
 and command exit behavior when none of the new metadata options are used.
 
@@ -18,8 +19,8 @@ suffixes, or persist credentials and access tokens.
 
 ## Upstream architecture
 
-The upstream CLI is a small `argparse` application in
-`easyeda2kicad/__main__.py`. `EasyedaApi` obtains CAD JSON and optional 3D data,
+The +DigiMou CLI is a small `argparse` application in
+`easyeda2kicad_digimou/__main__.py`. `EasyedaApi` obtains CAD JSON and optional 3D data,
 EasyEDA importers convert it to internal objects, and KiCad exporters serialize
 symbols, footprints, and 3D models. The symbol exporter already supplies native
 Manufacturer, MPN, LCSC, and Datasheet properties and can accept explicit user
@@ -33,6 +34,11 @@ checked-in real C2040 offline fixture and representative baseline-generated
 symbol/footprint goldens that do not skip.
 
 ## Compatibility boundary
+
+The distribution (`easyeda2kicad-digimou`), command
+(`easyeda2kicad-digimou`), and Python package (`easyeda2kicad_digimou`) are
+separate from upstream. The default generated library name/path and
+`${EASYEDA2KICAD}` stay unchanged for existing KiCad projects.
 
 The CLI has two explicit execution paths:
 
@@ -54,7 +60,7 @@ neither value wins on mismatch.
 ## Modules
 
 ```text
-easyeda2kicad/
+easyeda2kicad_digimou/
   metadata/
     models.py          mutable common dataclasses and JSON serialization
     cache.py           provider-scoped redacted-raw and normalized JSON cache

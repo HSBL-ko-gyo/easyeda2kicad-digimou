@@ -41,7 +41,7 @@ jobs:
         run: python -m ruff format --check . --no-cache
 
       - name: Run strict mypy
-        run: python -m mypy --strict easyeda2kicad tests setup.py
+        run: python -m mypy --strict easyeda2kicad_digimou tests setup.py
 
   test:
     runs-on: ubuntu-latest

@@ -12,9 +12,9 @@ from urllib.parse import parse_qsl, urlsplit
 import pytest
 
 # Local imports
-from easyeda2kicad.metadata.manifest import manifest_to_dict
-from easyeda2kicad.metadata.models import MergedPart, normalize_mpn
-from easyeda2kicad.metadata.symbol_fields import build_symbol_fields
+from easyeda2kicad_digimou.metadata.manifest import manifest_to_dict
+from easyeda2kicad_digimou.metadata.models import MergedPart, normalize_mpn
+from easyeda2kicad_digimou.metadata.symbol_fields import build_symbol_fields
 
 EXAMPLE_ROOT = Path(__file__).parents[1] / "docs" / "examples"
 EXAMPLES = (

@@ -25,7 +25,7 @@ from typing import Any
 
 import pytest
 
-from easyeda2kicad.easyeda.easyeda_svg_renderer import (
+from easyeda2kicad_digimou.easyeda.easyeda_svg_renderer import (
     render_footprint_svg,
     render_symbol_svg,
 )

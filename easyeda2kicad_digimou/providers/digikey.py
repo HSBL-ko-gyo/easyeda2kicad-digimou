@@ -6,7 +6,11 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from easyeda2kicad.metadata.models import DistributorRecord, PriceBreak, normalize_mpn
+from easyeda2kicad_digimou.metadata.models import (
+    DistributorRecord,
+    PriceBreak,
+    normalize_mpn,
+)
 
 # Local imports
 from .base import (

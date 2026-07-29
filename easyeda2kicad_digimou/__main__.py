@@ -13,7 +13,7 @@ from pathlib import Path, PurePath
 from typing import Any, TextIO
 
 # Local imports
-from ._version import __version__
+from ._version import CLI_NAME, __version__, version_identity
 from .cad import (
     CAD_PACKAGE_FORMATS,
     CadPackageCandidate,
@@ -242,10 +242,16 @@ def verify_symbol_footprint_pins(
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog=CLI_NAME,
         description=(
             "A Python script that convert any electronic components from LCSC or"
             " EasyEDA to a Kicad library"
-        )
+        ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=version_identity(),
     )
 
     parser.add_argument(
@@ -531,7 +537,7 @@ def get_acquire_parser() -> argparse.ArgumentParser:
     """Return the additive machine-acquire parser without changing legacy syntax."""
 
     parser = get_parser()
-    parser.prog = "easyeda2kicad acquire"
+    parser.prog = f"{CLI_NAME} acquire"
     parser.allow_abbrev = False
     output = parser.add_mutually_exclusive_group()
     output.add_argument(
@@ -568,7 +574,7 @@ def get_headless_parser(command: str) -> argparse.ArgumentParser:
     """Return one read-only discovery parser."""
 
     parser = argparse.ArgumentParser(
-        prog="easyeda2kicad {0}".format(command),
+        prog="{0} {1}".format(CLI_NAME, command),
         allow_abbrev=False,
     )
     parser.add_argument(
@@ -946,9 +952,9 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
     ):
         logging.error(
             "Missing action arguments\n"
-            "  easyeda2kicad --lcsc_id=C2040 --footprint\n"
-            "  easyeda2kicad --lcsc_id=C2040 --symbol\n"
-            "  easyeda2kicad --lcsc_id=C2040 --svg"
+            "  easyeda2kicad-digimou --lcsc_id=C2040 --footprint\n"
+            "  easyeda2kicad-digimou --lcsc_id=C2040 --symbol\n"
+            "  easyeda2kicad-digimou --lcsc_id=C2040 --svg"
         )
         return False
 
@@ -989,7 +995,7 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
     if arguments["project_relative"] and not arguments["output"]:
         logging.error(
             "A project specific library path should be given with --output option when"
-            " using --project-relative option\nFor example: easyeda2kicad"
+            " using --project-relative option\nFor example: easyeda2kicad-digimou"
             " --lcsc_id=C2040 --full"
             " --output=C:/Users/your_username/Documents/Kicad/6.0/projects/my_project"
             " --project-relative"
@@ -2246,6 +2252,9 @@ def _headless_path_argument(
 
 
 def main(argv: list[str] = sys.argv[1:]) -> int:
+    if argv == ["--version"]:
+        print(version_identity())
+        return 0
     if argv and argv[0] == "acquire":
         return _main_machine_acquire(argv[1:])
     if argv and argv[0] in HEADLESS_COMMANDS:

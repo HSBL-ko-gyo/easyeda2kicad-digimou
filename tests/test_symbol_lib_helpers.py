@@ -8,13 +8,15 @@ from typing import Any, cast
 
 import pytest
 
-from easyeda2kicad.kicad.export_kicad_symbol import (
+from easyeda2kicad_digimou.kicad.export_kicad_symbol import (
     ExporterSymbolKicad,
     id_already_in_symbol_lib,
     read_symbol_lib_version,
     write_component_in_symbol_lib_file,
 )
-from easyeda2kicad.kicad.parameters_kicad_symbol import KICAD_SYM_VERSION_20211014
+from easyeda2kicad_digimou.kicad.parameters_kicad_symbol import (
+    KICAD_SYM_VERSION_20211014,
+)
 
 
 # ---- fixtures ----
@@ -22,7 +24,7 @@ from easyeda2kicad.kicad.parameters_kicad_symbol import KICAD_SYM_VERSION_202110
 V6_LIB_HEADER = """\
 (kicad_symbol_lib
 \t(version 20241209)
-\t(generator "easyeda2kicad")
+\t(generator "easyeda2kicad_digimou")
 )"""
 
 V6_SYMBOL_A = """\

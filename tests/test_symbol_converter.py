@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from easyeda2kicad.easyeda.parameters_easyeda import (
+from easyeda2kicad_digimou.easyeda.parameters_easyeda import (
     EeSymbolArc,
     EeSymbolBbox,
     EeSymbolPath,
@@ -19,15 +19,15 @@ from easyeda2kicad.easyeda.parameters_easyeda import (
     EeSymbolPinSettings,
     EeSymbolPolyline,
 )
-from easyeda2kicad.easyeda.parameters_easyeda import EasyedaPinType
-from easyeda2kicad.kicad.export_kicad_symbol import (
+from easyeda2kicad_digimou.easyeda.parameters_easyeda import EasyedaPinType
+from easyeda2kicad_digimou.kicad.export_kicad_symbol import (
     convert_ee_arcs,
     convert_ee_paths,
     convert_ee_pins,
     convert_ee_polylines,
     integrate_sub_units,
 )
-from easyeda2kicad.kicad.parameters_kicad_symbol import (
+from easyeda2kicad_digimou.kicad.parameters_kicad_symbol import (
     KICAD_SYM_VERSION_20211014,
     KICAD_SYM_VERSION_20220914,
     KiPinStyle,

@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from easyeda2kicad.kicad.export_kicad_symbol import _svg_arc_mid_point
+from easyeda2kicad_digimou.kicad.export_kicad_symbol import _svg_arc_mid_point
 
 # Tolerance for floating-point comparisons (in SVG pixel units)
 TOL = 1e-9

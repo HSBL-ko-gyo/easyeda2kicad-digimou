@@ -6,9 +6,9 @@ from typing import Any
 import pytest
 
 # Local imports
-from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
-from easyeda2kicad.metadata import service
-from easyeda2kicad.metadata.models import (
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
+from easyeda2kicad_digimou.metadata import service
+from easyeda2kicad_digimou.metadata.models import (
     CAD_AUTH_REQUIRED,
     CAD_MANUAL_DOWNLOAD_REQUIRED,
     CadActionRequired,
@@ -16,7 +16,7 @@ from easyeda2kicad.metadata.models import (
     CadProvenance,
     CadRequest,
 )
-from easyeda2kicad.metadata.service import MetadataResolution
+from easyeda2kicad_digimou.metadata.service import MetadataResolution
 
 MANUFACTURER = "Synthetic Devices"
 MPN = "SYNTH-PART-01"
