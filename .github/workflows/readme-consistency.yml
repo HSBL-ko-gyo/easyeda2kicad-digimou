@@ -21,7 +21,8 @@ jobs:
   monitor:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.ref_name == github.event.repository.default_branch
+      (github.ref_type == 'branch' &&
+      github.ref_name == github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,6 +45,7 @@ jobs:
           if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
             base_sha="$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)"
           fi
+          base_sha="$(git rev-parse --verify "${base_sha}^{commit}")"
 
           set +e
           python tools/readme_consistency.py \
@@ -74,20 +76,23 @@ jobs:
             const marker =
               `<!-- readme-consistency:${process.env.BASE_SHA}:${context.sha} -->`;
             const report = fs.readFileSync(process.env.REPORT_PATH, "utf8");
-            const body = `${marker}\n\n${report}`;
+            const boundedReport =
+              report.length > 50000
+                ? `${report.slice(0, 49000)}\n\n_Report truncated safely._`
+                : report;
+            const body = `${marker}\n\n${boundedReport}`;
             const title =
               `README consistency gap (${context.sha.slice(0, 7)})`;
 
-            const issues = await github.paginate(
-              github.rest.issues.listForRepo,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                state: "all",
-                per_page: 100,
-              },
-            );
-            const duplicate = issues.find(
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "all",
+              sort: "updated",
+              direction: "desc",
+              per_page: 100,
+            });
+            const duplicate = issues.data.find(
               (issue) =>
                 !issue.pull_request && (issue.body || "").includes(marker),
             );

@@ -1,6 +1,6 @@
 # Multi-distributor metadata architecture
 
-Status: `1.1.0b2` public-beta candidate; complete deterministic quality matrix
+Status: `1.1.0b3` public-beta candidate; complete deterministic quality matrix
 passes
 Baseline: upstream commit `fff10a38619963d7cb1c57d779655a9ea4572e95`  
 License: GNU AGPL-3.0 remains unchanged

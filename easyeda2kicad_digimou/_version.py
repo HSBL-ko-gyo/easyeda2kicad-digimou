@@ -1,4 +1,4 @@
-__version__ = "1.1.0b2"
+__version__ = "1.1.0b3"
 DISPLAY_NAME = "easyeda2kicad +DigiMou"
 DISTRIBUTION_NAME = "easyeda2kicad-digimou"
 CLI_NAME = "easyeda2kicad-digimou"

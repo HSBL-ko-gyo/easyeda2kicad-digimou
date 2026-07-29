@@ -603,3 +603,103 @@ Disposition:
 No finding was rejected. Re-audit 2 is not required. The answer permits commit,
 push of `feature/multi-distributor-metadata`, annotated tag `v1.1.0b1`, and a
 manual GitHub pre-release without PyPI after the matching post-answer canary.
+
+## 1.1.0b3 release-candidate cycle — 2026-07-30
+
+This is a distinct audit cycle for the `1.1.0b3` GitHub pre-release candidate.
+It does not reuse an earlier release approval.
+
+### Initial audit
+
+- Oracle CLI: `0.16.1`
+- Session: `digimou-b3-final-audit`
+- Engine/mode: browser foreground with `--browser-manual-login`
+- Requested/resolved model: `Thinking 5.5` / `Thinking 5.5`
+- Model picker verification: yes
+- Files: 10 individual uploads; bundle mode was not used
+- Usage: approximately 50,320 input tokens
+- Answer: `docs/oracle/release_candidate_audit_b3.md`
+- Verdict: **CANARY PASS / RELEASE BLOCKED**
+
+The valid answer reported five RELEASE BLOCKER and three SHOULD FIX items. All
+eight were adopted. The fixes keep artifact-level fallback in the CLI-owned
+path, require one handoff to contain every requested artifact, remove
+evidence-free SamacSys attribution, redact configured secrets from every human
+log handler, and bound the README monitor to safe counts and option names.
+The monitor also treats ordinary production Python/schema changes as requiring
+README review, excludes tag refs, and has hostile-input plus fallback-matrix
+coverage.
+
+The post-fix focused matrix reports `73 passed`; the full deterministic suite
+reports `1003 passed, 77 skipped`. Ruff lint/format passes for 96 files, strict
+mypy passes for 43 source files, both distributions pass Twine validation, and
+an isolated wheel installation reports `1.1.0b3` with all three schemas.
+
+The Windows transport failures and a login-only helper that accidentally used
+Oracle's Pro default are recorded in
+`docs/oracle/b3_transport_and_budget_incident.md`. The helper received only the
+two-character setup prompt `HI`, no source and no audit instructions. It is not
+treated as an audit. Every valid b3 audit command explicitly selects the
+standard `gpt-5.5` model.
+
+### Re-audit 1
+
+- Session: `digimou-b3-reaudit-one`
+- Elapsed: 10 minutes 36 seconds
+- Engine/mode: browser foreground with `--browser-manual-login`
+- Requested/resolved model: `Thinking 5.5` / `Thinking 5.5`
+- Model picker verification: yes
+- Files: 10 individual uploads; dry-run confirmed `bundled: null`
+- Usage: approximately 50,850 input and 2,610 output tokens
+- Answer: `docs/oracle/release_candidate_audit_b3_reaudit1.md`
+- Verdict: **CANARY PASS / RELEASE BLOCKED**
+
+Re-audit 1 confirmed that all five initial RELEASE BLOCKER items and all three
+initial SHOULD FIX items were corrected. It found one new blocker: a parsed
+symbol with zero electrical pins or a parsed footprint with zero numbered
+electrical pads could bypass semantic invalidity and artifact-level fallback.
+That boundary is now fixed for symbol-only, footprint-only, and full requests;
+the invalid parsed member becomes the exact missing artifact, while a true
+pin/pad mismatch continues to replace both members. A neutral no-match
+fallback remains fail-closed.
+
+The non-blocking monitor recommendation was also adopted. Commit subjects are
+no longer collected by repository inspection, changed-path inspection has a
+10,000-path fail-closed limit, and issue deduplication inspects at most the 100
+most recently updated issues.
+
+The post-fix focused matrix reports `79 passed`; the full deterministic suite
+reports `1009 passed, 77 skipped`. Re-audit 2 was required because re-audit 1
+found a new release blocker.
+
+### Re-audit 2 and post-answer disposition
+
+- Valid session: `digimou-b3-final-reaudit-two-4`
+- Engine/mode: browser foreground with `--browser-manual-login`
+- Requested Oracle model ID: `gpt-5.6`, an available non-Pro standard model
+- Picker evidence: requested/resolved `GPT-5.6 Sol`, verified `yes`
+- Answer model statement: active `GPT-5.6 Thinking`, non-Pro
+- Files: 7 individual uploads; dry-run confirmed `bundled: null`
+- Usage: approximately 30,170 input and 1,640 output tokens
+- Answer: `docs/oracle/release_candidate_audit_b3_reaudit2.md`
+- Verdict at answer time: **CANARY PASS / RELEASE BLOCKED**
+
+Re-audit 2 confirmed `RB-B3-R1` resolved and found no remaining product-path
+release blocker. It kept `SF-B3-R1` open because `_git_paths()` still captured
+the complete `git diff --name-only -z` stdout before enforcing the 10,000-path
+limit. The answer supplied an exact five-step minimum correction and explicitly
+said no further Oracle review was requested.
+
+That minimum correction is implemented after the answer. `_git_paths()` now
+reads stdout in 64 KiB chunks, retains at most the bounded path set, and
+terminates then reaps Git on the first over-limit entry. The same reader serves
+ordinary and added-only queries. Its regression drives the actual reader with
+an oversized chunked producer and proves termination, waiting, stdout closure,
+and unread trailing data. The pre-existing inspection-level limit remains as a
+defense in depth.
+
+After the correction, the focused matrix reports `80 passed`; the full suite
+reports `1010 passed, 77 skipped`. Ruff lint/format, strict mypy, build, Twine,
+and isolated-wheel version/content checks all pass. This satisfies the final
+answer's exact minimum fixes without requesting an unauthorized third
+re-audit.

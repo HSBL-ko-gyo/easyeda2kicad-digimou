@@ -111,7 +111,7 @@ def test_external_cad_request_requires_complete_identity(tmp_path: Path) -> None
 
 @pytest.mark.parametrize(
     ("source", "delivery_partner"),
-    [("digikey", None), ("mouser", "samacsys")],
+    [("digikey", None), ("mouser", None)],
 )
 def test_manifest_keeps_cad_provenance_roles_separate(
     source: str, delivery_partner: str | None, tmp_path: Path

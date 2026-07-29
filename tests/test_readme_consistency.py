@@ -2,11 +2,16 @@ from __future__ import annotations
 
 # Global imports
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional, Set
 
+import pytest
+
 # Local imports
+import tools.readme_consistency as monitor
 from tools.readme_consistency import (
     Analysis,
+    ConsistencyCheckError,
     evaluate_consistency,
     extract_public_cli_options,
     render_report,
@@ -82,13 +87,14 @@ def test_feature_commit_with_readme_change_is_consistent() -> None:
     assert not analysis.inconsistent
 
 
-def test_fix_commit_does_not_trigger_feature_heuristic() -> None:
+def test_fix_commit_requires_readme_review() -> None:
     analysis = _evaluate(
         changed_paths=("easyeda2kicad_digimou/metadata/service.py",),
         subjects=("fix: handle an empty response",),
     )
 
-    assert not analysis.inconsistent
+    assert analysis.inconsistent
+    assert analysis.generic_documentation_gap
 
 
 def test_both_current_and_legacy_package_roots_are_monitored() -> None:
@@ -131,12 +137,150 @@ def test_report_is_readable_and_actionable() -> None:
     assert "Follow-up" in report
 
 
+def test_report_never_publishes_raw_subjects_or_paths() -> None:
+    hostile_subject = "feat: notify @maintainers `code`\nsecret-value"
+    hostile_path = "easyeda2kicad_digimou/@maintainers`secret`.py"
+    analysis = _evaluate(
+        changed_paths=(hostile_path,),
+        added_paths=(hostile_path,),
+        subjects=(hostile_subject,),
+    )
+
+    report = render_report(analysis, "base`@team", "head\nsecret")
+
+    assert hostile_subject not in report
+    assert hostile_path not in report
+    assert "@maintainers" not in report
+    assert "base`@team" not in report
+    assert "head\nsecret" not in report
+    assert "Changed production files: 1" in report
+
+
+def test_report_bounds_and_omits_unsafe_option_text() -> None:
+    unsafe_option = "--unsafe`@team"
+    unsafe_analysis = _evaluate(
+        head_options={unsafe_option},
+        changed_paths=("easyeda2kicad_digimou/__main__.py",),
+    )
+
+    unsafe_report = render_report(unsafe_analysis, "base", "head")
+
+    assert unsafe_option not in unsafe_report
+    assert "[unsafe option omitted]" in unsafe_report
+
+    bounded_analysis = _evaluate(
+        head_options={f"--option-{index}" for index in range(60)},
+        changed_paths=("easyeda2kicad_digimou/__main__.py",),
+    )
+    bounded_report = render_report(bounded_analysis, "base", "head")
+    assert "and 20 more" in bounded_report
+    assert len(bounded_report) < 10000
+
+
 def test_workflow_is_default_branch_only_and_can_create_issues() -> None:
     workflow = (
         Path(__file__).parents[1] / ".github" / "workflows" / "readme-consistency.yml"
     ).read_text(encoding="utf-8")
 
     assert "workflow_dispatch:" in workflow
+    assert "github.ref_type == 'branch'" in workflow
     assert "github.event.repository.default_branch" in workflow
+    assert 'git rev-parse --verify "${base_sha}^{commit}"' in workflow
     assert "issues: write" in workflow
     assert "readme-consistency:" in workflow
+    assert "report.slice(0, 49000)" in workflow
+    assert "github.paginate" not in workflow
+    assert "per_page: 100" in workflow
+
+
+def test_inspection_fails_closed_above_changed_path_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def run_git(_repository: Path, *arguments: str) -> str:
+        if arguments == ("rev-parse", "--show-toplevel"):
+            return str(tmp_path)
+        return "verified"
+
+    monkeypatch.setattr(monitor, "_run_git", run_git)
+    monkeypatch.setattr(
+        monitor,
+        "_git_paths",
+        lambda *_args, **_kwargs: tuple(
+            f"easyeda2kicad_digimou/generated_{index}.py"
+            for index in range(monitor.MAX_CHANGED_PATHS + 1)
+        ),
+    )
+
+    with pytest.raises(
+        ConsistencyCheckError,
+        match="safe changed-path inspection limit",
+    ):
+        monitor.inspect_repository(tmp_path, "base", "head")
+
+
+def test_git_path_reader_stops_and_reaps_at_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path_count = monitor.MAX_CHANGED_PATHS + 5_000
+    output = b"".join(
+        f"easyeda2kicad_digimou/generated_{index}.py\0".encode()
+        for index in range(path_count)
+    )
+
+    class ChunkedOutput:
+        def __init__(self, payload: bytes) -> None:
+            self.payload = payload
+            self.position = 0
+            self.closed = False
+
+        def read(self, size: int) -> bytes:
+            end = min(self.position + min(size, 4096), len(self.payload))
+            chunk = self.payload[self.position : end]
+            self.position = end
+            return chunk
+
+        def close(self) -> None:
+            self.closed = True
+
+    stdout = ChunkedOutput(output)
+    process = SimpleNamespace(
+        stdout=stdout,
+        returncode=None,
+        terminated=False,
+        waited=False,
+    )
+
+    def poll() -> Optional[int]:
+        return process.returncode
+
+    def terminate() -> None:
+        process.terminated = True
+        process.returncode = -15
+
+    def wait(timeout: Optional[float] = None) -> int:
+        del timeout
+        process.waited = True
+        if process.returncode is None:
+            process.returncode = 0
+        return process.returncode
+
+    process.poll = poll
+    process.terminate = terminate
+    process.wait = wait
+    process.kill = terminate
+
+    monkeypatch.setattr(monitor.shutil, "which", lambda _name: "git")
+    monkeypatch.setattr(monitor.subprocess, "Popen", lambda *_args, **_kwargs: process)
+
+    with pytest.raises(
+        ConsistencyCheckError,
+        match="safe changed-path inspection limit",
+    ):
+        monitor._git_paths(tmp_path, "base", "head")
+
+    assert process.terminated
+    assert process.waited
+    assert stdout.closed
+    assert stdout.position < len(output)
