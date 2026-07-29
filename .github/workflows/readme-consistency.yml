@@ -1,0 +1,109 @@
+name: README consistency monitor
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Optional base revision (defaults to the previous commit)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: readme-consistency-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check README consistency
+        id: check
+        shell: bash
+        env:
+          EVENT_BASE_SHA: ${{ github.event.before }}
+          MANUAL_BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          base_sha="$MANUAL_BASE_SHA"
+          if [[ -z "$base_sha" ]]; then
+            base_sha="$EVENT_BASE_SHA"
+          fi
+          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+            base_sha="$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)"
+          fi
+
+          set +e
+          python tools/readme_consistency.py \
+            --base "$base_sha" \
+            --head "$GITHUB_SHA" \
+            --report readme-consistency-report.md
+          status=$?
+          set -e
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Stop on checker errors
+        if: steps.check.outputs.status != '0' && steps.check.outputs.status != '1'
+        run: |
+          echo "README consistency checker failed to run." >&2
+          exit 1
+
+      - name: Create a deduplicated inconsistency issue
+        if: steps.check.outputs.status == '1'
+        uses: actions/github-script@v7
+        env:
+          BASE_SHA: ${{ steps.check.outputs.base_sha }}
+          REPORT_PATH: readme-consistency-report.md
+        with:
+          script: |
+            const fs = require("fs");
+            const marker =
+              `<!-- readme-consistency:${process.env.BASE_SHA}:${context.sha} -->`;
+            const report = fs.readFileSync(process.env.REPORT_PATH, "utf8");
+            const body = `${marker}\n\n${report}`;
+            const title =
+              `README consistency gap (${context.sha.slice(0, 7)})`;
+
+            const issues = await github.paginate(
+              github.rest.issues.listForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: "all",
+                per_page: 100,
+              },
+            );
+            const duplicate = issues.find(
+              (issue) =>
+                !issue.pull_request && (issue.body || "").includes(marker),
+            );
+            if (duplicate) {
+              core.notice(
+                `Issue #${duplicate.number} already records this range.`,
+              );
+              return;
+            }
+
+            const created = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+            });
+            core.notice(
+              `Created README consistency issue #${created.data.number}.`,
+            );
