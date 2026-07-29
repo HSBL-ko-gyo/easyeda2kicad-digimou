@@ -11,7 +11,7 @@ from pathlib import Path, PurePath
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union, cast
 
 # Local imports
-from .cache import sanitize_public_url, strip_secrets
+from .cache import redact_configured_secret_text, sanitize_public_url, strip_secrets
 from .models import DistributorRecord, JlcpcbResolution, MergedPart, model_to_dict
 
 CSV_COLUMNS = (
@@ -340,7 +340,7 @@ def _text(value: Any) -> str:
         return str(value)
     if isinstance(value, bool):
         return "true" if value else "false"
-    return str(value)
+    return redact_configured_secret_text(str(value))
 
 
 def _compact_json(value: Any) -> str:

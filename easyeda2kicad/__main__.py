@@ -8,6 +8,7 @@ import logging
 import re
 import sys
 import unicodedata
+import uuid
 from pathlib import Path, PurePath
 from typing import Any, TextIO
 
@@ -33,7 +34,17 @@ from .easyeda.parameters_easyeda import EeFootprint, EeSymbol
 from .kicad.export_kicad_3d_model import Exporter3dModelKicad
 from .kicad.export_kicad_footprint import ExporterFootprintKicad
 from .kicad.export_kicad_symbol import ExporterSymbolKicad
-from .metadata.cache import sanitize_public_url, strip_secrets
+from .machine import (
+    build_machine_result,
+    internal_machine_result,
+    invalid_machine_result,
+    write_machine_json,
+)
+from .metadata.cache import (
+    redact_configured_secret_text,
+    sanitize_public_url,
+    strip_secrets,
+)
 from .metadata.manifest import write_csv_manifest, write_json_manifest
 from .metadata.merge import (
     CAD_NOT_FOUND,
@@ -505,6 +516,36 @@ def get_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def get_acquire_parser() -> argparse.ArgumentParser:
+    """Return the additive machine-acquire parser without changing legacy syntax."""
+
+    parser = get_parser()
+    parser.prog = "easyeda2kicad acquire"
+    parser.add_argument(
+        "--machine-json",
+        action="store_true",
+        help="Write one schema-v1 UTF-8 result document to stdout",
+    )
+    parser.add_argument(
+        "--require-provider",
+        action="append",
+        choices=SUPPORTED_PROVIDERS,
+        default=[],
+        help="Require one provider record; repeat for multiple providers",
+    )
+    parser.add_argument(
+        "--require-jlcpcb-resolution",
+        action="store_true",
+        help="Require a canonical JLCPCB/LCSC part-number resolution",
+    )
+    parser.add_argument(
+        "--require-project-registration",
+        action="store_true",
+        help="Require successful opt-in project library registration",
+    )
+    return parser
+
+
 def is_metadata_mode(arguments: dict[str, Any]) -> bool:
     """Return whether any additive metadata behavior was explicitly requested."""
     return bool(
@@ -523,6 +564,7 @@ def is_metadata_mode(arguments: dict[str, Any]) -> bool:
         or arguments.get("manifest_csv")
         or arguments.get("require_cad")
         or arguments.get("require_providers")
+        or arguments.get("machine_json")
         or arguments.get("offline")
         or arguments.get("refresh_metadata")
         or arguments.get("show_conflicts")
@@ -822,6 +864,7 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
             arguments.get("manifest_csv"),
             arguments.get("require_cad"),
             arguments.get("require_providers"),
+            arguments.get("machine_json"),
             arguments.get("show_conflicts"),
             arguments.get("cad_package"),
             arguments.get("cad_candidates"),
@@ -1292,6 +1335,7 @@ def _write_requested_manifests(merged: MergedPart, arguments: dict[str, Any]) ->
             )
     except (OSError, TypeError, ValueError) as error:
         logging.error("Failed to write manifest: %s", type(error).__name__)
+        arguments["_machine_error_code"] = "MANIFEST_WRITE_FAILED"
         return False
     return True
 
@@ -1373,7 +1417,12 @@ def _register_project_libraries(arguments: dict[str, Any]) -> bool:
         result = apply_project_registration(plan)
     except ProjectRegistrationError as error:
         logging.error("%s", error)
+        arguments["_machine_project_error"] = error.code
+        arguments["_machine_error_code"] = error.code
         return False
+    arguments["_machine_project_plan"] = plan
+    arguments["_machine_project_result"] = result
+    arguments["_machine_project_succeeded"] = True
     _log_project_registration_plan(plan, prefix="REGISTER")
     if result.changed_paths:
         logging.info(
@@ -1496,6 +1545,7 @@ def _resolve_metadata_request(
         )
     except MetadataServiceError as error:
         logging.error("%s", error)
+        arguments["_machine_error_code"] = error.code
         return None
 
     verification_status, symbol, footprint = _verify_metadata_cad(
@@ -1578,6 +1628,7 @@ def _finish_metadata_mode(
                 export_failed = True
                 result.provider_errors["export"] = "EXPORT_FAILED"
                 result.blocking_error = "EXPORT_FAILED"
+                arguments["_machine_error_code"] = "CAD_EXPORT_FAILED"
                 merged = result.to_merged(overall_status=PARTIAL)
             else:
                 _update_cad_artifact_paths(result, arguments, symbol, footprint)
@@ -1595,6 +1646,7 @@ def _finish_metadata_mode(
             registration_failed = True
 
     _log_metadata_diagnostics(merged, require_cad=arguments["require_cad"])
+    arguments["_machine_merged"] = merged
     manifests_ok = _write_requested_manifests(merged, arguments)
     if arguments.get("show_conflicts"):
         _show_metadata_conflicts(merged)
@@ -1682,6 +1734,7 @@ def _run_auto_cad_package_mode(arguments: dict[str, Any]) -> int:
         )
     except CadPackageError as error:
         logging.error("%s", error)
+        arguments["_machine_error_code"] = error.code
         if _write_auto_selection_failure(
             arguments,
             metadata_result,
@@ -1720,6 +1773,7 @@ def _run_auto_cad_package_mode(arguments: dict[str, Any]) -> int:
         write_source_lock(lock_path, selection.source_lock)
     except CadPackageError as error:
         logging.error("%s", error)
+        arguments["_machine_error_code"] = error.code
         return 1
 
     logging.info(
@@ -1769,6 +1823,7 @@ def _write_auto_selection_failure(
     )
     result.blocking_error = status
     merged = result.to_merged(overall_status=PARTIAL)
+    arguments["_machine_merged"] = merged
     _log_metadata_diagnostics(merged, require_cad=arguments["require_cad"])
     return _write_requested_manifests(merged, arguments)
 
@@ -1795,6 +1850,7 @@ def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
     mpn = arguments.get("mpn")
     if not isinstance(manufacturer, str) or not isinstance(mpn, str):
         logging.error("Local CAD package identity was not validated")
+        arguments["_machine_error_code"] = "CAD_IDENTITY_UNRESOLVED"
         return 1
     request = CadRequest(
         manufacturer=manufacturer,
@@ -1817,6 +1873,7 @@ def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
         )
     except CadPackageError as error:
         logging.error("%s", error)
+        arguments["_machine_error_code"] = error.code
         return 1
 
     return _finish_ingested_package(arguments, request, result)
@@ -1829,11 +1886,6 @@ def _finish_ingested_package(
     *,
     metadata_result: MetadataResolution | None = None,
 ) -> int:
-    if arguments.get("register_project_libraries") and not _register_project_libraries(
-        arguments
-    ):
-        return 1
-
     if metadata_result is not None:
         metadata_result.cad = result.cad
         metadata_result.cad_data = None
@@ -1850,6 +1902,12 @@ def _finish_ingested_package(
             cad_discovery=result.discovery,
             verification_status=result.cad.verification_status,
         )
+    arguments["_machine_merged"] = merged
+    if arguments.get("register_project_libraries") and not _register_project_libraries(
+        arguments
+    ):
+        return 1
+
     _log_metadata_diagnostics(merged, require_cad=arguments["require_cad"])
     manifests_ok = _write_requested_manifests(merged, arguments)
     if arguments.get("show_conflicts"):
@@ -1857,7 +1915,150 @@ def _finish_ingested_package(
     return 0 if manifests_ok else 1
 
 
+def _configure_machine_logging() -> tuple[int, list[logging.Handler]]:
+    """Route every log record to stderr for the duration of machine execution."""
+
+    root_logger = logging.getLogger()
+    previous_level = root_logger.level
+    previous_handlers = list(root_logger.handlers)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(_MachineLogFormatter(fmt="[{levelname}] {message}", style="{"))
+    root_logger.handlers = [handler]
+    return previous_level, previous_handlers
+
+
+class _MachineLogFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_configured_secret_text(super().format(record))
+
+
+def _restore_machine_logging(
+    previous_level: int,
+    previous_handlers: list[logging.Handler],
+) -> None:
+    root_logger = logging.getLogger()
+    root_logger.handlers = previous_handlers
+    root_logger.setLevel(previous_level)
+
+
+def _main_machine_acquire(argv: list[str]) -> int:
+    """Execute one non-interactive acquisition and emit exactly one JSON result."""
+
+    request_id = uuid.uuid4().hex
+    previous_level, previous_handlers = _configure_machine_logging()
+    document: dict[str, Any]
+    exit_code = 70
+    try:
+        parser = get_acquire_parser()
+        if any(value in ("-h", "--help") for value in argv):
+            if "--machine-json" in argv:
+                document = invalid_machine_result(
+                    request_id,
+                    code="HELP_UNAVAILABLE_IN_MACHINE_MODE",
+                )
+                exit_code = 2
+            else:
+                parser.print_help()
+                return 0
+        else:
+            try:
+                args = parser.parse_args(argv)
+            except SystemExit:
+                document = invalid_machine_result(request_id)
+                exit_code = 2
+            else:
+                arguments = vars(args)
+                logging.getLogger().setLevel(
+                    logging.DEBUG if arguments["debug"] else logging.INFO
+                )
+                if not arguments.get("machine_json"):
+                    logging.error("acquire currently requires --machine-json")
+                    document = invalid_machine_result(
+                        request_id, code="MACHINE_JSON_REQUIRED"
+                    )
+                    exit_code = 2
+                elif not arguments["lcsc_id"] and not arguments.get("mpn"):
+                    logging.error("at least one of --lcsc_id or --mpn is required")
+                    document = invalid_machine_result(request_id)
+                    exit_code = 2
+                elif arguments.get(
+                    "require_project_registration"
+                ) and not arguments.get("register_project_libraries"):
+                    logging.error(
+                        "--require-project-registration requires "
+                        "--register-project-libraries"
+                    )
+                    document = invalid_machine_result(
+                        request_id,
+                        code="PROJECT_REGISTRATION_NOT_REQUESTED",
+                    )
+                    exit_code = 2
+                else:
+                    required = list(
+                        dict.fromkeys(
+                            str(value).lower()
+                            for value in arguments.get("require_provider", ())
+                        )
+                    )
+                    selected = (
+                        [
+                            item.strip().lower()
+                            for item in str(arguments["providers"]).split(",")
+                            if item.strip()
+                        ]
+                        if arguments.get("providers")
+                        else []
+                    )
+                    for provider in required:
+                        if provider not in selected:
+                            selected.append(provider)
+                    if selected:
+                        arguments["providers"] = ",".join(selected)
+                    # Conflicts already appear in the result; a second stdout JSON
+                    # document would violate the machine contract.
+                    arguments["show_conflicts"] = False
+                    if not valid_arguments(arguments):
+                        document = invalid_machine_result(request_id)
+                        exit_code = 2
+                    else:
+                        strict_selected = list(
+                            arguments.get("required_provider_names", ())
+                        )
+                        arguments["machine_required_provider_names"] = list(
+                            dict.fromkeys([*strict_selected, *required])
+                        )
+                        if arguments.get("dry_run"):
+                            logging.error(
+                                "acquire machine mode does not accept --dry-run"
+                            )
+                            document = invalid_machine_result(
+                                request_id,
+                                code="DRY_RUN_UNSUPPORTED",
+                            )
+                            exit_code = 2
+                        else:
+                            core_exit = _run_metadata_mode(arguments)
+                            merged = arguments.get("_machine_merged")
+                            document, exit_code = build_machine_result(
+                                arguments,
+                                merged if isinstance(merged, MergedPart) else None,
+                                core_exit_code=core_exit,
+                                request_id=request_id,
+                            )
+    except Exception:
+        logging.error("Unexpected machine acquisition failure")
+        document = internal_machine_result(request_id)
+        exit_code = 70
+    finally:
+        _restore_machine_logging(previous_level, previous_handlers)
+    write_machine_json(document)
+    return exit_code
+
+
 def main(argv: list[str] = sys.argv[1:]) -> int:
+    if argv and argv[0] == "acquire":
+        return _main_machine_acquire(argv[1:])
+
     print(f"-- easyeda2kicad.py v{__version__} --")
 
     # cli interface

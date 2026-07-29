@@ -149,7 +149,35 @@ def strip_secrets(value: Any) -> Any:
     """Recursively remove credential fields and secret URL query parameters."""
 
     safe = model_to_dict(value)
-    return _strip_json_value(safe)
+    return _redact_configured_secret_values(_strip_json_value(safe))
+
+
+def redact_configured_secret_text(value: str) -> str:
+    """Redact configured provider credential values without exposing them."""
+
+    redacted = value
+    for name in (
+        "DIGIKEY_CLIENT_ID",
+        "DIGIKEY_CLIENT_SECRET",
+        "MOUSER_API_KEY",
+    ):
+        secret = os.environ.get(name, "")
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
+    return redacted
+
+
+def _redact_configured_secret_values(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact_configured_secret_text(value)
+    if isinstance(value, dict):
+        return {
+            str(key): _redact_configured_secret_values(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_configured_secret_values(item) for item in value]
+    return value
 
 
 class MetadataCache:

@@ -402,6 +402,34 @@ optional-provider `PARTIAL`/status-0 behavior is unchanged.
 | Build and Twine check | PASS for sdist and wheel |
 | Changed source and distribution secret/path scan | PASS |
 
+## Issue #9 Phase A machine JSON v1
+
+- Added the additive `acquire --machine-json` subcommand while preserving the
+  root legacy CLI and its version banner/output/exit behavior.
+- stdout is one UTF-8 schema-v1 JSON document; progress is stderr-only and the
+  writer bypasses CP932 encoding. Machine mode does not prompt, launch KiCad,
+  or open a browser.
+- The result composes existing provider, CAD, JLCPCB, artifact, and project
+  registration models. Artifact/project paths are relative and declare
+  `path_base`; installed artifacts include SHA-256.
+- Added repeatable `--require-provider`, `--require-cad`,
+  `--require-jlcpcb-resolution`, and `--require-project-registration` with
+  stable exit codes 0, 2–8, and 70.
+- Checked in and packaged `machine-result-v1.schema.json`, with an explicit
+  compatibility/versioning policy. Phase B events and read-only discovery
+  commands remain outstanding, so Issue #9 stays open.
+
+| Gate | Result |
+| --- | --- |
+| Machine/schema/CP932/offline/failure/security focused tests | `26 passed` |
+| Related CLI/CAD/project/legacy focused tests | `190 passed` |
+| Python 3.12.13 full pytest | `921 passed, 75 skipped` |
+| Ruff lint / format | PASS, 87 files |
+| Python 3.12 strict mypy | PASS, 87 source files |
+| Build and Twine check | PASS for sdist and wheel |
+| Schema present once in sdist and wheel | PASS |
+| Changed source and unpacked distribution secret/path scan | PASS |
+
 ## Remaining
 
 - Mouser/SamacSys exact official Product Detail discovery is implemented, but
