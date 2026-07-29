@@ -18,24 +18,29 @@
 | Provider path | Distributor metadata | CAD acquisition today | Account requirement |
 | --- | --- | --- | --- |
 | LCSC / JLCPCB + EasyEDA | Exact LCSC/JLCPCB catalogue metadata | Symbol, footprint, and 3D model from EasyEDA | None |
-| DigiKey | Official Product Information V4 API metadata | Safe local import of a user-downloaded native KiCad Ultra Librarian ZIP; service retrieval is not implemented | User-owned DigiKey developer app credentials for metadata; official-site interaction for package download |
-| Mouser | Official Search API V2 metadata | Safe local import of a user-downloaded native KiCad SamacSys ZIP; service retrieval is not implemented | User-owned Mouser API key for metadata; official-site interaction or Library Loader for package download |
+| DigiKey | Official Product Information V4 API metadata | API-only exact model discovery and sanitized Ultra Librarian handoff, plus safe local import of the user-downloaded native KiCad ZIP; download remains manual | User-owned DigiKey developer app credentials; user review of the Ultra Librarian agreement and official-site download |
+| Mouser | Official Search API V2 metadata | Exact official Product Detail handoff plus safe local import of a user-exported native KiCad SamacSys package; download remains manual | User-owned Mouser API key; user-owned MyMouser/SamacSys session or Library Loader for package export |
 
 `--providers` currently selects **metadata providers**, not alternative CAD
 sources. CAD acquisition defaults to EasyEDA and requires an exact LCSC
 mapping. `--cad-source` is a separate CAD contract: an explicit `digikey` or
 `mouser` selection never falls back to EasyEDA. Local package validation and
-import are available, but Ultra Librarian delivery through DigiKey and SamacSys
-delivery through Mouser are not yet implemented for service discovery or
-download. Until those paths are implemented and validated with real packages
-in KiCad, this project does not provide complete DigiKey or Mouser CAD support.
+import are available. DigiKey can discover one exact Ultra Librarian model
+handoff from the official Product Information V4 `Media` response, and its
+Phase C real-package path has passed KiCad CLI and GUI validation. Mouser can
+return the sanitized exact Product Detail URL supplied by the official Search
+API, but it does not scrape that page or automate SamacSys search, login,
+requests, or download. Until the Mouser path and final multi-source behavior are
+validated end to end with a real package in KiCad, this project does not provide
+complete DigiKey or Mouser CAD support.
 
 This beta preserves the existing `easyeda2kicad` Python package, CLI command,
 public API, legacy `--lcsc_id` path, and legacy KiCad output while adding
 LCSC/DigiKey/Mouser distributor metadata. Exact MPN matching is fail-closed.
-JSON and CSV Manifests retain complete metadata; raw/normalized caches support
-`--offline` and `--refresh-metadata`. KiCad receives only stable native
-Manufacturer/MPN/LCSC/Datasheet identity properties—price, stock, provider
+JSON and CSV Manifests retain complete metadata; provider-permitted
+raw/normalized caches support `--offline` and `--refresh-metadata`, while
+Mouser remains live-only under its current API terms. KiCad receives only
+stable native Manufacturer/MPN/LCSC/Datasheet identity properties—price, stock, provider
 state, provenance, diagnostics, and other volatile sales data remain
 Manifest-only. DigiKey and Mouser credentials are environment variables and
 are never written to logs, Manifests, cache keys, cache payloads, or KiCad
@@ -199,6 +204,151 @@ request. The generated KiCad symbol continues to use only the existing native
 `LCSC Part` field, populated solely by a proven canonical value. Sourcing
 status, stock, actions, and candidates remain Manifest-only.
 
+### Discover the DigiKey / Ultra Librarian CAD handoff
+
+With user-owned DigiKey developer credentials configured, request the exact
+official model handoff and write the typed result to a Manifest:
+
+```bash
+easyeda2kicad \
+  --manufacturer "Analog Devices Inc." \
+  --mpn AD5314BRM \
+  --providers digikey \
+  --cad-source digikey \
+  --manifest-json ./build/AD5314BRM-handoff.json
+```
+
+An opt-in live smoke test exercises only the exact DigiKey lookup and official
+`Media`/exact-product handoff. It is skipped by the normal suite when the two
+DigiKey variables are absent, makes a single attempt per operation, does not
+fetch the returned page, and writes no response or credential artifact:
+
+```bash
+python -m pytest -q -m network \
+  tests/test_provider_live.py::test_digikey_live_ad5314_cad_handoff_smoke
+```
+
+After the owner downloads the real ZIP, set
+`DIGIKEY_AD5314_CAD_PACKAGE` to its local path. The checked-in sanitized
+evidence file is bound to the reviewed package SHA-256; a re-download with a
+different hash requires a newly reviewed evidence file. Then run the
+package-gated smoke:
+
+```bash
+python -m pytest -q -m network \
+  tests/test_provider_live.py::test_digikey_live_ad5314_package_project_e2e
+```
+
+That test uses only a disposable temporary project. It proves fail-closed
+package identity, atomic/idempotent import, project-table registration,
+portable paths and hashes, then parses and renders the real symbol and
+footprint with the locally installed KiCad 7, 9, and 10 CLIs. It never modifies
+an existing project and does not persist or commit the provider ZIP. Visual
+symbol/pin, footprint/pad/courtyard, and STEP geometry/alignment inspection was
+also completed in the KiCad 10 GUI using that disposable project.
+
+The command calls only the official Product Information V4 API. It revalidates
+the exact manufacturer and full MPN. One unambiguous recognized URL whose
+`MediaType` is `Model` is preferred. When the API returns no model entry, the
+sanitized exact `ProductUrl` from that same authenticated record is returned as
+the manual product-page handoff; an unknown or ambiguous model entry still
+fails closed. The CLI never fetches or scrapes either page. A manual discovery
+reports `CAD_MANUAL_DOWNLOAD_REQUIRED`, exits nonzero, and stores the same
+credential-free URL under `cad_discovery.action_required.setup_url`.
+
+Open that URL, verify the exact manufacturer and MPN, review the model download
+agreement, select KiCad v6+ and STEP or WRL, and download the ZIP. If
+credentials are missing, the typed result is `CAD_AUTH_REQUIRED` with the
+DigiKey OAuth setup page. Unsafe, malformed, or ambiguous official handoffs
+produce `CAD_DOWNLOAD_UNAVAILABLE`; the CLI never guesses a URL or falls back
+to EasyEDA.
+
+The primary validation candidate is Analog Devices `AD5314BRM`. On 2026-07-29,
+authenticated exact API discovery succeeded, the API `Media` response contained
+no recognized model entry, and the exact official product-page handoff was
+used. DigiKey then permitted a guest download from the public models page
+(the completion dialog showed two guest downloads remaining that day). The
+unmodified KiCad v6+ and STEP package passed archive, exact-identity,
+registration, idempotency, and KiCad CLI 7/9/10 parse/render checks. API
+metadata still requires the user's developer credentials, and guest download
+limits can change. The real package's symbol and all ten pins were inspected in
+the KiCad 10 Symbol Editor. The selected footprint's ten pads and courtyard,
+plus STEP geometry and alignment, were then confirmed in the KiCad 10 GUI. This
+completes the Phase C DigiKey real-service acquisition, intake, registration,
+CLI, and GUI validation path; Issue #7 remains open for its Mouser and final
+multi-source phases.
+
+### Discover the Mouser / SamacSys CAD handoff
+
+With a user-owned Mouser API key configured, resolve the exact part through the
+official Search API and write its sanitized Product Detail handoff:
+
+```bash
+easyeda2kicad \
+  --manufacturer Rectron \
+  --mpn FM220A-W \
+  --providers mouser \
+  --cad-source mouser \
+  --manifest-json ./build/FM220A-W-handoff.json
+```
+
+The command makes only the official exact-part API request. It revalidates the
+manufacturer and full MPN and accepts only a credential-free HTTPS
+`mouser.com` Product Detail URL from that response. It never fetches or scrapes
+the returned page. Successful discovery reports
+`CAD_MANUAL_DOWNLOAD_REQUIRED`, exits nonzero, and prints the same sanitized
+URL stored under `cad_discovery.action_required.setup_url`.
+
+Open that Product Detail page yourself and use its ECAD Model/Library Loader
+flow with your own MyMouser or SamacSys session. Export a native KiCad package
+containing the symbol, footprint, and STEP or WRL model, then import it with
+`--cad-source mouser --cad-package-format samacsys-kicad`. SamacSys automated
+search, login, request, and download are intentionally not implemented because
+its current terms prohibit automated agents/scripts from generating searches,
+requests, or queries.
+
+If `MOUSER_API_KEY` is missing, the typed result is `CAD_AUTH_REQUIRED` with
+the Mouser API setup page. If the official API supplies no safe exact Product
+Detail handoff, the result is `CAD_DOWNLOAD_UNAVAILABLE`. Explicit
+`--cad-source mouser` never falls back to EasyEDA.
+
+Mouser API lookups are live-only: current API terms prohibit caching or storing
+API content, so neither the raw response nor normalized Mouser record is
+written to `.easyeda_cache`. `--offline` therefore makes no Mouser request and
+reports an offline provider diagnostic instead of replaying stored API data.
+
+An opt-in live smoke makes one exact API request and validates the FM220A-W
+handoff without opening the returned page:
+
+```bash
+python -m pytest -q -m network \
+  tests/test_cad_mouser_live.py::test_mouser_live_fm220a_cad_handoff_smoke
+```
+
+After the owner exports the real package, set `MOUSER_FM220A_CAD_PACKAGE` to
+its local path and run:
+
+```bash
+python -m pytest -q -m network \
+  tests/test_cad_mouser_live.py::test_mouser_live_fm220a_package_project_e2e
+```
+
+The package smoke performs no network access and uses only a disposable
+temporary project. It checks fail-closed identity, provenance, hashes, portable
+model paths, atomic/idempotent project registration, and KiCad CLI 7/9/10
+symbol/footprint rendering. It neither retains nor commits the provider
+package. Final symbol/pin, footprint/pad, and 3D alignment inspection in the
+KiCad GUI remains an explicit owner-visible check.
+
+The primary candidate remains `Rectron / FM220A-W`; no replacement was chosen.
+On 2026-07-26 the public LCSC exact-MPN lookup returned no match, but the
+official Mouser page labelled the ECAD action **“Build or request PCB Symbol,
+Footprint or Model”**. The Library Loader handoff still exists, but an already
+downloadable package is therefore not proven and the candidate condition may
+have changed. The credential- and package-gated smokes are ready but have not
+run. Phase D cannot claim end-to-end completion unless the owner can obtain the
+real FM220A-W package through the official flow.
+
 ### Import a locally downloaded CAD package
 
 The local importer is an intermediate handoff for packages that the user
@@ -210,7 +360,9 @@ models are accepted; legacy `.lib` conversion and Library Loader internals are
 not guessed.
 
 Create the output parent first, then provide the exact manufacturer and full
-ordering MPN shown by the package itself:
+ordering MPN. If the untouched official package omits provider/manufacturer
+properties, also provide a separately reviewed, sanitized JSON receipt that
+binds the official product/model URLs and exact identity to the package hash:
 
 ```bash
 mkdir -p ./libs
@@ -220,6 +372,7 @@ easyeda2kicad \
   --cad-source digikey \
   --cad-package ./downloads/official-ultralibrarian-kicad.zip \
   --cad-package-format ultralibrarian-kicad \
+  --cad-package-evidence ./docs/evidence/issue-7c-digikey-ad5314brm.json \
   --output ./libs/project_parts \
   --manifest-json ./build/cad-package.json
 ```
@@ -227,18 +380,87 @@ easyeda2kicad \
 Use `--cad-source mouser --cad-package-format samacsys-kicad` for the
 corresponding SamacSys handoff. `--cad-package-format auto` is the default and
 accepts a package only when exactly one supported adapter is proven by package
-notices/layout. The distributor, delivery partner, and model creator remain
-separate provenance fields.
+notices/layout or a matching hash-bound receipt plus the versioned provider
+layout. Receipt JSON rejects unknown fields, unsafe/secret-bearing URLs,
+identity/source/format mismatches, and a different package hash. The receipt
+does not turn the delivery partner into the model creator; distributor,
+delivery partner, and model creator remain separate provenance fields.
 
 The ZIP is inspected before extraction: absolute, UNC, drive and parent paths,
 links, duplicate/case-colliding paths, nested archives, more than 4096 entries,
 more than 512 MiB expanded data, files over 256 MiB, and compression ratios
-over 200:1 are rejected. Manufacturer and exact MPN must be proven by native
-symbol properties; CLI input alone is insufficient. Ambiguous symbols,
-footprints or models, malformed KiCad data, and pin/pad mismatches fail closed.
+over 200:1 are rejected. Normally manufacturer and exact MPN must be proven by
+native symbol properties. For an official package with a hash-bound manual
+handoff receipt, the native symbol must still independently contain at least
+two exact full-MPN signals before missing Manufacturer/MPN fields are added
+from the receipt; CLI input alone is insufficient. Provider footprint variants
+are selected only when the symbol's Footprint value and exactly one package
+filename match exactly. Ambiguous symbols, footprints or models, malformed
+KiCad data, and pin/pad mismatches fail closed.
 Installation stages and validates all files before atomically replacing the
 target `.kicad_sym`, `.pretty`, and `.3dshapes` paths. Existing non-empty,
 conflicting Manufacturer/MPN values are never overwritten.
+
+### Deterministic automatic CAD source selection
+
+`--cad-source auto` keeps verified EasyEDA CAD first. When EasyEDA has no
+usable exact CAD, pass one or both already-downloaded provider packages as
+repeatable, source-labelled candidates:
+
+```bash
+easyeda2kicad \
+  --manufacturer "Example Manufacturer" \
+  --mpn "EXACT-MPN-INCLUDING-SUFFIX" \
+  --providers lcsc,digikey,mouser \
+  --cad-source auto \
+  --cad-candidate digikey=./downloads/ultralibrarian-kicad.zip \
+  --cad-candidate mouser=./downloads/samacsys-kicad.zip \
+  --full \
+  --output ./libs/project_parts \
+  --manifest-json ./build/auto-selection.json
+```
+
+Use `--cad-candidate-evidence digikey=PATH` or
+`--cad-candidate-evidence mouser=PATH` when the corresponding official package
+needs the same reviewed, hash-bound evidence accepted by
+`--cad-package-evidence`. Candidate paths are never inferred from a product
+URL.
+
+Every candidate passes the complete archive, exact manufacturer/full-MPN,
+KiCad syntax, symbol/footprint, pin/pad, and 3D validation path before any
+output changes. A product or model landing URL is only an actionable handoff;
+it is not an available CAD source. If two validated packages materially differ
+in pin/pad sets, footprint package, or primary 3D link, auto selection returns
+`CAD_SOURCE_CONFLICT` and installs neither. Otherwise the fixed order is
+EasyEDA, DigiKey/Ultra Librarian, then Mouser/SamacSys. Explicit
+`--cad-source digikey` and `--cad-source mouser` remain no-fallback paths.
+
+When an external package is selected, the CLI atomically writes
+`<output>.cad-source-lock.json` unless `--cad-source-lock PATH` specifies a
+different location. The schema contains only exact manufacturer, full MPN,
+selected source, and package SHA-256—never an absolute package path or
+credential. The JSON manifest records the same selected `cad.source`,
+provider-separated provenance, package hash, and artifact hashes. A later run
+with the same output and local candidates must match the lock exactly; it does
+not switch because EasyEDA or another provider later becomes available.
+
+The locked local package can be rebuilt without provider access:
+
+```bash
+easyeda2kicad \
+  --manufacturer "Example Manufacturer" \
+  --mpn "EXACT-MPN-INCLUDING-SUFFIX" \
+  --cad-source auto \
+  --cad-candidate digikey=./downloads/ultralibrarian-kicad.zip \
+  --offline \
+  --full \
+  --output ./libs/project_parts \
+  --manifest-json ./build/offline-rebuild.json
+```
+
+The archive hash is rechecked immediately before installation, so a candidate
+changed after validation fails before output. Source locks and manifests cannot
+share a path or occupy a selected CAD output tree.
 
 `--providers` is a comma-separated list of distributor metadata to return.
 Metadata mode defaults to `lcsc` when the option is omitted. In MPN-only mode,
@@ -317,12 +539,13 @@ userinfo, fragments, and secret-bearing query parameters are removed while
 ordinary public query parameters are retained. Malformed or non-HTTP(S) public
 links are omitted, including on the first uncached run.
 
-Metadata cache entries are provider-scoped under
-`.easyeda_cache/metadata/<provider>/<sha256>/`, with a credential-stripped
-`redacted_raw` envelope and normalized JSON stored as one generation-bound
-pair. They are fresh for 24 hours online; offline mode accepts a stale pair only
-after its request/generation/hash binding validates and never falls through to
-HTTP.
+Where a provider permits persistent caching, metadata cache entries are
+provider-scoped under `.easyeda_cache/metadata/<provider>/<sha256>/`, with a
+credential-stripped `redacted_raw` envelope and normalized JSON stored as one
+generation-bound pair. They are fresh for 24 hours online; offline mode accepts
+a stale pair only after its request/generation/hash binding validates and never
+falls through to HTTP. Mouser is excluded from persistent caching under its
+current API terms and is therefore unavailable in offline mode.
 
 Generated symbols reuse only the existing native `Manufacturer`, `MPN`,
 `LCSC Part`, and `Datasheet` properties. Provider part numbers and URLs,

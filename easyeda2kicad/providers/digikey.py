@@ -26,6 +26,9 @@ from .base import (
 
 DIGIKEY_TOKEN_URL = "https://api.digikey.com/v1/oauth2/token"  # noqa: S105
 DIGIKEY_KEYWORD_SEARCH_URL = "https://api.digikey.com/products/v4/search/keyword"
+DIGIKEY_MEDIA_URL_TEMPLATE = (
+    "https://api.digikey.com/products/v4/search/{product_number}/media"
+)
 DIGIKEY_AUTH_HELP_URL = (
     "https://developer.digikey.com/tutorials-and-resources/oauth-20-2-legged-flow"
 )
@@ -164,6 +167,45 @@ class DigiKeyProvider(BaseMetadataProvider):
                 raise AuthFailedError(self.name, operation="keyword-search")
             raise InvalidResponseError(self.name, operation="keyword-search")
         self.last_raw_response = response
+        return response
+
+    def get_product_media(self, product_number: str) -> Dict[str, Any]:
+        """Return official Product Information V4 media without retaining it."""
+
+        try:
+            exact_product_number = identity_text(
+                product_number, "distributor_part_number"
+            )
+        except (TypeError, ValueError):
+            raise InvalidResponseError(self.name, operation="media-query") from None
+        client_id, client_secret = self._credentials()
+        token = self._get_access_token(client_id, client_secret)
+        site, language, currency = self._locale()
+        encoded_product_number = urllib.parse.quote(exact_product_number, safe="")
+        request = urllib.request.Request(  # noqa: S310 - fixed HTTPS endpoint
+            DIGIKEY_MEDIA_URL_TEMPLATE.format(product_number=encoded_product_number),
+            headers={
+                "Accept": "application/json",
+                "Authorization": "Bearer %s" % token,
+                "X-DIGIKEY-Client-Id": client_id,
+                "X-DIGIKEY-Locale-Site": site,
+                "X-DIGIKEY-Locale-Language": language,
+                "X-DIGIKEY-Locale-Currency": currency,
+            },
+            method="GET",
+        )
+        response = self._request_json(request, operation="media")
+        if response.get("Errors"):
+            error_text = str(response.get("Errors")).casefold()
+            if any(
+                marker in error_text
+                for marker in ("unauthor", "authenticat", "credential", "token")
+            ):
+                raise AuthFailedError(self.name, operation="media")
+            raise InvalidResponseError(self.name, operation="media")
+        # Unlike exact metadata lookup, CAD discovery responses are never
+        # retained on the provider where callers might persist them as raw
+        # cache evidence.
         return response
 
     @staticmethod
@@ -517,6 +559,7 @@ class DigiKeyProvider(BaseMetadataProvider):
 
 __all__ = [
     "DIGIKEY_KEYWORD_SEARCH_URL",
+    "DIGIKEY_MEDIA_URL_TEMPLATE",
     "DIGIKEY_TOKEN_URL",
     "DigiKeyProvider",
 ]

@@ -13,7 +13,7 @@ import pytest
 
 # Local imports
 from easyeda2kicad import __main__ as cli
-from easyeda2kicad.cad import DigiKeyCadSource
+from easyeda2kicad.cad import MouserCadSource
 from easyeda2kicad.metadata.models import (
     CAD_MANUAL_DOWNLOAD_REQUIRED,
     CAD_PACKAGE_READY,
@@ -21,9 +21,10 @@ from easyeda2kicad.metadata.models import (
     normalize_manufacturer,
     normalize_mpn,
 )
-from easyeda2kicad.providers import DigiKeyProvider, MouserProvider
+from easyeda2kicad.providers import MouserProvider
 
-
+MANUFACTURER = "Rectron"
+MPN = "FM220A-W"
 KICAD_CLI = {
     "7": Path(r"C:\Program Files\KiCad\7.0\bin\kicad-cli.exe"),
     "9": Path(r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe"),
@@ -32,61 +33,35 @@ KICAD_CLI = {
 
 
 @pytest.mark.network
-def test_digikey_live_exact_mpn_smoke() -> None:
-    required = ("DIGIKEY_CLIENT_ID", "DIGIKEY_CLIENT_SECRET")
-    if not all(os.environ.get(name, "").strip() for name in required):
-        pytest.skip(
-            "DigiKey live smoke requires DIGIKEY_CLIENT_ID and DIGIKEY_CLIENT_SECRET"
-        )
+def test_mouser_live_fm220a_cad_handoff_smoke() -> None:
+    if not os.environ.get("MOUSER_API_KEY", "").strip():
+        pytest.skip("Mouser CAD handoff smoke requires MOUSER_API_KEY")
 
-    requested_mpn = "OPA333AIDBVR"
-    provider = DigiKeyProvider(timeout=30.0)
-    # One OAuth transaction and one keyword request are the minimum. Disable
-    # automatic retries so this smoke test cannot multiply live API traffic.
+    provider = MouserProvider(timeout=30.0)
+    # One official exact-part request is sufficient. Never multiply live
+    # traffic with automatic retries.
     provider.max_attempts = 1
 
-    record = provider.search_exact_mpn(None, requested_mpn)
-
-    assert record.provider == "digikey"
-    assert normalize_mpn(record.mpn) == normalize_mpn(requested_mpn)
-
-
-@pytest.mark.network
-def test_digikey_live_ad5314_cad_handoff_smoke() -> None:
-    required = ("DIGIKEY_CLIENT_ID", "DIGIKEY_CLIENT_SECRET")
-    if not all(os.environ.get(name, "").strip() for name in required):
-        pytest.skip(
-            "DigiKey CAD handoff smoke requires DIGIKEY_CLIENT_ID and "
-            "DIGIKEY_CLIENT_SECRET"
-        )
-
-    requested_manufacturer = "Analog Devices Inc."
-    requested_mpn = "AD5314BRM"
-    provider = DigiKeyProvider(timeout=30.0)
-    # One OAuth transaction, one exact keyword lookup, and one Media request
-    # are sufficient. Never multiply live traffic with automatic retries.
-    provider.max_attempts = 1
-
-    record = provider.search_exact_mpn(requested_manufacturer, requested_mpn)
+    record = provider.search_exact_mpn(MANUFACTURER, MPN)
     assert normalize_manufacturer(record.manufacturer) == normalize_manufacturer(
-        requested_manufacturer
+        MANUFACTURER
     )
-    assert normalize_mpn(record.mpn) == normalize_mpn(requested_mpn)
+    assert normalize_mpn(record.mpn) == normalize_mpn(MPN)
     assert record.distributor_part_number
 
-    result = DigiKeyCadSource(provider).discover(
+    result = MouserCadSource(provider).discover(
         CadRequest(
-            manufacturer=requested_manufacturer,
-            mpn=requested_mpn,
-            source="digikey",
+            manufacturer=MANUFACTURER,
+            mpn=MPN,
+            source="mouser",
         ),
         exact_record=record,
     )
 
     assert result.status == CAD_MANUAL_DOWNLOAD_REQUIRED
     assert result.package is None
-    assert result.provenance.distributor == "digikey"
-    assert result.provenance.delivery_partner == "ultralibrarian"
+    assert result.provenance.distributor == "mouser"
+    assert result.provenance.delivery_partner == "samacsys"
     assert result.provenance.model_creator is None
     assert result.action_required is not None
     assert result.action_required.code == CAD_MANUAL_DOWNLOAD_REQUIRED
@@ -94,16 +69,15 @@ def test_digikey_live_ad5314_cad_handoff_smoke() -> None:
     assert result.provenance.landing_url == result.action_required.setup_url
 
     handoff = urlsplit(result.action_required.setup_url)
+    hostname = handoff.hostname or ""
     assert handoff.scheme == "https"
     assert handoff.username is None
     assert handoff.password is None
     assert handoff.fragment == ""
-    assert handoff.hostname in {
-        "mm.digikey.com",
-        "www.digikey.com",
-        "ultralibrarian.com",
-        "app.ultralibrarian.com",
-    } or (handoff.hostname or "").endswith(".ultralibrarian.com")
+    assert hostname == "mouser.com" or hostname.endswith(".mouser.com")
+    assert "productdetail" in {
+        segment.casefold() for segment in handoff.path.split("/") if segment
+    }
     secret_query_names = {
         "access_token",
         "apikey",
@@ -119,27 +93,19 @@ def test_digikey_live_ad5314_cad_handoff_smoke() -> None:
 
 
 @pytest.mark.network
-def test_digikey_live_ad5314_package_project_e2e(
+def test_mouser_live_fm220a_package_project_e2e(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    configured_path = os.environ.get("DIGIKEY_AD5314_CAD_PACKAGE", "").strip()
+    configured_path = os.environ.get("MOUSER_FM220A_CAD_PACKAGE", "").strip()
     if not configured_path:
         pytest.skip(
-            "Real package E2E requires DIGIKEY_AD5314_CAD_PACKAGE to name the "
-            "owner-downloaded Ultra Librarian ZIP"
+            "Real package E2E requires MOUSER_FM220A_CAD_PACKAGE to name the "
+            "owner-exported SamacSys KiCad package"
         )
     package_path = Path(configured_path).expanduser()
     if not package_path.is_file():
-        pytest.fail("DIGIKEY_AD5314_CAD_PACKAGE must name an existing regular file")
-    evidence_path = Path(
-        os.environ.get(
-            "DIGIKEY_AD5314_CAD_EVIDENCE",
-            "docs/evidence/issue-7c-digikey-ad5314brm.json",
-        )
-    ).expanduser()
-    if not evidence_path.is_file():
-        pytest.fail("DIGIKEY_AD5314_CAD_EVIDENCE must name an existing regular file")
+        pytest.fail("MOUSER_FM220A_CAD_PACKAGE must name an existing regular file")
 
     missing_versions = [
         version for version, executable in KICAD_CLI.items() if not executable.is_file()
@@ -150,13 +116,13 @@ def test_digikey_live_ad5314_package_project_e2e(
             + ", ".join(missing_versions)
         )
 
-    project_directory = tmp_path / "ad5314-validation"
+    project_directory = tmp_path / "fm220a-validation"
     project_directory.mkdir()
-    project = project_directory / "ad5314-validation.kicad_pro"
+    project = project_directory / "fm220a-validation.kicad_pro"
     project.write_text("{}\n", encoding="utf-8")
-    output = project_directory / "libs" / "AD5314BRM"
+    output = project_directory / "libs" / MPN
     output.parent.mkdir()
-    manifest = project_directory / "build" / "AD5314BRM-package.json"
+    manifest = project_directory / "build" / (MPN + "-package.json")
 
     def no_network(*args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -165,17 +131,15 @@ def test_digikey_live_ad5314_package_project_e2e(
     monkeypatch.setattr(urllib.request, "urlopen", no_network)
     arguments = [
         "--manufacturer",
-        "Analog Devices Inc.",
+        MANUFACTURER,
         "--mpn",
-        "AD5314BRM",
+        MPN,
         "--cad-source",
-        "digikey",
+        "mouser",
         "--cad-package",
         str(package_path),
         "--cad-package-format",
-        "ultralibrarian-kicad",
-        "--cad-package-evidence",
-        str(evidence_path),
+        "samacsys-kicad",
         "--output",
         str(output),
         "--manifest-json",
@@ -200,11 +164,7 @@ def test_digikey_live_ad5314_package_project_e2e(
     assert after_rerun == before_rerun
 
     manifest_text = manifest.read_text(encoding="utf-8")
-    for absolute_path in (
-        tmp_path.resolve(),
-        package_path.resolve(),
-        evidence_path.resolve(),
-    ):
+    for absolute_path in (tmp_path.resolve(), package_path.resolve()):
         assert str(absolute_path) not in manifest_text
         assert absolute_path.as_posix() not in manifest_text
     payload = cast(Mapping[str, Any], json.loads(manifest_text))
@@ -215,18 +175,14 @@ def test_digikey_live_ad5314_package_project_e2e(
     cad = cast(Mapping[str, Any], payload["cad"])
     assert discovery["status"] == CAD_PACKAGE_READY
     assert package_request == {
-        "manufacturer": "Analog Devices Inc.",
-        "mpn": "AD5314BRM",
-        "source": "digikey",
+        "manufacturer": MANUFACTURER,
+        "mpn": MPN,
+        "source": "mouser",
     }
-    assert provenance["distributor"] == "digikey"
-    assert provenance["delivery_partner"] == "ultralibrarian"
+    assert provenance["distributor"] == "mouser"
+    assert provenance["delivery_partner"] == "samacsys"
     assert isinstance(provenance["model_creator"], (str, type(None)))
-    assert provenance["retrieval_mode"] == "manual-official-download"
-    assert (
-        provenance["landing_url"]
-        == "https://www.digikey.com/en/models/617418?tab=ultralibrarian"
-    )
+    assert provenance["retrieval_mode"] == "local-package"
     assert isinstance(provenance["package_hash"], str)
     assert len(provenance["package_hash"]) == 64
     artifacts = cast(list[Mapping[str, Any]], package["artifacts"])
@@ -257,12 +213,12 @@ def test_digikey_live_ad5314_package_project_e2e(
     assert footprint_path.is_file()
     assert any(model_library.iterdir())
     footprint_text = footprint_path.read_text(encoding="utf-8")
-    assert "${KIPRJMOD}/libs/AD5314BRM.3dshapes/" in footprint_text
+    assert "${KIPRJMOD}/libs/FM220A-W.3dshapes/" in footprint_text
 
     symbol_table = (project_directory / "sym-lib-table").read_text(encoding="utf-8")
     footprint_table = (project_directory / "fp-lib-table").read_text(encoding="utf-8")
-    assert "${KIPRJMOD}/libs/AD5314BRM.kicad_sym" in symbol_table
-    assert "${KIPRJMOD}/libs/AD5314BRM.pretty" in footprint_table
+    assert "${KIPRJMOD}/libs/FM220A-W.kicad_sym" in symbol_table
+    assert "${KIPRJMOD}/libs/FM220A-W.pretty" in footprint_table
 
     for version, executable in KICAD_CLI.items():
         symbol_svg = tmp_path / ("symbol-svg-" + version)
@@ -309,19 +265,3 @@ def test_digikey_live_ad5314_package_project_e2e(
         )
         assert list(symbol_svg.glob("*.svg"))
         assert list(footprint_svg.glob("*.svg"))
-
-
-@pytest.mark.network
-def test_mouser_live_exact_mpn_smoke() -> None:
-    if not os.environ.get("MOUSER_API_KEY", "").strip():
-        pytest.skip("Mouser live smoke requires MOUSER_API_KEY")
-
-    requested_mpn = "LM321MF/NOPB"
-    provider = MouserProvider(timeout=30.0)
-    # A single official exact-part request is sufficient for this smoke test.
-    provider.max_attempts = 1
-
-    record = provider.search_exact_mpn(None, requested_mpn)
-
-    assert record.provider == "mouser"
-    assert normalize_mpn(record.mpn) == normalize_mpn(requested_mpn)

@@ -218,14 +218,15 @@ both existing-entry lookup and writing, including MPNs containing `/`.
 | LCSC | none | none |
 | EasyEDA | none | existing CAD cache only |
 | DigiKey | `DIGIKEY_CLIENT_ID`, `DIGIKEY_CLIENT_SECRET`; optional public locale variables | token in memory only |
-| Mouser | `MOUSER_API_KEY` | never persisted |
+| Mouser | `MOUSER_API_KEY` | key never persisted; API records are live-only |
 
 Environment variables are read lazily. `describe_auth_requirements` returns only
 names and help URLs, never values.
 
 ## Cache
 
-The canonical request includes provider, operation, cache schema version,
+For providers whose current terms permit persistent caching, the canonical
+request includes provider, operation, cache schema version,
 normalized MPN/manufacturer, and public locale/feature switches. It excludes API
 keys, client secrets, access tokens, Authorization headers, and secret-bearing
 URLs. Cache schema version 3 stores `raw.json` and `normalized.json` as one
@@ -261,6 +262,13 @@ and raw-replay paths return typed `INVALID_RESPONSE`; they never publish a
 cache pair. If such a value is present in a schema-3 normalized entry, online
 mode treats it as a miss and refetches, offline mode reports `CACHE_CORRUPT`,
 and refresh bypasses it.
+
+Mouser is explicitly excluded from this persistent cache. Its current linked
+Search API terms prohibit caching or storing API content, so
+`MouserProvider.persistent_cache_allowed` is false, it does not retain
+`last_raw_response`, and service orchestration writes neither raw nor normalized
+Mouser entries. An offline Mouser lookup performs no HTTP request and reports
+`OFFLINE_CACHE_MISS`; an old on-disk entry is not replayed.
 
 ## Rate limiting and retry
 
@@ -353,3 +361,33 @@ partial-page exact match. `SuggestedReplacement` is ignored. When multiple
 records share one exact identity, the adapter chooses the lexically smallest
 non-empty `MouserPartNumber`, using product URL only as a stable fallback. MOQ,
 stock, and price never choose record identity or KiCad fields.
+
+For explicit Mouser CAD discovery, the exact record is revalidated and its
+`ProductDetailUrl` is accepted only when it is a sanitized HTTPS Mouser Product
+Detail URL. The CLI returns that URL as a manual ECAD/Library Loader handoff;
+it does not fetch the page or automate SamacSys search, login, requests, or
+download. Distributor remains `mouser`, delivery partner is `samacsys`, and
+model creator remains unknown until proven by the imported package.
+
+## Automatic CAD selection and source lock
+
+`--cad-source auto` first uses EasyEDA only when the exact CAD payload passes
+the normal identity and requested-artifact validation. External landing URLs
+are action-only discovery results and never count as an available CAD package.
+
+External candidates must be explicit local `digikey=ZIP` or `mouser=ZIP`
+inputs. Every archive is inspected through the same fail-closed package
+pipeline before any output. If all material signatures agree, the fixed
+external priority is DigiKey then Mouser. A material signature contains the
+selected symbol pin set, footprint pad set, selected footprint/package name,
+and primary 3D-link basename. Different signatures return
+`CAD_SOURCE_CONFLICT`; no candidate is guessed or partially installed.
+
+An external auto selection is content-locked by schema-1 JSON containing only
+manufacturer, full MPN, selected source, and package SHA-256. Unknown fields,
+identity mismatch, source/hash mismatch, and concurrent/conflicting lock writes
+fail closed. The archive SHA-256 is checked again before installation. Lock
+files are written atomically, contain no machine path, and allow offline
+rebuild from the same already-validated local package. An existing exact lock
+is an explicit reproducibility decision and takes precedence over later source
+availability changes.

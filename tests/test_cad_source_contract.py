@@ -22,7 +22,7 @@ from easyeda2kicad.metadata.models import (
     PartIdentity,
 )
 from easyeda2kicad.metadata.service import resolve_metadata
-from easyeda2kicad.providers import MetadataProvider
+from easyeda2kicad.providers import MetadataProvider, NotFoundError
 
 
 class _UnusedMetadataProvider:
@@ -32,10 +32,12 @@ class _UnusedMetadataProvider:
         return {}
 
     def search_exact_mpn(self, manufacturer: str | None, mpn: str) -> Any:
-        raise AssertionError("metadata lookup was not requested")
+        del manufacturer, mpn
+        raise NotFoundError("lcsc", operation="exact-match")
 
     def get_part_by_distributor_id(self, part_id: str) -> Any:
-        raise AssertionError("metadata lookup was not requested")
+        del part_id
+        raise NotFoundError("lcsc", operation="id-lookup")
 
 
 def _provider_factory(_name: str, _api: EasyedaApi) -> MetadataProvider:
@@ -72,7 +74,6 @@ def test_explicit_external_cad_source_never_constructs_easyeda_provider(
         cad_api=EasyedaApi(offline=True),
         cad_source=source,
         cache=MetadataCache(tmp_path / "cache"),
-        offline=True,
         provider_factory=_provider_factory,
         cad_provider_factory=fail_if_called,
     )
@@ -98,7 +99,6 @@ def test_external_cad_request_requires_complete_identity(tmp_path: Path) -> None
         cad_api=EasyedaApi(offline=True),
         cad_source="digikey",
         cache=MetadataCache(tmp_path / "cache"),
-        offline=True,
         provider_factory=_provider_factory,
         cad_provider_factory=lambda _api: pytest.fail("EasyEDA fallback"),
     )
@@ -124,7 +124,6 @@ def test_manifest_keeps_cad_provenance_roles_separate(
         cad_api=EasyedaApi(offline=True),
         cad_source=source,
         cache=MetadataCache(tmp_path / "cache"),
-        offline=True,
         provider_factory=_provider_factory,
         cad_provider_factory=lambda _api: pytest.fail("EasyEDA fallback"),
     )

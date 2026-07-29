@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import urllib.request
@@ -46,6 +47,98 @@ def _zip_tree(
 
 def _request(source: str = "digikey") -> CadRequest:
     return CadRequest(manufacturer=MANUFACTURER, mpn=MPN, source=source)
+
+
+def _attested_ultralibrarian_archive(
+    destination: Path,
+    *,
+    one_mpn_signal_only: bool = False,
+    include_filename_variants: bool = False,
+) -> Path:
+    fixture = FIXTURE_ROOT / "ultralibrarian-kicad-v1" / "UltraLibrarian"
+    symbol_text = (fixture / "20260725.kicad_sym").read_text(encoding="utf-8")
+    symbol_text = (
+        symbol_text.replace(
+            '    (property "Manufacturer" "Synthetic Devices" (at 0 0 0)\n'
+            "      (effects (font (size 1.27 1.27)) hide)\n"
+            "    )\n",
+            "",
+        )
+        .replace(
+            '    (property "MPN" "SYNTH-PART-01" (at 0 0 0)\n'
+            "      (effects (font (size 1.27 1.27)) hide)\n"
+            "    )\n",
+            "",
+        )
+        .replace(
+            '    (property "Model Creator" "Synthetic Fixture Team" (at 0 0 0)\n'
+            "      (effects (font (size 1.27 1.27)) hide)\n"
+            "    )\n",
+            "",
+        )
+    )
+    if not one_mpn_signal_only:
+        symbol_text = symbol_text.replace(
+            '(property "Datasheet" ""',
+            '(property "Datasheet" "SYNTH-PART-01"',
+        )
+    footprint = (fixture / "Synthetic.pretty" / "SYNTH_FP.kicad_mod").read_bytes()
+    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "KiCADv6/2026-07-28_16-34-01.kicad_sym",
+            symbol_text.encode("utf-8"),
+        )
+        archive.writestr(
+            "KiCADv6/footprints.pretty/SYNTH_FP.kicad_mod",
+            footprint,
+        )
+        if include_filename_variants:
+            archive.writestr(
+                "KiCADv6/footprints.pretty/SYNTH_FP-L.kicad_mod",
+                footprint + b"\n",
+            )
+            archive.writestr(
+                "KiCADv6/footprints.pretty/SYNTH_FP-M.kicad_mod",
+                footprint + b"\n\n",
+            )
+        archive.writestr(
+            "SYNTH_FP.wrl",
+            (fixture / "3D" / "SYNTH_FP.wrl").read_bytes(),
+        )
+    return destination
+
+
+def _write_digikey_evidence(
+    destination: Path,
+    archive: Path,
+    **overrides: object,
+) -> Path:
+    payload: dict[str, object] = {
+        "agreement_url": (
+            "https://www.digikey.com/en/models/123456?tab=ultralibrarian"
+        ),
+        "delivery_partner": "ultralibrarian",
+        "landing_url": ("https://www.digikey.com/en/models/123456?tab=ultralibrarian"),
+        "manufacturer": MANUFACTURER,
+        "model_creator": None,
+        "mpn": MPN,
+        "package_format": "ultralibrarian-kicad",
+        "package_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "product_url": (
+            "https://www.digikey.com/en/products/detail/"
+            "synthetic-devices/SYNTH-PART-01/123456"
+        ),
+        "retrieval_mode": "manual-official-download",
+        "retrieved_at_utc": "2026-07-28T16:34:01Z",
+        "schema_version": 1,
+        "source": "digikey",
+    }
+    payload.update(overrides)
+    destination.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return destination
 
 
 @pytest.mark.parametrize(
@@ -136,14 +229,18 @@ def test_symbol_footprint_property_must_be_unique(
     def mutate_footprint_property(relative: str, value: bytes) -> bytes:
         if not relative.endswith(".kicad_sym"):
             return value
+        text = value.decode("utf-8").replace("\r\n", "\n")
         property_block = (
-            b'    (property "Footprint" "Synthetic:SYNTH_FP" (at 0 0 0)\n'
-            b"      (effects (font (size 1.27 1.27)) hide)\n"
-            b"    )\n"
+            '    (property "Footprint" "Synthetic:SYNTH_FP" (at 0 0 0)\n'
+            "      (effects (font (size 1.27 1.27)) hide)\n"
+            "    )\n"
         )
         if mutation == "missing":
-            return value.replace(property_block, b"")
-        return value.replace(property_block, property_block + property_block)
+            return text.replace(property_block, "").encode("utf-8")
+        return text.replace(
+            property_block,
+            property_block + property_block,
+        ).encode("utf-8")
 
     archive = _zip_tree(
         FIXTURE_ROOT / "ultralibrarian-kicad-v1",
@@ -196,12 +293,13 @@ def test_identity_must_be_proven_by_package_not_only_cli_input(tmp_path: Path) -
     def remove_identity(relative: str, value: bytes) -> bytes:
         if not relative.endswith(".kicad_sym"):
             return value
-        return value.replace(
-            b'    (property "Manufacturer" "Synthetic Devices" (at 0 0 0)\n'
-            b"      (effects (font (size 1.27 1.27)) hide)\n"
-            b"    )\n",
-            b"",
-        )
+        text = value.decode("utf-8").replace("\r\n", "\n")
+        return text.replace(
+            '    (property "Manufacturer" "Synthetic Devices" (at 0 0 0)\n'
+            "      (effects (font (size 1.27 1.27)) hide)\n"
+            "    )\n",
+            "",
+        ).encode("utf-8")
 
     archive = _zip_tree(
         FIXTURE_ROOT / "ultralibrarian-kicad-v1",
@@ -221,6 +319,110 @@ def test_identity_must_be_proven_by_package_not_only_cli_input(tmp_path: Path) -
     assert not output.with_suffix(".kicad_sym").exists()
     assert not output.with_suffix(".pretty").exists()
     assert not output.with_suffix(".3dshapes").exists()
+
+
+def test_hash_bound_manual_handoff_evidence_accepts_real_ultra_layout(
+    tmp_path: Path,
+) -> None:
+    archive = _attested_ultralibrarian_archive(
+        tmp_path / "official.zip",
+        include_filename_variants=True,
+    )
+    evidence = _write_digikey_evidence(tmp_path / "evidence.json", archive)
+    output = tmp_path / "parts"
+
+    result = ingest_cad_package(
+        archive,
+        package_format="auto",
+        request=_request(),
+        output_base=output,
+        evidence_path=evidence,
+    )
+
+    assert result.package.format_name == "ultralibrarian-kicad"
+    assert result.package.format_version == "2"
+    assert result.package.provenance.retrieval_mode == "manual-official-download"
+    assert result.package.provenance.delivery_partner == "ultralibrarian"
+    assert result.package.provenance.model_creator is None
+    assert result.package.provenance.landing_url == (
+        "https://www.digikey.com/en/models/123456?tab=ultralibrarian"
+    )
+    symbol_text = output.with_suffix(".kicad_sym").read_text(encoding="utf-8")
+    assert '(property "Manufacturer" "Synthetic Devices"' in symbol_text
+    assert '(property "MPN" "SYNTH-PART-01"' in symbol_text
+    assert (output.with_suffix(".pretty") / "SYNTH_FP.kicad_mod").is_file()
+    assert (output.with_suffix(".3dshapes") / "SYNTH_FP.wrl").is_file()
+
+
+def test_real_ultra_layout_without_hash_bound_evidence_fails_closed(
+    tmp_path: Path,
+) -> None:
+    archive = _attested_ultralibrarian_archive(tmp_path / "official.zip")
+
+    with pytest.raises(CadPackageError, match="CAD_PACKAGE_FORMAT_UNPROVEN"):
+        ingest_cad_package(
+            archive,
+            package_format="ultralibrarian-kicad",
+            request=_request(),
+            output_base=tmp_path / "parts",
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "error_code"),
+    [
+        ({"package_sha256": "0" * 64}, "CAD_PACKAGE_EVIDENCE_HASH_MISMATCH"),
+        ({"mpn": "SYNTH-PART-01-T"}, "CAD_PACKAGE_EVIDENCE_IDENTITY_MISMATCH"),
+        (
+            {
+                "landing_url": (
+                    "https://www.digikey.com/en/models/123456?access_token=canary"
+                )
+            },
+            "CAD_PACKAGE_EVIDENCE_URL_UNSAFE",
+        ),
+        ({"raw_response": {"private": True}}, "CAD_PACKAGE_EVIDENCE_INVALID"),
+    ],
+)
+def test_manual_handoff_evidence_is_strict_and_fail_closed(
+    tmp_path: Path,
+    overrides: dict[str, object],
+    error_code: str,
+) -> None:
+    archive = _attested_ultralibrarian_archive(tmp_path / "official.zip")
+    evidence = _write_digikey_evidence(
+        tmp_path / "evidence.json",
+        archive,
+        **overrides,
+    )
+
+    with pytest.raises(CadPackageError, match=error_code):
+        ingest_cad_package(
+            archive,
+            package_format="ultralibrarian-kicad",
+            request=_request(),
+            output_base=tmp_path / "parts",
+            evidence_path=evidence,
+        )
+
+
+def test_attested_package_still_requires_multiple_exact_mpn_signals(
+    tmp_path: Path,
+) -> None:
+    archive = _attested_ultralibrarian_archive(
+        tmp_path / "official.zip",
+        one_mpn_signal_only=True,
+    )
+    evidence = _write_digikey_evidence(tmp_path / "evidence.json", archive)
+
+    with pytest.raises(CadPackageError, match="CAD_IDENTITY_UNPROVEN"):
+        ingest_cad_package(
+            archive,
+            package_format="ultralibrarian-kicad",
+            request=_request(),
+            output_base=tmp_path / "parts",
+            evidence_path=evidence,
+        )
 
 
 def test_explicit_adapter_and_source_must_match_package_evidence(
@@ -288,7 +490,7 @@ def test_multiple_matching_footprints_are_rejected(tmp_path: Path) -> None:
     archive = _zip_tree(
         FIXTURE_ROOT / "ultralibrarian-kicad-v1",
         tmp_path / "footprints.zip",
-        extras={"UltraLibrarian/Other.pretty/duplicate.kicad_mod": footprint},
+        extras={"UltraLibrarian/Other.pretty/SYNTH_FP.kicad_mod": footprint},
     )
 
     with pytest.raises(CadPackageError, match="CAD_FOOTPRINT_AMBIGUOUS"):
@@ -642,6 +844,25 @@ def test_cli_package_format_requires_package(tmp_path: Path) -> None:
                 MPN,
                 "--cad-package-format",
                 "ultralibrarian-kicad",
+                "--manifest-json",
+                str(tmp_path / "manifest.json"),
+            ]
+        )
+    )
+
+    assert not cli.valid_arguments(arguments)
+
+
+def test_cli_package_evidence_requires_package(tmp_path: Path) -> None:
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+    arguments = vars(
+        cli.get_parser().parse_args(
+            [
+                "--mpn",
+                MPN,
+                "--cad-package-evidence",
+                str(evidence),
                 "--manifest-json",
                 str(tmp_path / "manifest.json"),
             ]

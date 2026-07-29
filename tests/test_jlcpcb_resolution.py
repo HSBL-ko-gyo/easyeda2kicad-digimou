@@ -113,7 +113,17 @@ def _factory(
 ) -> Callable[[str, EasyedaApi], MetadataProvider]:
     def create(name: str, api: EasyedaApi) -> MetadataProvider:
         del api
-        return cast(MetadataProvider, providers[name])
+        provider = providers.get(name)
+        if provider is None:
+            # CAD handoff discovery may request its explicit external source
+            # even when this test only needs to exercise JLCPCB resolution.
+            # This deliberately does not implement the source-specific CAD
+            # protocol, so discovery returns the typed no-package result.
+            provider = _Provider(
+                name,
+                error=NotFoundError(name, operation="exact-match"),
+            )
+        return cast(MetadataProvider, provider)
 
     return create
 
