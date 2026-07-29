@@ -353,3 +353,26 @@ Detail URL. The CLI returns that URL as a manual ECAD/Library Loader handoff;
 it does not fetch the page or automate SamacSys search, login, requests, or
 download. Distributor remains `mouser`, delivery partner is `samacsys`, and
 model creator remains unknown until proven by the imported package.
+
+## Automatic CAD selection and source lock
+
+`--cad-source auto` first uses EasyEDA only when the exact CAD payload passes
+the normal identity and requested-artifact validation. External landing URLs
+are action-only discovery results and never count as an available CAD package.
+
+External candidates must be explicit local `digikey=ZIP` or `mouser=ZIP`
+inputs. Every archive is inspected through the same fail-closed package
+pipeline before any output. If all material signatures agree, the fixed
+external priority is DigiKey then Mouser. A material signature contains the
+selected symbol pin set, footprint pad set, selected footprint/package name,
+and primary 3D-link basename. Different signatures return
+`CAD_SOURCE_CONFLICT`; no candidate is guessed or partially installed.
+
+An external auto selection is content-locked by schema-1 JSON containing only
+manufacturer, full MPN, selected source, and package SHA-256. Unknown fields,
+identity mismatch, source/hash mismatch, and concurrent/conflicting lock writes
+fail closed. The archive SHA-256 is checked again before installation. Lock
+files are written atomically, contain no machine path, and allow offline
+rebuild from the same already-validated local package. An existing exact lock
+is an explicit reproducibility decision and takes precedence over later source
+availability changes.

@@ -79,6 +79,28 @@ class CadPackageIngestResult:
     discovery: CadDiscoveryResult
 
 
+@dataclass(frozen=True)
+class CadPackageInspection:
+    """Output-free evidence used to compare validated CAD candidates."""
+
+    package: NormalizedCadPackage
+    symbol_name: str
+    footprint_name: str
+    pin_numbers: Tuple[str, ...]
+    pad_numbers: Tuple[str, ...]
+    primary_model_name: str
+
+    def material_signature(
+        self,
+    ) -> Tuple[Tuple[str, ...], Tuple[str, ...], str, str]:
+        return (
+            self.pin_numbers,
+            self.pad_numbers,
+            self.footprint_name.casefold(),
+            self.primary_model_name.casefold(),
+        )
+
+
 _ADAPTERS: Dict[str, PackageAdapter] = {
     "ultralibrarian-kicad": PackageAdapter(
         format_name="ultralibrarian-kicad",
@@ -97,6 +119,65 @@ _ADAPTERS: Dict[str, PackageAdapter] = {
 }
 
 
+def inspect_cad_package(
+    archive_path: Path,
+    *,
+    package_format: str,
+    request: CadRequest,
+    evidence_path: Optional[Path] = None,
+) -> CadPackageInspection:
+    """Validate one package completely without installing any output."""
+
+    normalized_format = package_format.strip().lower()
+    if normalized_format not in CAD_PACKAGE_FORMATS:
+        raise CadPackageError(
+            "CAD_PACKAGE_FORMAT_UNSUPPORTED",
+            "unsupported CAD package format",
+        )
+    package_hash = _sha256_file(archive_path)
+    evidence = (
+        load_package_evidence(
+            evidence_path,
+            request=request,
+            archive_sha256=package_hash,
+            requested_format=normalized_format,
+        )
+        if evidence_path is not None
+        else None
+    )
+    with tempfile.TemporaryDirectory(prefix="easyeda2kicad-cad-inspect-") as temporary:
+        extraction_root = Path(temporary) / "extracted"
+        extracted = extract_zip_safely(archive_path, extraction_root)
+        adapter = _select_adapter(
+            extracted,
+            extraction_root,
+            normalized_format,
+            evidence,
+        )
+        if request.source != adapter.source:
+            raise CadPackageError(
+                "CAD_PACKAGE_SOURCE_MISMATCH",
+                "package format does not match the candidate CAD source",
+            )
+        prepared = _prepare_package(
+            extraction_root,
+            extracted,
+            adapter,
+            request,
+            package_hash,
+            evidence,
+        )
+        primary_model = _primary_model_path(prepared)
+        return CadPackageInspection(
+            package=prepared.normalized,
+            symbol_name=prepared.symbol.name,
+            footprint_name=prepared.footprint.name,
+            pin_numbers=tuple(sorted(prepared.symbol.pin_numbers)),
+            pad_numbers=tuple(sorted(prepared.footprint.pad_numbers)),
+            primary_model_name=primary_model.name,
+        )
+
+
 def ingest_cad_package(
     archive_path: Path,
     *,
@@ -106,6 +187,7 @@ def ingest_cad_package(
     overwrite: bool = False,
     project_relative_model_path: Optional[str] = None,
     evidence_path: Optional[Path] = None,
+    expected_package_hash: Optional[str] = None,
 ) -> CadPackageIngestResult:
     """Validate an untrusted package completely before changing output libraries."""
 
@@ -121,6 +203,14 @@ def ingest_cad_package(
             "output parent directory must already exist",
         )
     package_hash = _sha256_file(archive_path)
+    if (
+        expected_package_hash is not None
+        and package_hash != expected_package_hash.strip().lower()
+    ):
+        raise CadPackageError(
+            "CAD_SOURCE_LOCK_MISMATCH",
+            "CAD package content changed after source selection",
+        )
     evidence = (
         load_package_evidence(
             evidence_path,
@@ -364,14 +454,7 @@ def _install_prepared_package(
     }
 
     footprint_filename = _safe_artifact_filename(prepared.footprint.name + ".kicad_mod")
-    primary_model = next(
-        (
-            path
-            for path in prepared.model_paths
-            if path.suffix.casefold() in (".step", ".stp")
-        ),
-        prepared.model_paths[0],
-    )
+    primary_model = _primary_model_path(prepared)
     portable_model_directory = _safe_project_relative_model_path(
         project_relative_model_path or "{0}.3dshapes".format(output_base.name)
     )
@@ -487,6 +570,17 @@ def _install_prepared_package(
         license=provenance.license,
         notice=provenance.notice,
         artifacts=installed_artifacts,
+    )
+
+
+def _primary_model_path(prepared: PreparedCadPackage) -> Path:
+    return next(
+        (
+            path
+            for path in prepared.model_paths
+            if path.suffix.casefold() in (".step", ".stp")
+        ),
+        prepared.model_paths[0],
     )
 
 
