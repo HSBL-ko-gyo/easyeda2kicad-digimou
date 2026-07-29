@@ -162,6 +162,9 @@ def test_require_providers_is_opt_in_and_writes_manifest_before_failure(
         "provider_errors"
     ] == {"digikey": GUEST_LOOKUP_UNSUPPORTED}
     assert "Required metadata provider digikey" in caplog.text
+    assert "DIGIKEY_CLIENT_ID and DIGIKEY_CLIENT_SECRET" in caplog.text
+    assert "API results are unavailable without valid credentials" in caplog.text
+    assert "https://developer.digikey.com/products" in caplog.text
 
 
 def test_require_providers_succeeds_when_every_selected_provider_returns_record(

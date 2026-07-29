@@ -152,6 +152,9 @@ python examples/check_provider_manifest.py \
 > `--require-provider` in machine mode, when every requested record is required.
 > The required variables are `DIGIKEY_CLIENT_ID`,
 > `DIGIKEY_CLIENT_SECRET`, and `MOUSER_API_KEY`.
+> When one is unavailable or rejected, the human CLI names the variables to
+> configure, explains that API results require them, and prints the official
+> provider setup URL. It never asks for, echoes, or persists the credential.
 
 ## API primer and credential setup
 
