@@ -7,7 +7,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, Dict, Iterable, List, Mapping, Optional, TextIO, Tuple
+from typing import Any, BinaryIO, Dict, Iterable, List, Mapping, Optional, Tuple
 
 # Local imports
 from .metadata.cache import (
@@ -301,9 +301,9 @@ def build_machine_result(
 def write_machine_json(
     value: Mapping[str, Any],
     *,
-    stream: Optional[TextIO] = None,
+    stream: Optional[BinaryIO] = None,
 ) -> None:
-    """Write exactly one UTF-8 JSON document, bypassing a CP932 text codec."""
+    """Write exactly one UTF-8 JSON document to a binary output boundary."""
 
     safe_value = strip_secrets(value)
     payload = (
@@ -316,14 +316,8 @@ def write_machine_json(
         )
         + "\n"
     ).encode("utf-8")
-    target = sys.stdout if stream is None else stream
-    binary = getattr(target, "buffer", None)
-    if binary is not None and callable(getattr(binary, "write", None)):
-        cast_binary = binary
-        cast_binary.write(payload)
-        cast_binary.flush()
-        return
-    target.write(payload.decode("utf-8"))
+    target = sys.stdout.buffer if stream is None else stream
+    target.write(payload)
     target.flush()
 
 

@@ -278,7 +278,7 @@ def test_machine_writer_bypasses_cp932_and_keeps_utf8_unicode() -> None:
     stream = io.TextIOWrapper(buffer, encoding="cp932")
     document = {"identity": {"manufacturer": "TI(德州仪器)", "mpn": "OPA333AIDBVR"}}
 
-    write_machine_json(document, stream=stream)
+    write_machine_json(document, stream=stream.buffer)
     payload = buffer.getvalue()
     stream.detach()
 
@@ -291,7 +291,7 @@ def test_machine_writer_redacts_configured_secret_values(
 ) -> None:
     canary = "seeded-configured-machine-secret"
     monkeypatch.setenv("DIGIKEY_CLIENT_SECRET", canary)
-    stream = io.StringIO()
+    stream = io.BytesIO()
 
     write_machine_json(
         {
@@ -301,8 +301,9 @@ def test_machine_writer_redacts_configured_secret_values(
         stream=stream,
     )
 
-    assert canary not in stream.getvalue()
-    assert "[REDACTED]" in stream.getvalue()
+    output = stream.getvalue().decode("utf-8")
+    assert canary not in output
+    assert "[REDACTED]" in output
 
 
 def test_requested_manifests_redact_configured_secret_values(
