@@ -8,9 +8,10 @@ The post-beta issue sequence is now active on the actual default branch.
 Issues #2 and #1 are merged and closed; Issue #4 Phase A and Issue #7 Phase A
 are merged while their parent issues remain open. Issue #7 Phase B implements
 the intermediate, local-package intake milestone. Issue #5 adds explicit,
-project-local library registration after validated CAD generation. These are
-not the completion of DigiKey/Ultra Librarian or Mouser/SamacSys service
-acquisition.
+project-local library registration after validated CAD generation. Issue #7
+Phase C now completes the DigiKey/Ultra Librarian real-service path through
+official manual download, intake, registration, and KiCad CLI/GUI validation;
+Mouser/SamacSys and final multi-source completion remain outstanding.
 
 RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
 limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
@@ -66,6 +67,10 @@ gates remain.
   successfully with KiCad CLI 7, 9, and 10. The provider's three footprint
   variants share one internal name; the symbol-referenced basename selects
   exactly the unsuffixed file and duplicate exact basenames remain ambiguous.
+- Completed the real-package KiCad 10 GUI validation in the same disposable
+  project: the exact AD5314BRM symbol and all ten pins, the selected
+  `RM_10_ADI` footprint's ten pads and courtyard, and STEP geometry/alignment
+  were confirmed. No user-owned project was used or modified.
 - Added opt-in `--project PATH --register-project-libraries` registration for
   `sym-lib-table` and `fp-lib-table`, with `${KIPRJMOD}` URIs and nicknames
   derived from the output stem. `--project-relative` alone never registers a
@@ -216,18 +221,12 @@ no partial output.
 
 ## Remaining
 
-- DigiKey Phase C now has credentialed API discovery, official guest package
-  acquisition, real-package import/registration, KiCad CLI 7/9/10
-  parse/render evidence, and a KiCad 10 Symbol Editor inspection of the exact
-  AD5314BRM symbol and all ten pins. Phase C remains incomplete until the
-  disposable real package is inspected in the KiCad GUI for footprint/pads and
-  courtyard, and STEP geometry/alignment. No user-owned project may be used.
-- Mouser/SamacSys service discovery/handoff remains unimplemented. DigiKey and
-  Mouser both still require user-owned real-package intake through the completed
-  registration path and real-package KiCad GUI verification before Issue #7
-  can close.
-- Credentialed DigiKey/Mouser live calls and native Linux process E2E remain
-  disclosed external validation gaps.
+- Mouser/SamacSys service discovery/handoff remains unimplemented.
+  DigiKey/Ultra Librarian Phase C is complete, while Mouser still requires
+  user-owned real-package intake through the completed registration path and
+  real-package KiCad GUI verification before Issue #7 can close.
+- Credentialed Mouser live calls and native Linux process E2E remain disclosed
+  external validation gaps.
 
 ## Explicit limitations and risks
 
@@ -243,9 +242,9 @@ no partial output.
 - The local package importer has synthetic-layout, KiCad 7/9/10 CLI, and
   disposable KiCad 10 GUI coverage, but it does not scrape or automate Ultra
   Librarian/SamacSys websites and does not claim service download support.
-  Real provider packages are intentionally not committed. The real package has
-  KiCad CLI and symbol/pin GUI coverage, while footprint/pad/courtyard and 3D
-  GUI verification remain the last Phase C acceptance item.
+  Real provider packages are intentionally not committed. The DigiKey real
+  package has complete KiCad CLI and symbol/pin/footprint/pad/courtyard/3D GUI
+  coverage.
 - Runtime E2E was performed on Windows. POSIX path behavior has deterministic
   unit coverage, but native Linux runtime E2E was not available.
 - The upstream golden resource directory remains absent; the extension adds a

@@ -203,8 +203,8 @@ package identity, atomic/idempotent import, project-table registration,
 portable paths and hashes, then parses and renders the real symbol and
 footprint with the locally installed KiCad 7, 9, and 10 CLIs. It never modifies
 an existing project and does not persist or commit the provider ZIP. Visual
-symbol/pin, footprint/pad, and 3D alignment inspection in the KiCad 10 GUI
-remains an explicit owner-visible final check.
+symbol/pin, footprint/pad/courtyard, and STEP geometry/alignment inspection was
+also completed in the KiCad 10 GUI using that disposable project.
 
 The command calls only the official Product Information V4 API. It revalidates
 the exact manufacturer and full MPN. One unambiguous recognized URL whose
@@ -231,9 +231,11 @@ unmodified KiCad v6+ and STEP package passed archive, exact-identity,
 registration, idempotency, and KiCad CLI 7/9/10 parse/render checks. API
 metadata still requires the user's developer credentials, and guest download
 limits can change. The real package's symbol and all ten pins were inspected in
-the KiCad 10 Symbol Editor; footprint/pad/courtyard and 3D geometry/alignment
-remain an owner-visible GUI check. This is not yet an end-to-end completion
-claim.
+the KiCad 10 Symbol Editor. The selected footprint's ten pads and courtyard,
+plus STEP geometry and alignment, were then confirmed in the KiCad 10 GUI. This
+completes the Phase C DigiKey real-service acquisition, intake, registration,
+CLI, and GUI validation path; Issue #7 remains open for its Mouser and final
+multi-source phases.
 
 ### Import a locally downloaded CAD package
 

@@ -84,7 +84,7 @@ def test_readme_documents_api_only_digikey_manual_handoff_boundary() -> None:
     assert "disposable temporary project" in section
     assert "KiCad 7, 9, and 10 CLIs" in section
     assert "writes no response or credential artifact" in section.replace("\n", " ")
-    assert "This is not yet an end-to-end completion claim" in section.replace(
+    assert "completes the Phase C DigiKey real-service acquisition" in section.replace(
         "\n", " "
     )
 
