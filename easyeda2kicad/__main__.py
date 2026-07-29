@@ -345,6 +345,12 @@ def get_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--require-providers",
+        action="store_true",
+        help="Return a non-zero status unless every selected provider returns a record",
+    )
+
+    parser.add_argument(
         "--offline",
         action="store_true",
         help="Forbid network access and use cache entries only",
@@ -516,6 +522,7 @@ def is_metadata_mode(arguments: dict[str, Any]) -> bool:
         or arguments.get("manifest_json")
         or arguments.get("manifest_csv")
         or arguments.get("require_cad")
+        or arguments.get("require_providers")
         or arguments.get("offline")
         or arguments.get("refresh_metadata")
         or arguments.get("show_conflicts")
@@ -756,6 +763,9 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
     except ValueError as err:
         logging.error(str(err))
         return False
+    arguments["required_provider_names"] = (
+        list(arguments["provider_names"]) if arguments.get("require_providers") else []
+    )
 
     datasheet_provider = arguments.get("datasheet_link")
     if (
@@ -811,6 +821,7 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
             arguments.get("manifest_json"),
             arguments.get("manifest_csv"),
             arguments.get("require_cad"),
+            arguments.get("require_providers"),
             arguments.get("show_conflicts"),
             arguments.get("cad_package"),
             arguments.get("cad_candidates"),
@@ -1315,11 +1326,12 @@ def _write_console_json(value: Any, *, stream: TextIO | None = None) -> None:
 
 
 def _show_metadata_conflicts(merged: MergedPart) -> None:
+    diagnostics = merged.to_dict()["provider_diagnostics"]
     _write_console_json(
         {
             "conflicts": model_to_dict(merged.conflicts),
             "provider_errors": merged.provider_errors,
-            "provider_diagnostics": model_to_dict(merged.provider_diagnostics),
+            "provider_diagnostics": diagnostics,
         }
     )
 
@@ -1390,6 +1402,11 @@ def _log_metadata_diagnostics(merged: MergedPart, *, require_cad: bool) -> None:
             if context is not None and context.status is not None
             else ""
         )
+        setup_url = (
+            sanitize_public_url(context.setup_url)
+            if context is not None and context.setup_url
+            else None
+        )
         logging.warning(
             "Metadata provider %s: %s%s%s",
             provider,
@@ -1397,6 +1414,8 @@ def _log_metadata_diagnostics(merged: MergedPart, *, require_cad: bool) -> None:
             operation,
             status,
         )
+        if setup_url is not None:
+            logging.warning("Metadata provider %s setup: %s", provider, setup_url)
 
     if merged.cad_discovery is not None:
         logging.warning(
@@ -1590,6 +1609,23 @@ def _finish_metadata_mode(
     if merged.verification_status == CAD_PIN_PAD_MISMATCH:
         return 1
     if merged.verification_status == CAD_NOT_FOUND and arguments["require_cad"]:
+        return 1
+    required_providers = {
+        str(provider).lower()
+        for provider in arguments.get("required_provider_names", ())
+    }
+    returned_providers = {
+        record.provider.lower() for record in merged.distributor_records
+    }
+    missing_required = sorted(required_providers.difference(returned_providers))
+    if missing_required:
+        for provider in missing_required:
+            code = merged.provider_errors.get(provider, "PROVIDER_RECORD_MISSING")
+            logging.error(
+                "Required metadata provider %s did not return a record: %s",
+                provider,
+                code,
+            )
         return 1
     return 0
 

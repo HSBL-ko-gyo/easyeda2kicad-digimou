@@ -26,6 +26,7 @@ _MPN_MINUS_EQUIVALENTS = str.maketrans(
 )
 
 SUPPORTED_CAD_SOURCES = frozenset(("easyeda", "digikey", "mouser", "auto"))
+GUEST_LOOKUP_UNSUPPORTED = "GUEST_LOOKUP_UNSUPPORTED"
 CAD_PACKAGE_READY = "CAD_PACKAGE_READY"
 CAD_NOT_ACQUIRED = "CAD_NOT_ACQUIRED"
 CAD_AUTH_REQUIRED = "CAD_AUTH_REQUIRED"
@@ -900,14 +901,23 @@ class ProviderDiagnostic:
     code: str
     operation: Optional[str] = None
     status: Optional[int] = None
+    setup_url: Optional[str] = None
 
     def __post_init__(self) -> None:
         self.code = identity_text(self.code, "diagnostic code")
         self.operation = _optional_identity_text(self.operation, "diagnostic operation")
         self.status = _optional_integer(self.status, "diagnostic status")
+        self.setup_url = _optional_identity_text(self.setup_url, "diagnostic setup URL")
 
     def to_dict(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], model_to_dict(self))
+        document: Dict[str, Any] = {
+            "code": self.code,
+            "operation": self.operation,
+            "status": self.status,
+        }
+        if self.setup_url is not None:
+            document["setup_url"] = self.setup_url
+        return document
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ProviderDiagnostic":
@@ -918,6 +928,9 @@ class ProviderDiagnostic:
                 mapping.get("operation"), "diagnostic operation"
             ),
             status=_optional_integer(mapping.get("status"), "diagnostic status"),
+            setup_url=_optional_identity_text(
+                mapping.get("setup_url"), "diagnostic setup URL"
+            ),
         )
 
 
@@ -999,6 +1012,9 @@ class MergedPart:
         diagnostics = cast(Dict[str, Any], document["provider_diagnostics"])
         for provider, code in self.provider_errors.items():
             diagnostics.setdefault(provider, ProviderDiagnostic(code=code).to_dict())
+        for diagnostic in diagnostics.values():
+            if isinstance(diagnostic, dict) and diagnostic.get("setup_url") is None:
+                diagnostic.pop("setup_url", None)
         return document
 
     @classmethod
@@ -1081,6 +1097,8 @@ def model_to_dict(value: Any) -> Any:
         return str(value)
     if isinstance(value, (datetime, date)):
         return value.isoformat()
+    if isinstance(value, ProviderDiagnostic):
+        return value.to_dict()
     if is_dataclass(value) and not isinstance(value, type):
         return {
             item.name: model_to_dict(getattr(value, item.name))

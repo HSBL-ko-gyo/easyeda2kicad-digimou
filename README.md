@@ -131,7 +131,11 @@ DigiKey, and Mouser. Without `--cad-package`, CAD still defaults to EasyEDA:
 An API is the machine-readable product-search interface used by this CLI; it is
 not the same as browsing a public product page. DigiKey and Mouser require
 credentials issued for the user's own account/application. This project does
-not provide shared credentials:
+not provide shared credentials and does not scrape their product pages. Under
+the currently documented official API capabilities, an anonymous metadata
+request returns `GUEST_LOOKUP_UNSUPPORTED` without making a DigiKey or Mouser
+HTTP request. It is never converted to product `NOT_FOUND`. The diagnostic
+includes a sanitized credential setup URL:
 
 - DigiKey requires `DIGIKEY_CLIENT_ID` and `DIGIKEY_CLIENT_SECRET` from a
   [DigiKey developer application](https://developer.digikey.com/products). The
@@ -198,7 +202,9 @@ The three-provider example below can still exit with status `0` and generate
 valid EasyEDA CAD when either credential is missing. In that case the overall
 result can be `PARTIAL`; inspect `distributor_records`, `provider_errors`, and
 `provider_diagnostics` in the JSON manifest before treating all requested
-metadata providers as successful.
+metadata providers as successful. Add `--require-providers` when every provider
+listed in `--providers` is mandatory; the manifest is still written, but a
+missing record then returns a nonzero status.
 
 Create the parent directory named by `--output` before conversion (for example,
 `mkdir -p ./libs` on Linux/macOS or `New-Item -ItemType Directory -Force ./libs`
@@ -554,9 +560,11 @@ cache keys, symbol properties, or logs:
 
 A missing distributor credential produces a visible provider error and a
 `PARTIAL` result while available metadata and CAD continue. It is not reported
-as product `NOT_FOUND`. JSON/CSV manifests retain the compatibility error code
-and a separate credential-safe diagnostic object containing only `code`,
-optional provider operation, and optional HTTP status.
+as product `NOT_FOUND`: DigiKey/Mouser use `GUEST_LOOKUP_UNSUPPORTED` when the
+official authenticated API cannot be called. JSON/CSV manifests retain the
+compatibility error code and a separate credential-safe diagnostic object
+containing only `code`, optional provider operation, optional HTTP status, and
+an optional sanitized public setup URL.
 
 Useful metadata options include:
 
@@ -573,6 +581,8 @@ Useful metadata options include:
 - `--refresh-metadata` to bypass distributor metadata cache without refreshing
   CAD;
 - `--require-cad` to make confirmed `CAD_NOT_FOUND` return exit status 1;
+- `--require-providers` to require a record from every explicitly selected
+  metadata provider while preserving the default `PARTIAL`/status-0 behavior;
 - `--no-price` and `--no-stock` to omit volatile values from manifests only;
 - `--show-conflicts` to print deterministic conflict/provider diagnostics.
 

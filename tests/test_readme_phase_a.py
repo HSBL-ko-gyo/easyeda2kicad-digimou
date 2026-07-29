@@ -40,6 +40,20 @@ def test_readme_warns_before_the_first_three_provider_command() -> None:
     assert "status `0`" in preamble
     assert "`PARTIAL`" in preamble
     assert "provider_errors" in preamble
+    assert "GUEST_LOOKUP_UNSUPPORTED" in preamble
+    assert "--require-providers" in readme[first_three_provider_command:]
+
+
+def test_readme_documents_policy_safe_guest_metadata_capability() -> None:
+    readme = readme_text()
+    section = readme.split("### Exact-MPN distributor metadata", maxsplit=1)[1]
+
+    assert "does not scrape their product pages" in section
+    assert "without making a DigiKey or Mouser" in section.replace("\n", " ")
+    assert "`GUEST_LOOKUP_UNSUPPORTED`" in section
+    assert "never converted to product `NOT_FOUND`" in section
+    assert "sanitized credential setup URL" in section
+    assert "`--require-providers`" in section
 
 
 def test_readme_describes_local_package_as_an_intermediate_safe_handoff() -> None:

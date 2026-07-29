@@ -26,6 +26,13 @@ gates remain.
 
 ## Completed
 
+- Added the policy-safe credential-free capability result for DigiKey and
+  Mouser metadata. When user credentials are absent, the CLI performs no
+  product-page request or scraping and reports `GUEST_LOOKUP_UNSUPPORTED`
+  rather than `NOT_FOUND`, with a sanitized official credential setup URL.
+  Authenticated official APIs remain preferred. `--require-providers` makes
+  missing selected-provider records fail after requested manifests are written;
+  the established optional `PARTIAL`/status-0 behavior remains the default.
 - Added a same-command `JlcpcbResolution` for every exact-MPN metadata
   acquisition. The anonymous public LCSC/JLCPCB catalogue lookup now runs
   independently of metadata-provider and CAD-source selection, while explicit
@@ -376,6 +383,24 @@ must run with protected environment secrets `DIGIKEY_CLIENT_ID`,
 contain a real pass for both providers. Until that happens, Issue #8 remains
 open and documentation must not replace the current unverified Mouser status
 with a success claim.
+
+## Issue #3 public metadata capability
+
+The official DigiKey Product Information V4 and Mouser Search API paths remain
+credentialed. The CLI now detects absent user credentials locally, makes no
+provider-site request, and emits `GUEST_LOOKUP_UNSUPPORTED` with a sanitized
+setup URL. It never labels that capability boundary as a product miss.
+`--require-providers` is an explicit strictness switch; without it, the existing
+optional-provider `PARTIAL`/status-0 behavior is unchanged.
+
+| Gate | Result |
+| --- | --- |
+| Guest/CLI/provider/CAD/docs focused tests | `222 passed` |
+| Python 3.12.13 full pytest | `895 passed, 75 skipped` |
+| Ruff lint / format | PASS, 85 files |
+| Python 3.12 strict mypy | PASS, 85 source files |
+| Build and Twine check | PASS for sdist and wheel |
+| Changed source and distribution secret/path scan | PASS |
 
 ## Remaining
 

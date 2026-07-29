@@ -113,6 +113,13 @@ def manifest_to_dict(
             record["currency"] = None
         if not include_stock:
             record["stock"] = None
+    diagnostics = result.get("provider_diagnostics")
+    if isinstance(diagnostics, dict):
+        for diagnostic in diagnostics.values():
+            if isinstance(diagnostic, dict) and "setup_url" in diagnostic:
+                diagnostic["setup_url"] = sanitize_public_url(
+                    diagnostic.get("setup_url")
+                )
     return cast(Dict[str, Any], strip_secrets(result))
 
 

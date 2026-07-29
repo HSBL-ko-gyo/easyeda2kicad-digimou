@@ -161,6 +161,22 @@ def test_provider_parser_rejects_unknown_provider() -> None:
         parse_providers("lcsc,octopart", True)
 
 
+def test_require_providers_preserves_the_explicit_selection_boundary() -> None:
+    arguments = _arguments(
+        "--mpn",
+        "PART",
+        "--providers",
+        "mouser",
+        "--datasheet-link",
+        "digikey",
+        "--require-providers",
+    )
+
+    assert valid_arguments(arguments)
+    assert arguments["provider_names"] == ["mouser", "digikey"]
+    assert arguments["required_provider_names"] == ["mouser"]
+
+
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [

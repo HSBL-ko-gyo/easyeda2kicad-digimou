@@ -136,7 +136,8 @@ All models are dataclasses containing JSON-safe primitives.
 - `verification_status`
 - `provenance`
 - `provider_errors` (additive diagnostic field; never a match result)
-- `provider_diagnostics` (additive credential-safe `{code, operation, status}`)
+- `provider_diagnostics` (additive credential-safe
+  `{code, operation, status, setup_url?}`)
 
 Selected merged identity fields and non-empty CAD identity, artifact, and status
 fields have provenance entries of `{provider, source_field}`. `cad.source` and
@@ -157,6 +158,9 @@ or match evidence.
 - `AMBIGUOUS`: multiple distinct exact identities or CAD IDs remain.
 - `AUTH_MISSING`: required environment variables are absent.
 - `AUTH_FAILED`: provider rejected credentials/token.
+- `GUEST_LOOKUP_UNSUPPORTED`: the selected DigiKey/Mouser official API requires
+  user credentials. No provider product-page request is made; the optional
+  diagnostic `setup_url` is a sanitized public credential-setup URL.
 - `RATE_LIMITED`: retries exhausted after HTTP 429.
 - `NETWORK_ERROR`: retryable/non-retryable transport failure.
 - `INVALID_RESPONSE`: JSON or required identity fields are malformed.

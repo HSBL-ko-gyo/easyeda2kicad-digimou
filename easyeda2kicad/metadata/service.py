@@ -14,6 +14,7 @@ from easyeda2kicad.cad.mouser import MouserCadSource, MouserProductApi
 from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
 from easyeda2kicad.providers import (
     AmbiguousMatchError,
+    AuthMissingError,
     CadProvider,
     DigiKeyProvider,
     EasyedaProvider,
@@ -37,6 +38,7 @@ from .models import (
     CAD_IDENTITY_UNRESOLVED,
     CAD_MANUAL_DOWNLOAD_REQUIRED,
     CAD_NOT_ACQUIRED,
+    GUEST_LOOKUP_UNSUPPORTED,
     JLCPCB_CACHE_CACHED,
     JLCPCB_CACHE_ERROR,
     JLCPCB_CACHE_LIVE,
@@ -573,6 +575,8 @@ def resolve_metadata(
             provider_records[name] = record
         except (AmbiguousMatchError, MpnMismatchError) as error:
             raise _fatal_provider_error(error) from None
+        except AuthMissingError as error:
+            _record_guest_lookup_unsupported(result, name, provider, error)
         except (ProviderError, CacheError) as error:
             _record_provider_error(result, name, error)
 
@@ -863,6 +867,13 @@ def _discover_digikey_cad(
         )
     except (AmbiguousMatchError, MpnMismatchError) as error:
         raise _fatal_provider_error(error) from None
+    except AuthMissingError as error:
+        _record_guest_lookup_unsupported(result, "digikey", selected_provider, error)
+        return _digikey_discovery_failure(
+            request,
+            selected_provider,
+            GUEST_LOOKUP_UNSUPPORTED,
+        )
     except ProviderError as error:
         _record_provider_error(result, "digikey", error)
         return _digikey_discovery_failure(
@@ -877,7 +888,11 @@ def _digikey_discovery_failure(
     provider: MetadataProvider,
     code: str,
 ) -> CadDiscoveryResult:
-    auth_required = code in ("AUTH_MISSING", "AUTH_FAILED")
+    auth_required = code in (
+        "AUTH_MISSING",
+        "AUTH_FAILED",
+        GUEST_LOOKUP_UNSUPPORTED,
+    )
     status = CAD_AUTH_REQUIRED if auth_required else CAD_DOWNLOAD_UNAVAILABLE
     requirements = provider.describe_auth_requirements()
     setup_url = requirements.help_url if auth_required else None
@@ -969,6 +984,13 @@ def _discover_mouser_cad(
         )
     except (AmbiguousMatchError, MpnMismatchError) as error:
         raise _fatal_provider_error(error) from None
+    except AuthMissingError as error:
+        _record_guest_lookup_unsupported(result, "mouser", selected_provider, error)
+        return _mouser_discovery_failure(
+            request,
+            selected_provider,
+            GUEST_LOOKUP_UNSUPPORTED,
+        )
     except ProviderError as error:
         _record_provider_error(result, "mouser", error)
         return _mouser_discovery_failure(
@@ -983,7 +1005,11 @@ def _mouser_discovery_failure(
     provider: MetadataProvider,
     code: str,
 ) -> CadDiscoveryResult:
-    auth_required = code in ("AUTH_MISSING", "AUTH_FAILED")
+    auth_required = code in (
+        "AUTH_MISSING",
+        "AUTH_FAILED",
+        GUEST_LOOKUP_UNSUPPORTED,
+    )
     status = CAD_AUTH_REQUIRED if auth_required else CAD_DOWNLOAD_UNAVAILABLE
     requirements = provider.describe_auth_requirements()
     setup_url = requirements.help_url if auth_required else None
@@ -1367,6 +1393,24 @@ def _record_provider_error(
             if isinstance(status, int) and not isinstance(status, bool) and status >= 0
             else None
         ),
+    )
+
+
+def _record_guest_lookup_unsupported(
+    result: MetadataResolution,
+    provider_name: str,
+    provider: MetadataProvider,
+    error: AuthMissingError,
+) -> None:
+    """Describe the policy-safe no-credential capability without web fallback."""
+
+    requirements = provider.describe_auth_requirements()
+    result.provider_errors[provider_name] = GUEST_LOOKUP_UNSUPPORTED
+    result.provider_diagnostics[provider_name] = ProviderDiagnostic(
+        code=GUEST_LOOKUP_UNSUPPORTED,
+        operation=error.operation,
+        status=None,
+        setup_url=sanitize_public_url(requirements.help_url),
     )
 
 
