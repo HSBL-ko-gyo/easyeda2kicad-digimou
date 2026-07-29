@@ -37,11 +37,13 @@ setup(
     platforms="any",
     packages=find_packages(exclude=["tests", "utils"]),
     package_dir={"easyeda2kicad": "easyeda2kicad"},
+    package_data={"easyeda2kicad": ["schemas/*.json"]},
     entry_points={"console_scripts": ["easyeda2kicad = easyeda2kicad.__main__:main"]},
     python_requires=">=3.9",
     install_requires=[],
     extras_require={
         "dev": [
+            "jsonschema>=4.18,<5",
             "pre-commit>=3.0.0",
         ]
     },

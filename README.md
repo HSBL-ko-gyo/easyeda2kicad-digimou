@@ -635,6 +635,47 @@ pin/pad mismatch, or CAD absence with `--require-cad` return `1`.
 Input-validation errors raised after parsing also return `1`; argparse syntax
 errors return `2`.
 
+### Machine JSON for automation
+
+Use the additive `acquire` subcommand when a script, CI job, or AI/EDA tool
+needs one stable result instead of terminal prose:
+
+```bash
+python -m easyeda2kicad acquire \
+  --manufacturer "Texas Instruments" \
+  --mpn OPA333AIDBVR \
+  --providers lcsc,digikey \
+  --cad-source easyeda \
+  --full \
+  --output ./libs/parts \
+  --machine-json
+```
+
+stdout is exactly one schema-v1 UTF-8 JSON document; the version banner is
+omitted and progress stays on stderr. This remains true on Windows CP932
+consoles. The result includes identity, providers, CAD provenance, JLCPCB
+resolution, hashed portable artifacts, project changes, typed warnings/errors,
+and manual actions. Artifact paths use a relative `path` and
+`path_base=project|output|cwd`; machine-global paths and secrets are excluded.
+
+Requirements are explicit: repeat `--require-provider`, or use
+`--require-cad`, `--require-jlcpcb-resolution`, and
+`--require-project-registration`. The last flag requires the existing explicit
+`--register-project-libraries` opt-in; machine mode never prompts, opens a
+browser, or launches KiCad.
+
+Stable machine exit codes are `0` success/optional warning, `2` invalid request,
+`3` required manual action, `4` not found, `5` identity conflict, `6`
+provider/network failure, `7` CAD failure, `8` project registration failure,
+and `70` unexpected internal failure. The process exit always equals the JSON
+`exit_code`.
+
+The checked-in and packaged schema is
+`easyeda2kicad/schemas/machine-result-v1.schema.json`. See
+[Machine JSON contract](docs/MACHINE_JSON.md) for the complete field,
+path-base, exit-code, and versioning rules. JSON Lines events and read-only
+discovery commands are planned for Phase B and are not claimed yet.
+
 By default, all libraries are saved in `~/Documents/Kicad/easyeda2kicad/` (Linux/macOS) or `C:/Users/your_name/Documents/Kicad/easyeda2kicad/` (Windows), with:
 
 - `easyeda2kicad.kicad_sym` file for symbol library (KiCad v6+)
@@ -791,6 +832,7 @@ For detailed information about the EasyEDA data format and how commands are pars
 - **[CMD_FOOTPRINT.md](docs/CMD_FOOTPRINT.md)** - Compact reference for all footprint commands (PAD, TRACK, RECT, etc.) with field definitions and real examples
 - **[CMD_SYMBOL.md](docs/CMD_SYMBOL.md)** - Compact reference for all symbol commands (P, R, C, E, A, PL, PG, PT) with field definitions and real examples
 - **[CMD_3D_MODEL.md](docs/CMD_3D_MODEL.md)** - Reference for 3D model download, OBJ/STEP formats, and WRL conversion
+- **[MACHINE_JSON.md](docs/MACHINE_JSON.md)** - Versioned machine result schema, exit codes, paths, and compatibility policy
 
 ## 🔥 Important Notes
 

@@ -1,0 +1,467 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/schemas/machine-result-v1.schema.json",
+  "title": "easyeda2kicad acquire machine result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "command",
+    "status",
+    "exit_code",
+    "identity",
+    "providers",
+    "cad",
+    "jlcpcb",
+    "artifacts",
+    "project_changes",
+    "warnings",
+    "errors",
+    "actions_required"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "command": {
+      "const": "acquire"
+    },
+    "status": {
+      "enum": [
+        "SUCCEEDED",
+        "SUCCEEDED_WITH_WARNINGS",
+        "ACTION_REQUIRED",
+        "FAILED"
+      ]
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        70
+      ]
+    },
+    "identity": {
+      "$ref": "#/$defs/identity"
+    },
+    "providers": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/providerResult"
+      }
+    },
+    "cad": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/cad"
+        }
+      ]
+    },
+    "jlcpcb": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/jlcpcb"
+        }
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "project_changes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/projectChange"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "actions_required": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    }
+  },
+  "$defs": {
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manufacturer",
+        "mpn"
+      ],
+      "properties": {
+        "manufacturer": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "mpn": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "providerResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "record",
+        "diagnostic"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "FOUND",
+            "UNAVAILABLE"
+          ]
+        },
+        "record": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/providerRecord"
+            }
+          ]
+        },
+        "diagnostic": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/providerDiagnostic"
+            }
+          ]
+        }
+      }
+    },
+    "providerRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "distributor_part_number",
+        "manufacturer",
+        "mpn",
+        "product_url",
+        "datasheet_url",
+        "retrieved_at"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "distributor_part_number": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "manufacturer": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "mpn": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "product_url": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "datasheet_url": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "retrieved_at": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "providerDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "operation",
+        "status",
+        "setup_url"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "status": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "setup_url": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "cad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "selected_source",
+        "verification_status",
+        "distributor",
+        "delivery_partner",
+        "model_creator",
+        "retrieval_mode",
+        "package_hash",
+        "discovery_status"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "selected_source": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "verification_status": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "distributor": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "delivery_partner": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "model_creator": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "retrieval_mode": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "package_hash": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "discovery_status": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "jlcpcb": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jlcpcb_part_number",
+        "lcsc_part_number",
+        "match_status",
+        "checked_at",
+        "stock",
+        "cache_state",
+        "manual_action_required",
+        "global_sourcing_candidates"
+      ],
+      "properties": {
+        "jlcpcb_part_number": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "lcsc_part_number": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "match_status": {
+          "type": "string"
+        },
+        "checked_at": {
+          "type": "string"
+        },
+        "stock": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "cache_state": {
+          "type": "string"
+        },
+        "manual_action_required": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "global_sourcing_candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sourcingCandidate"
+          }
+        }
+      }
+    },
+    "sourcingCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "manufacturer_part_number",
+        "distributor_part_number",
+        "product_url"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "manufacturer_part_number": {
+          "type": "string"
+        },
+        "distributor_part_number": {
+          "type": "string"
+        },
+        "product_url": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "path",
+        "path_base",
+        "sha256"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "pattern": "(^/|^[A-Za-z]:|(^|/)\\.\\.(/|$)|\\\\)"
+          }
+        },
+        "path_base": {
+          "enum": [
+            "project",
+            "output",
+            "cwd"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "projectChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "path_base",
+        "action",
+        "nickname",
+        "uri"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "pattern": "(^/|^[A-Za-z]:|(^|/)\\.\\.(/|$)|\\\\)"
+          }
+        },
+        "path_base": {
+          "const": "project"
+        },
+        "action": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "pattern": "^\\$\\{KIPRJMOD\\}/"
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "provider"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "provider",
+        "action",
+        "handoff_url"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handoff_url": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    }
+  }
+}

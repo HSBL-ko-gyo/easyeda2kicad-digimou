@@ -1,6 +1,7 @@
 include LICENSE
 include NOTICE
 include README.md
+include easyeda2kicad/schemas/machine-result-v1.schema.json
 
 prune devtools
 prune tests
