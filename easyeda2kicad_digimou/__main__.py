@@ -78,7 +78,12 @@ from .metadata.models import (
     normalize_manufacturer,
     normalize_mpn,
 )
-from .metadata.service import MetadataResolution, MetadataServiceError, resolve_metadata
+from .metadata.service import (
+    MetadataResolution,
+    MetadataServiceError,
+    discover_auto_cad_fallback,
+    resolve_metadata,
+)
 from .metadata.symbol_fields import (
     build_native_symbol_fields,
     build_symbol_fields,
@@ -1370,6 +1375,30 @@ def _verify_metadata_cad(
     return VERIFIED, symbol, footprint
 
 
+def _missing_requested_easyeda_artifacts(
+    arguments: dict[str, Any],
+    result: MetadataResolution,
+    verification_status: str,
+    symbol: EeSymbol | None,
+    footprint: EeFootprint | None,
+) -> tuple[str, ...]:
+    """Return requested artifacts that cannot be safely exported from EasyEDA."""
+
+    missing: list[str] = []
+    if arguments["symbol"] and symbol is None:
+        missing.append("symbol")
+    if arguments["footprint"] and footprint is None:
+        missing.append("footprint")
+    if arguments["3d"] and (result.cad is None or not result.cad.model_3d):
+        missing.append("model_3d")
+    if verification_status == CAD_PIN_PAD_MISMATCH:
+        if arguments["symbol"]:
+            missing.append("symbol")
+        if arguments["footprint"]:
+            missing.append("footprint")
+    return tuple(dict.fromkeys(missing))
+
+
 def _update_cad_artifact_paths(
     result: MetadataResolution,
     arguments: dict[str, Any],
@@ -1650,6 +1679,32 @@ def _resolve_metadata_request(
             except (KeyError, TypeError, ValueError, IndexError):
                 # Missing 3D data is already a supported non-fatal upstream case.
                 pass
+    if (
+        arguments["cad_source"] == "auto"
+        and discover_auto_handoff
+        and result.cad_discovery is None
+    ):
+        missing_artifacts = _missing_requested_easyeda_artifacts(
+            arguments,
+            result,
+            verification_status,
+            symbol,
+            footprint,
+        )
+        if missing_artifacts:
+            fallback_providers = list(
+                dict.fromkeys([*arguments["provider_names"], "digikey", "mouser"])
+            )
+            discovery = discover_auto_cad_fallback(
+                result,
+                fallback_providers,
+                missing_artifacts,
+                metadata_api=metadata_api,
+                offline=arguments["offline"],
+            )
+            if discovery is not None:
+                result.cad_discovery = discovery
+                result.blocking_error = discovery.status
     return cad_api, result, verification_status, symbol, footprint
 
 
