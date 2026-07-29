@@ -34,6 +34,7 @@ from .models import (
     CAD_AUTH_REQUIRED,
     CAD_DOWNLOAD_UNAVAILABLE,
     CAD_IDENTITY_UNRESOLVED,
+    CAD_MANUAL_DOWNLOAD_REQUIRED,
     CAD_NOT_ACQUIRED,
     SUPPORTED_CAD_SOURCES,
     CadActionRequired,
@@ -195,6 +196,7 @@ def resolve_metadata(
     cache: Optional[MetadataCache] = None,
     offline: bool = False,
     refresh_metadata: bool = False,
+    discover_auto_handoff: bool = True,
     provider_factory: MetadataProviderFactory = create_metadata_provider,
     cad_provider_factory: CadProviderFactory = create_cad_provider,
 ) -> MetadataResolution:
@@ -519,8 +521,102 @@ def resolve_metadata(
             offline=offline,
         )
         result.blocking_error = result.cad_discovery.status
+    elif (
+        selected_cad_source == "auto"
+        and discover_auto_handoff
+        and result.cad_data is None
+    ):
+        result.cad_discovery = _discover_auto_cad_handoff(
+            result,
+            selected,
+            provider_instances,
+            provider_records,
+            provider_factory=provider_factory,
+            metadata_api=metadata_api,
+            offline=offline,
+        )
+        if result.cad_discovery is not None:
+            result.blocking_error = result.cad_discovery.status
 
     return result
+
+
+def _discover_auto_cad_handoff(
+    result: MetadataResolution,
+    selected_providers: Sequence[str],
+    provider_instances: Mapping[str, MetadataProvider],
+    provider_records: Mapping[str, DistributorRecord],
+    *,
+    provider_factory: MetadataProviderFactory,
+    metadata_api: EasyedaApi,
+    offline: bool,
+) -> Optional[CadDiscoveryResult]:
+    """Return an action only; a landing page is never an auto-selected package."""
+
+    attempts: List[CadDiscoveryResult] = []
+    selected = frozenset(selected_providers)
+    for source in ("digikey", "mouser"):
+        if source not in selected:
+            continue
+        if source == "digikey":
+            discovery = _discover_digikey_cad(
+                result,
+                provider_instances.get(source),
+                provider_records.get(source),
+                provider_factory=provider_factory,
+                metadata_api=metadata_api,
+                offline=offline,
+            )
+        else:
+            discovery = _discover_mouser_cad(
+                result,
+                provider_instances.get(source),
+                provider_records.get(source),
+                provider_factory=provider_factory,
+                metadata_api=metadata_api,
+                offline=offline,
+            )
+        attempts.append(discovery)
+        if discovery.status == CAD_MANUAL_DOWNLOAD_REQUIRED:
+            return _auto_handoff_result(discovery)
+    return _auto_handoff_result(attempts[0]) if attempts else None
+
+
+def _auto_handoff_result(discovery: CadDiscoveryResult) -> CadDiscoveryResult:
+    request = discovery.request
+    auto_request = (
+        CadRequest(
+            manufacturer=request.manufacturer,
+            mpn=request.mpn,
+            source="auto",
+        )
+        if request is not None
+        else None
+    )
+    action = discovery.action_required
+    detail = (
+        (
+            "No acquired, identity-verified, KiCad-validated package is "
+            "available for auto selection. "
+        )
+        + action.detail
+        if action is not None
+        else (
+            "No acquired, identity-verified, KiCad-validated package is "
+            "available for auto selection"
+        )
+    )
+    return CadDiscoveryResult(
+        requested_source="auto",
+        status=discovery.status,
+        request=auto_request,
+        provenance=CadProvenance.from_dict(discovery.provenance.to_dict()),
+        action_required=CadActionRequired(
+            code=discovery.status,
+            detail=detail,
+            setup_url=(action.setup_url if action is not None else None),
+        ),
+    )
 
 
 def _discover_digikey_cad(

@@ -13,7 +13,15 @@ from typing import Any, TextIO
 
 # Local imports
 from ._version import __version__
-from .cad import CAD_PACKAGE_FORMATS, CadPackageError, ingest_cad_package
+from .cad import (
+    CAD_PACKAGE_FORMATS,
+    CadPackageCandidate,
+    CadPackageError,
+    CadPackageIngestResult,
+    ingest_cad_package,
+    select_auto_cad_package,
+    write_source_lock,
+)
 from .easyeda.easyeda_api import EasyedaApi
 from .easyeda.easyeda_importer import (
     Easyeda3dModelImporter,
@@ -34,6 +42,11 @@ from .metadata.merge import (
     VERIFIED,
 )
 from .metadata.models import (
+    CAD_SOURCE_CONFLICT,
+    CAD_SOURCE_LOCK_MISMATCH,
+    CadActionRequired,
+    CadDiscoveryResult,
+    CadProvenance,
     CadRequest,
     MergedPart,
     PartIdentity,
@@ -277,6 +290,34 @@ def get_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--cad-candidate",
+        action="append",
+        default=[],
+        metavar="SOURCE=ZIP",
+        help=(
+            "Validated local package candidate for --cad-source auto; "
+            "repeat with digikey=PATH and mouser=PATH"
+        ),
+        required=False,
+    )
+
+    parser.add_argument(
+        "--cad-candidate-evidence",
+        action="append",
+        default=[],
+        metavar="SOURCE=JSON",
+        help="Optional hash-bound evidence for the matching --cad-candidate source",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--cad-source-lock",
+        type=str,
+        help="Atomic source/package SHA-256 lock for reproducible auto selection",
+        required=False,
+    )
+
+    parser.add_argument(
         "--datasheet-link",
         choices=("manufacturer", "lcsc", "digikey", "mouser"),
         help="Select the KiCad Datasheet property source",
@@ -468,6 +509,9 @@ def is_metadata_mode(arguments: dict[str, Any]) -> bool:
         or arguments.get("cad_package")
         or arguments.get("cad_package_format", "auto") != "auto"
         or arguments.get("cad_package_evidence")
+        or arguments.get("cad_candidate")
+        or arguments.get("cad_candidate_evidence")
+        or arguments.get("cad_source_lock")
         or arguments.get("datasheet_link") is not None
         or arguments.get("manifest_json")
         or arguments.get("manifest_csv")
@@ -499,15 +543,37 @@ def parse_providers(value: str | None, metadata_mode: bool) -> list[str]:
     return list(dict.fromkeys(providers))
 
 
+def parse_cad_candidate_paths(
+    values: list[str],
+    *,
+    option_name: str,
+) -> dict[str, str]:
+    """Parse repeatable source=path values without guessing a provider."""
+
+    parsed: dict[str, str] = {}
+    for value in values:
+        source, separator, raw_path = value.partition("=")
+        source = source.strip().lower()
+        raw_path = raw_path.strip()
+        if not separator or source not in ("digikey", "mouser") or not raw_path:
+            raise ValueError(f"{option_name} requires digikey=PATH or mouser=PATH")
+        if source in parsed:
+            raise ValueError(f"{option_name} accepts one path per source")
+        parsed[source] = raw_path
+    return parsed
+
+
 def _manifest_collides_with_selected_cad_output(arguments: dict[str, Any]) -> bool:
-    """Return whether a manifest file would occupy a selected output ancestor."""
+    """Return whether a metadata file would occupy a selected output ancestor."""
 
     output = arguments.get("output")
     if not output:
         return False
 
     selected_outputs: list[tuple[str, Path, bool]] = []
-    imports_package = bool(arguments.get("cad_package"))
+    imports_package = bool(
+        arguments.get("cad_package") or arguments.get("cad_candidates")
+    )
     if arguments["symbol"] or imports_package:
         selected_outputs.append(("symbol", Path(f"{output}.kicad_sym"), True))
     if arguments["footprint"] or imports_package:
@@ -525,15 +591,22 @@ def _manifest_collides_with_selected_cad_output(arguments: dict[str, Any]) -> bo
         (description, path.resolve(), is_file)
         for description, path, is_file in selected_outputs
     ]
-    for option_name in ("manifest_json", "manifest_csv"):
+    for option_name in ("manifest_json", "manifest_csv", "cad_source_lock"):
         manifest = arguments.get(option_name)
         if not manifest:
             continue
         resolved_manifest = Path(manifest).resolve()
         for description, resolved_output, output_is_file in resolved_outputs:
-            if _same_or_descendant(resolved_output, resolved_manifest) or (
-                output_is_file
-                and _same_or_descendant(resolved_manifest, resolved_output)
+            if (
+                _same_or_descendant(resolved_output, resolved_manifest)
+                or (
+                    output_is_file
+                    and _same_or_descendant(resolved_manifest, resolved_output)
+                )
+                or (
+                    option_name == "cad_source_lock"
+                    and _same_or_descendant(resolved_manifest, resolved_output)
+                )
             ):
                 logging.error(
                     "--%s path conflicts with the selected %s output tree",
@@ -549,6 +622,73 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
     arguments["metadata_mode"] = metadata_mode
     if arguments.get("cad_source") not in SUPPORTED_CAD_SOURCES:
         logging.error("Unsupported CAD source")
+        return False
+    raw_candidates = arguments.get("cad_candidate") or []
+    raw_candidate_evidence = arguments.get("cad_candidate_evidence") or []
+    if isinstance(raw_candidates, str):
+        raw_candidates = [raw_candidates]
+    if isinstance(raw_candidate_evidence, str):
+        raw_candidate_evidence = [raw_candidate_evidence]
+    try:
+        arguments["cad_candidates"] = parse_cad_candidate_paths(
+            raw_candidates,
+            option_name="--cad-candidate",
+        )
+        arguments["cad_candidate_evidence_paths"] = parse_cad_candidate_paths(
+            raw_candidate_evidence,
+            option_name="--cad-candidate-evidence",
+        )
+    except ValueError as error:
+        logging.error("%s", error)
+        return False
+    if arguments["cad_candidates"]:
+        if arguments.get("cad_package"):
+            logging.error("--cad-candidate cannot be combined with --cad-package")
+            return False
+        if arguments.get("cad_source") != "auto":
+            logging.error("--cad-candidate requires --cad-source auto")
+            return False
+        if not arguments.get("manufacturer") or not arguments.get("mpn"):
+            logging.error("--cad-candidate requires --manufacturer and an exact --mpn")
+            return False
+        if arguments.get("cad_package_format", "auto") != "auto":
+            logging.error("--cad-package-format cannot be used with --cad-candidate")
+            return False
+        unknown_evidence = set(arguments["cad_candidate_evidence_paths"]).difference(
+            arguments["cad_candidates"]
+        )
+        if unknown_evidence:
+            logging.error(
+                "--cad-candidate-evidence requires a matching --cad-candidate"
+            )
+            return False
+        for source, candidate_path in arguments["cad_candidates"].items():
+            if not Path(candidate_path).is_file():
+                logging.error(
+                    "--cad-candidate %s path must be an existing ZIP file",
+                    source,
+                )
+                return False
+        for source, evidence_path in arguments["cad_candidate_evidence_paths"].items():
+            if not Path(evidence_path).is_file():
+                logging.error(
+                    "--cad-candidate-evidence %s path must be an existing JSON file",
+                    source,
+                )
+                return False
+        source_lock = arguments.get("cad_source_lock")
+        if (
+            source_lock
+            and Path(source_lock).exists()
+            and not Path(source_lock).is_file()
+        ):
+            logging.error("--cad-source-lock must name a JSON file")
+            return False
+    elif arguments["cad_candidate_evidence_paths"]:
+        logging.error("--cad-candidate-evidence requires --cad-candidate")
+        return False
+    elif arguments.get("cad_source_lock"):
+        logging.error("--cad-source-lock requires --cad-candidate")
         return False
     if arguments.get("cad_package"):
         if not arguments.get("manufacturer") or not arguments.get("mpn"):
@@ -639,6 +779,7 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
             return False
         if not (
             arguments.get("cad_package")
+            or arguments.get("cad_candidates")
             or (arguments["symbol"] and arguments["footprint"])
         ):
             logging.error(
@@ -672,6 +813,7 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
             arguments.get("require_cad"),
             arguments.get("show_conflicts"),
             arguments.get("cad_package"),
+            arguments.get("cad_candidates"),
         ]
     ):
         logging.error(
@@ -733,6 +875,7 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
             arguments["3d"],
             arguments["svg"],
             arguments.get("cad_package"),
+            arguments.get("cad_candidates"),
         ]
     )
 
@@ -758,6 +901,27 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
         return True
 
     arguments["output"] = str(base_folder / lib_name)
+    if arguments.get("cad_candidates") and not arguments.get("cad_source_lock"):
+        arguments["cad_source_lock"] = "{0}.cad-source-lock.json".format(
+            arguments["output"]
+        )
+    if arguments.get("cad_source_lock"):
+        source_lock_path = Path(arguments["cad_source_lock"]).resolve()
+        for manifest_option in ("manifest_json", "manifest_csv"):
+            manifest_value = arguments.get(manifest_option)
+            if not manifest_value:
+                continue
+            manifest_path = Path(manifest_value).resolve()
+            if (
+                source_lock_path == manifest_path
+                or _same_or_descendant(source_lock_path, manifest_path)
+                or _same_or_descendant(manifest_path, source_lock_path)
+            ):
+                logging.error(
+                    "--cad-source-lock and --%s paths cannot contain one another",
+                    manifest_option.replace("_", "-"),
+                )
+                return False
 
     if arguments["project_relative"]:
         try:
@@ -1259,7 +1423,37 @@ def _log_metadata_diagnostics(merged: MergedPart, *, require_cad: bool) -> None:
 def _run_metadata_mode(arguments: dict[str, Any]) -> int:
     if arguments.get("cad_package"):
         return _run_cad_package_mode(arguments)
+    if arguments.get("cad_candidates"):
+        return _run_auto_cad_package_mode(arguments)
 
+    resolved = _resolve_metadata_request(arguments)
+    if resolved is None:
+        return 1
+    cad_api, result, verification_status, symbol, footprint = resolved
+    return _finish_metadata_mode(
+        arguments,
+        cad_api,
+        result,
+        verification_status,
+        symbol,
+        footprint,
+    )
+
+
+def _resolve_metadata_request(
+    arguments: dict[str, Any],
+    *,
+    discover_auto_handoff: bool = True,
+) -> (
+    tuple[
+        EasyedaApi,
+        MetadataResolution,
+        str,
+        EeSymbol | None,
+        EeFootprint | None,
+    ]
+    | None
+):
     # CAD and metadata caches intentionally have different control planes.
     cad_api = EasyedaApi(
         use_cache=arguments["use_cache"] or arguments["offline"],
@@ -1279,10 +1473,11 @@ def _run_metadata_mode(arguments: dict[str, Any]) -> int:
             metadata_api=metadata_api,
             offline=arguments["offline"],
             refresh_metadata=arguments["refresh_metadata"],
+            discover_auto_handoff=discover_auto_handoff,
         )
     except MetadataServiceError as error:
         logging.error("%s", error)
-        return 1
+        return None
 
     verification_status, symbol, footprint = _verify_metadata_cad(
         result,
@@ -1303,7 +1498,17 @@ def _run_metadata_mode(arguments: dict[str, Any]) -> int:
             except (KeyError, TypeError, ValueError, IndexError):
                 # Missing 3D data is already a supported non-fatal upstream case.
                 pass
+    return cad_api, result, verification_status, symbol, footprint
 
+
+def _finish_metadata_mode(
+    arguments: dict[str, Any],
+    cad_api: EasyedaApi,
+    result: MetadataResolution,
+    verification_status: str,
+    symbol: EeSymbol | None,
+    footprint: EeFootprint | None,
+) -> int:
     merged = result.to_merged(verification_status)
     export_failed = False
     cad_export_succeeded = False
@@ -1389,6 +1594,164 @@ def _run_metadata_mode(arguments: dict[str, Any]) -> int:
     return 0
 
 
+def _run_auto_cad_package_mode(arguments: dict[str, Any]) -> int:
+    """Prefer verified EasyEDA CAD, then select only fully validated packages."""
+
+    manufacturer = arguments.get("manufacturer")
+    mpn = arguments.get("mpn")
+    if not isinstance(manufacturer, str) or not isinstance(mpn, str):
+        logging.error("Auto CAD package identity was not validated")
+        return 1
+    lock_path = Path(
+        arguments.get("cad_source_lock")
+        or "{0}.cad-source-lock.json".format(arguments["output"])
+    )
+    resolved = _resolve_metadata_request(arguments, discover_auto_handoff=False)
+    if resolved is None:
+        return 1
+    cad_api, metadata_result, verification_status, symbol, footprint = resolved
+    if (
+        not lock_path.exists()
+        and metadata_result.cad_data is not None
+        and verification_status == VERIFIED
+        and metadata_result.blocking_error is None
+    ):
+        return _finish_metadata_mode(
+            arguments,
+            cad_api,
+            metadata_result,
+            verification_status,
+            symbol,
+            footprint,
+        )
+
+    candidates = [
+        CadPackageCandidate(
+            source=source,
+            archive_path=Path(path),
+            evidence_path=(
+                Path(arguments["cad_candidate_evidence_paths"][source])
+                if source in arguments["cad_candidate_evidence_paths"]
+                else None
+            ),
+        )
+        for source, path in arguments["cad_candidates"].items()
+    ]
+    try:
+        selection = select_auto_cad_package(
+            candidates,
+            manufacturer=manufacturer,
+            mpn=mpn,
+            source_lock_path=lock_path,
+        )
+    except CadPackageError as error:
+        logging.error("%s", error)
+        if _write_auto_selection_failure(
+            arguments,
+            metadata_result,
+            manufacturer,
+            mpn,
+            error,
+        ):
+            return 1
+        return 1
+
+    selected = selection.selected
+    request = CadRequest(
+        manufacturer=manufacturer,
+        mpn=mpn,
+        source=selected.candidate.source,
+    )
+    try:
+        result = ingest_cad_package(
+            selected.candidate.archive_path,
+            package_format=selected.inspection.package.format_name,
+            request=request,
+            output_base=Path(arguments["output"]),
+            overwrite=arguments["overwrite"],
+            project_relative_model_path=_package_model_relative_path(arguments),
+            evidence_path=selected.candidate.evidence_path,
+            expected_package_hash=selection.source_lock.package_sha256,
+        )
+        if (
+            result.package.provenance.package_hash
+            != selection.source_lock.package_sha256
+        ):
+            raise CadPackageError(
+                "CAD_SOURCE_LOCK_MISMATCH",
+                "installed package hash changed after candidate validation",
+            )
+        write_source_lock(lock_path, selection.source_lock)
+    except CadPackageError as error:
+        logging.error("%s", error)
+        return 1
+
+    logging.info(
+        "Auto CAD selected %s package %s",
+        request.source,
+        selection.source_lock.package_sha256,
+    )
+    return _finish_ingested_package(
+        arguments,
+        request,
+        result,
+        metadata_result=metadata_result,
+    )
+
+
+def _write_auto_selection_failure(
+    arguments: dict[str, Any],
+    result: MetadataResolution,
+    manufacturer: str,
+    mpn: str,
+    error: CadPackageError,
+) -> bool:
+    if error.code == CAD_SOURCE_CONFLICT:
+        status = CAD_SOURCE_CONFLICT
+    elif error.code.startswith("CAD_SOURCE_LOCK_"):
+        status = CAD_SOURCE_LOCK_MISMATCH
+    else:
+        return False
+    request = CadRequest(
+        manufacturer=manufacturer,
+        mpn=mpn,
+        source="auto",
+    )
+    result.cad = None
+    result.cad_data = None
+    result.cad_discovery = CadDiscoveryResult(
+        requested_source="auto",
+        status=status,
+        request=request,
+        provenance=CadProvenance(
+            retrieval_mode="validated-local-package-selection",
+        ),
+        action_required=CadActionRequired(
+            code=status,
+            detail=error.detail,
+        ),
+    )
+    result.blocking_error = status
+    merged = result.to_merged(overall_status=PARTIAL)
+    _log_metadata_diagnostics(merged, require_cad=arguments["require_cad"])
+    return _write_requested_manifests(merged, arguments)
+
+
+def _package_model_relative_path(arguments: dict[str, Any]) -> str | None:
+    model_relative_path = arguments.get("project_relative_3d_path")
+    if isinstance(model_relative_path, str):
+        return model_relative_path
+    relative_model_directory = relative_path_if_within(
+        Path.cwd().resolve(),
+        Path("{0}.3dshapes".format(arguments["output"])).resolve(),
+    )
+    return (
+        relative_model_directory.as_posix()
+        if relative_model_directory is not None
+        else None
+    )
+
+
 def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
     """Import one already downloaded package without provider/network access."""
 
@@ -1402,17 +1765,6 @@ def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
         mpn=mpn,
         source=arguments["cad_source"],
     )
-    model_relative_path = arguments.get("project_relative_3d_path")
-    if not isinstance(model_relative_path, str):
-        relative_model_directory = relative_path_if_within(
-            Path.cwd().resolve(),
-            Path("{0}.3dshapes".format(arguments["output"])).resolve(),
-        )
-        model_relative_path = (
-            relative_model_directory.as_posix()
-            if relative_model_directory is not None
-            else None
-        )
     try:
         result = ingest_cad_package(
             Path(arguments["cad_package"]),
@@ -1420,7 +1772,7 @@ def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
             request=request,
             output_base=Path(arguments["output"]),
             overwrite=arguments["overwrite"],
-            project_relative_model_path=model_relative_path,
+            project_relative_model_path=_package_model_relative_path(arguments),
             evidence_path=(
                 Path(arguments["cad_package_evidence"])
                 if arguments.get("cad_package_evidence")
@@ -1431,20 +1783,37 @@ def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
         logging.error("%s", error)
         return 1
 
+    return _finish_ingested_package(arguments, request, result)
+
+
+def _finish_ingested_package(
+    arguments: dict[str, Any],
+    request: CadRequest,
+    result: CadPackageIngestResult,
+    *,
+    metadata_result: MetadataResolution | None = None,
+) -> int:
     if arguments.get("register_project_libraries") and not _register_project_libraries(
         arguments
     ):
         return 1
 
-    merged = MergedPart(
-        identity=PartIdentity(
-            manufacturer=request.manufacturer,
-            mpn=request.mpn,
-        ),
-        cad=result.cad,
-        cad_discovery=result.discovery,
-        verification_status=result.cad.verification_status,
-    )
+    if metadata_result is not None:
+        metadata_result.cad = result.cad
+        metadata_result.cad_data = None
+        metadata_result.cad_discovery = result.discovery
+        metadata_result.blocking_error = None
+        merged = metadata_result.to_merged(result.cad.verification_status)
+    else:
+        merged = MergedPart(
+            identity=PartIdentity(
+                manufacturer=request.manufacturer,
+                mpn=request.mpn,
+            ),
+            cad=result.cad,
+            cad_discovery=result.discovery,
+            verification_status=result.cad.verification_status,
+        )
     _log_metadata_diagnostics(merged, require_cad=arguments["require_cad"])
     manifests_ok = _write_requested_manifests(merged, arguments)
     if arguments.get("show_conflicts"):

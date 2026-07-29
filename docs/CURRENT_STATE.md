@@ -11,7 +11,10 @@ the intermediate, local-package intake milestone. Issue #5 adds explicit,
 project-local library registration after validated CAD generation. Issue #7
 Phase C now completes the DigiKey/Ultra Librarian real-service path through
 official manual download, intake, registration, and KiCad CLI/GUI validation;
-Mouser/SamacSys and final multi-source completion remain outstanding.
+Phase D provides the policy-safe Mouser/SamacSys handoff infrastructure.
+Phase E now implements deterministic selection among verified EasyEDA CAD and
+fully validated local provider packages. Mouser real-package proof and final
+multi-source live completion remain outstanding.
 
 RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
 limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
@@ -91,6 +94,26 @@ gates remain.
   alternative candidate was selected. Credential- and package-gated smokes
   cover the remaining checks without retaining responses, credentials, or
   provider packages.
+- Added deterministic `--cad-source auto` selection with the fixed priority
+  verified EasyEDA, validated DigiKey/Ultra Librarian package, then validated
+  Mouser/SamacSys package. A provider landing URL remains an action-only
+  handoff and is never treated as an acquired package.
+- Added repeatable, source-labelled `--cad-candidate SOURCE=ZIP` and optional
+  `--cad-candidate-evidence SOURCE=JSON` inputs. Every candidate completes
+  archive, exact manufacturer/full-MPN, KiCad syntax, pin/pad, footprint, and
+  3D validation before selection or output.
+- Added fail-closed material comparison across acquired packages. Different
+  pin/pad sets, footprint package, or primary 3D link return typed
+  `CAD_SOURCE_CONFLICT` and produce no CAD output or source lock.
+- Added an atomic, portable source lock containing only exact identity,
+  selected provider source, and package SHA-256. Existing locks reproduce the
+  same content even if source availability later changes; archive content is
+  rehashed immediately before installation, and locked local packages rebuild
+  offline without a provider request.
+- Kept explicit DigiKey and Mouser selections as strict no-fallback paths.
+  Auto-selected package manifests retain the selected `cad.source`, separated
+  distributor/delivery-partner/model-creator provenance, package hash, and
+  artifact hashes.
 - Added opt-in `--project PATH --register-project-libraries` registration for
   `sym-lib-table` and `fp-lib-table`, with `${KIPRJMOD}` URIs and nicknames
   derived from the output stem. `--project-relative` alone never registers a
@@ -257,6 +280,25 @@ The two focused skips remain deliberate external gates:
 `MOUSER_FM220A_CAD_PACKAGE` for real-package import, project registration, and
 KiCad CLI 7/9/10 rendering. A skip is not counted as live success.
 
+## Issue #7 Phase E quality evidence
+
+| Gate | Result |
+| --- | --- |
+| Auto/package/KiCad/project/docs focused tests | `85 passed` |
+| Python 3.12.13 full pytest | `856 passed, 75 skipped` |
+| Auto-selected KiCad CLI 7/9/10 parse/render | PASS, 6 tests |
+| Ruff format check | PASS, 81 files |
+| Ruff lint | PASS |
+| Python 3.12 strict mypy | PASS, 81 source files |
+| `git diff --check` | PASS |
+| Build and Twine check | PASS for sdist and wheel |
+| Changed source and unpacked distribution secret/path scan | PASS |
+
+Synthetic dual-provider fixtures exercise selection, conflict, source-lock,
+offline rebuild, package import, disposable-project registration, and KiCad
+CLI 7/9/10 rendering. They are not substituted for the still required real
+Mouser package and GUI proof.
+
 ## Remaining
 
 - Mouser/SamacSys exact official Product Detail discovery is implemented, but
@@ -264,8 +306,9 @@ KiCad CLI 7/9/10 rendering. A skip is not counted as live success.
   received an owner-exported `MOUSER_FM220A_CAD_PACKAGE`. A real package must
   pass the completed import and project-registration path, KiCad CLI 7/9/10,
   and real KiCad GUI validation before Phase D can complete.
-- Phase E auto-source selection, conflict handling, source locking, and final
-  DigiKey plus Mouser real-service E2E remain required before Issue #7 closes.
+- Phase E selection, conflict handling, and source locking are implemented, but
+  final DigiKey plus Mouser real-service E2E remains required before Issue #7
+  closes. Fixture-only dual-source evidence does not meet that gate.
 - Credentialed Mouser live calls and native Linux process E2E remain disclosed
   external validation gaps.
 

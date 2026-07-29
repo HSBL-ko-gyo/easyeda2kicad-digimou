@@ -137,3 +137,24 @@ def test_readme_documents_policy_safe_mouser_handoff_boundary() -> None:
     assert "Build or request PCB Symbol" in flattened
     assert "no replacement was chosen" in flattened
     assert "cannot claim end-to-end completion" in flattened
+
+
+def test_readme_documents_validated_auto_selection_and_source_lock() -> None:
+    readme = readme_text()
+    section = readme.split(
+        "### Deterministic automatic CAD source selection", maxsplit=1
+    )[1].split("`--providers` is a comma-separated list", maxsplit=1)[0]
+    flattened = section.replace("\n", " ")
+
+    assert "--cad-source auto" in section
+    assert "--cad-candidate digikey=" in section
+    assert "--cad-candidate mouser=" in section
+    assert "--cad-candidate-evidence" in section
+    assert "product or model landing URL is only an actionable handoff" in flattened
+    assert "`CAD_SOURCE_CONFLICT`" in section
+    assert "EasyEDA, DigiKey/Ultra Librarian, then Mouser/SamacSys" in flattened
+    assert "<output>.cad-source-lock.json" in section
+    assert "package SHA-256" in section
+    assert "--offline" in section
+    assert "fails before output" in flattened
+    assert "remain no-fallback paths" in flattened

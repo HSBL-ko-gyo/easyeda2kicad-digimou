@@ -39,8 +39,8 @@ public API, legacy `--lcsc_id` path, and legacy KiCad output while adding
 LCSC/DigiKey/Mouser distributor metadata. Exact MPN matching is fail-closed.
 JSON and CSV Manifests retain complete metadata; provider-permitted
 raw/normalized caches support `--offline` and `--refresh-metadata`, while
-Mouser remains live-only under its current API terms. KiCad receives only stable native
-Manufacturer/MPN/LCSC/Datasheet identity properties—price, stock, provider
+Mouser remains live-only under its current API terms. KiCad receives only
+stable native Manufacturer/MPN/LCSC/Datasheet identity properties—price, stock, provider
 state, provenance, diagnostics, and other volatile sales data remain
 Manifest-only. DigiKey and Mouser credentials are environment variables and
 are never written to logs, Manifests, cache keys, cache payloads, or KiCad
@@ -362,6 +362,67 @@ KiCad data, and pin/pad mismatches fail closed.
 Installation stages and validates all files before atomically replacing the
 target `.kicad_sym`, `.pretty`, and `.3dshapes` paths. Existing non-empty,
 conflicting Manufacturer/MPN values are never overwritten.
+
+### Deterministic automatic CAD source selection
+
+`--cad-source auto` keeps verified EasyEDA CAD first. When EasyEDA has no
+usable exact CAD, pass one or both already-downloaded provider packages as
+repeatable, source-labelled candidates:
+
+```bash
+easyeda2kicad \
+  --manufacturer "Example Manufacturer" \
+  --mpn "EXACT-MPN-INCLUDING-SUFFIX" \
+  --providers lcsc,digikey,mouser \
+  --cad-source auto \
+  --cad-candidate digikey=./downloads/ultralibrarian-kicad.zip \
+  --cad-candidate mouser=./downloads/samacsys-kicad.zip \
+  --full \
+  --output ./libs/project_parts \
+  --manifest-json ./build/auto-selection.json
+```
+
+Use `--cad-candidate-evidence digikey=PATH` or
+`--cad-candidate-evidence mouser=PATH` when the corresponding official package
+needs the same reviewed, hash-bound evidence accepted by
+`--cad-package-evidence`. Candidate paths are never inferred from a product
+URL.
+
+Every candidate passes the complete archive, exact manufacturer/full-MPN,
+KiCad syntax, symbol/footprint, pin/pad, and 3D validation path before any
+output changes. A product or model landing URL is only an actionable handoff;
+it is not an available CAD source. If two validated packages materially differ
+in pin/pad sets, footprint package, or primary 3D link, auto selection returns
+`CAD_SOURCE_CONFLICT` and installs neither. Otherwise the fixed order is
+EasyEDA, DigiKey/Ultra Librarian, then Mouser/SamacSys. Explicit
+`--cad-source digikey` and `--cad-source mouser` remain no-fallback paths.
+
+When an external package is selected, the CLI atomically writes
+`<output>.cad-source-lock.json` unless `--cad-source-lock PATH` specifies a
+different location. The schema contains only exact manufacturer, full MPN,
+selected source, and package SHA-256—never an absolute package path or
+credential. The JSON manifest records the same selected `cad.source`,
+provider-separated provenance, package hash, and artifact hashes. A later run
+with the same output and local candidates must match the lock exactly; it does
+not switch because EasyEDA or another provider later becomes available.
+
+The locked local package can be rebuilt without provider access:
+
+```bash
+easyeda2kicad \
+  --manufacturer "Example Manufacturer" \
+  --mpn "EXACT-MPN-INCLUDING-SUFFIX" \
+  --cad-source auto \
+  --cad-candidate digikey=./downloads/ultralibrarian-kicad.zip \
+  --offline \
+  --full \
+  --output ./libs/project_parts \
+  --manifest-json ./build/offline-rebuild.json
+```
+
+The archive hash is rechecked immediately before installation, so a candidate
+changed after validation fails before output. Source locks and manifests cannot
+share a path or occupy a selected CAD output tree.
 
 `--providers` is a comma-separated list of distributor metadata to return.
 Metadata mode defaults to `lcsc` when the option is omitted. In MPN-only mode,
