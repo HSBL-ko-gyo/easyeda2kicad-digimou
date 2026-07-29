@@ -16,6 +16,28 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Create reference files instead of comparing",
     )
+    parser.addoption(
+        "--run-live-provider",
+        action="store_true",
+        default=False,
+        help="Allow opt-in credentialed live_provider tests to run",
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config,
+    items: list[pytest.Item],
+) -> None:
+    """Keep credentialed provider calls out of the ordinary deterministic suite."""
+
+    if config.getoption("--run-live-provider"):
+        return
+    skipped = pytest.mark.skip(
+        reason="live_provider tests require explicit --run-live-provider opt-in"
+    )
+    for item in items:
+        if item.get_closest_marker("live_provider") is not None:
+            item.add_marker(skipped)
 
 
 @pytest.fixture

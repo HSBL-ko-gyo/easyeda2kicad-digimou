@@ -140,6 +140,60 @@ not provide shared credentials:
 - Mouser requires `MOUSER_API_KEY` requested through the
   [Mouser API portal](https://www.mouser.com/en/apihome/).
 
+### Credentialed provider live smoke (maintainers)
+
+The ordinary test suite never opts in to credentialed provider traffic, even
+when credentials happen to exist in the shell. From a clean checkout, configure
+the three variables only in the current process through your own secret manager,
+then run the two exact-MPN smokes explicitly:
+
+```powershell
+python -m pytest tests/test_provider_live.py -m live_provider `
+  --run-live-provider -vv --tb=short
+```
+
+Check presence without printing values:
+
+```powershell
+'DIGIKEY_CLIENT_ID','DIGIKEY_CLIENT_SECRET','MOUSER_API_KEY' |
+  ForEach-Object {
+    "$_=" + [bool](Get-Item "Env:$_" -ErrorAction SilentlyContinue)
+  }
+```
+
+```bash
+for name in DIGIKEY_CLIENT_ID DIGIKEY_CLIENT_SECRET MOUSER_API_KEY; do
+  if [ -n "${!name:-}" ]; then
+    echo "$name=configured"
+  else
+    echo "$name=missing"
+  fi
+done
+python -m pytest tests/test_provider_live.py -m live_provider \
+  --run-live-provider -vv --tb=short
+```
+
+The tests make one attempt per provider and assert only exact manufacturer/full
+MPN identity, a well-formed distributor part number, sanitized public URLs, and
+the normalized record/Manifest path. They do not assert price, stock, lead time,
+or retrieval time. Missing credentials skip locally; authentication, 403,
+rate-limit, outage, schema-drift, and not-found failures remain distinct.
+
+The manual GitHub Actions workflow **Credentialed provider live smoke** uses the
+protected `provider-live` environment with repository-owner secrets named
+`DIGIKEY_CLIENT_ID`, `DIGIKEY_CLIENT_SECRET`, and `MOUSER_API_KEY`. It has
+read-only repository permission, no schedule or PR trigger, one serial job, and
+runs only when dispatched against the actual default branch. It requires a pass
+from both providers. Its uploaded JSON includes only commit, UTC, provider,
+requested identity, pass/fail/skip, API operation/version, non-secret normalized
+identity, status category, and test-code hash. Raw responses, OAuth tokens,
+request headers, secret-bearing URLs, prices, and stock are never evidence
+fields.
+
+Issue #8 remains open until a post-merge workflow run records at least one real
+DigiKey pass and one real Mouser pass. Creating the workflow and seeing a skip
+does not meet that acceptance gate.
+
 The three-provider example below can still exit with status `0` and generate
 valid EasyEDA CAD when either credential is missing. In that case the overall
 result can be `PARTIAL`; inspect `distributor_records`, `provider_errors`, and

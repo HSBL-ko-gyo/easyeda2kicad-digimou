@@ -211,6 +211,39 @@ the existing CAD value with a safe warning, while an MPN or LCSC ID difference
 fails before export. The exporter uses one sanitized KiCad symbol identifier for
 both existing-entry lookup and writing, including MPNs containing `/`.
 
+## Credentialed live-validation boundary
+
+Credentialed provider validation is opt-in twice: tests carry the
+`live_provider` marker and require the explicit `--run-live-provider` option.
+The ordinary deterministic suite therefore does not contact DigiKey or Mouser,
+including in a developer shell that happens to contain credentials.
+
+The fixed live contracts are:
+
+| Provider | Exact identity | Official operation |
+| --- | --- | --- |
+| DigiKey | `Texas Instruments / OPA333AIDBVR` | Product Information V4 `KeywordSearch` |
+| Mouser | `Texas Instruments / LM321MF/NOPB` | Search API V2 `SearchByPartnumber` |
+
+Each provider uses one attempt. A passing result proves exact normalized
+manufacturer/full-MPN identity, a well-formed distributor part number,
+sanitized public URLs, and compatibility with the normal `DistributorRecord`
+and Manifest path. It does not freeze or publish stock, price, currency, lead
+time, timestamps, raw responses, or any private account data.
+
+Sanitized evidence schema v1 is a closed allow list. It contains repository
+commit, seconds-precision UTC, provider, requested identity, pass/fail/skip,
+official API operation/version, safe HTTP status category, typed failure
+category, normalized non-secret identity for a pass, and the SHA-256 of the
+test configuration. Unknown fields and identity mismatches fail validation.
+Authentication rejection, 403/account-plan restriction, 429 rate limiting,
+5xx outage, invalid response, and exact not-found remain separate categories.
+
+The GitHub workflow is manual-only, read-only, and bound to the
+`provider-live` environment. It succeeds only when both providers produce
+passing evidence. Skipped tests or infrastructure-only CI do not establish
+live-provider support and must not close Issue #8.
+
 ## Authentication
 
 | Provider | Environment variables | Persistence |
