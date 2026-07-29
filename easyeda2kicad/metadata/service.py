@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, cast
 
 # Local imports
+from easyeda2kicad.cad.digikey import DigiKeyCadSource, DigiKeyProductApi
 from easyeda2kicad.cad.mouser import MouserCadSource, MouserProductApi
 from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
 from easyeda2kicad.providers import (
@@ -498,7 +499,17 @@ def resolve_metadata(
         except (ProviderError, CacheError) as error:
             _record_provider_error(result, name, error)
 
-    if selected_cad_source == "mouser":
+    if selected_cad_source == "digikey":
+        result.cad_discovery = _discover_digikey_cad(
+            result,
+            provider_instances.get("digikey"),
+            provider_records.get("digikey"),
+            provider_factory=provider_factory,
+            metadata_api=metadata_api,
+            offline=offline,
+        )
+        result.blocking_error = result.cad_discovery.status
+    elif selected_cad_source == "mouser":
         result.cad_discovery = _discover_mouser_cad(
             result,
             provider_instances.get("mouser"),
@@ -508,15 +519,114 @@ def resolve_metadata(
             offline=offline,
         )
         result.blocking_error = result.cad_discovery.status
-    elif selected_cad_source == "digikey":
-        result.cad_discovery = _external_cad_not_acquired(
-            selected_cad_source,
-            result.trusted_manufacturer,
-            result.trusted_mpn,
-        )
-        result.blocking_error = result.cad_discovery.status
 
     return result
+
+
+def _discover_digikey_cad(
+    result: MetadataResolution,
+    provider: Optional[MetadataProvider],
+    record: Optional[DistributorRecord],
+    *,
+    provider_factory: MetadataProviderFactory,
+    metadata_api: EasyedaApi,
+    offline: bool,
+) -> CadDiscoveryResult:
+    exact_manufacturer = _clean(result.trusted_manufacturer)
+    exact_mpn = _clean(result.trusted_mpn)
+    if exact_manufacturer is None or exact_mpn is None:
+        return _external_cad_not_acquired(
+            "digikey",
+            exact_manufacturer,
+            exact_mpn,
+        )
+    request = CadRequest(
+        manufacturer=exact_manufacturer,
+        mpn=exact_mpn,
+        source="digikey",
+    )
+    if offline:
+        return CadDiscoveryResult(
+            requested_source="digikey",
+            status=CAD_NOT_ACQUIRED,
+            request=request,
+            provenance=CadProvenance(
+                distributor="digikey",
+                delivery_partner=None,
+                model_creator=None,
+                retrieval_mode="offline",
+            ),
+            action_required=CadActionRequired(
+                code=CAD_NOT_ACQUIRED,
+                detail=(
+                    "Offline mode cannot query DigiKey Product Information V4 "
+                    "for an official CAD handoff"
+                ),
+            ),
+        )
+
+    selected_provider = provider or provider_factory("digikey", metadata_api)
+    existing_error = result.provider_errors.get("digikey")
+    if record is None and existing_error is not None:
+        return _digikey_discovery_failure(
+            request,
+            selected_provider,
+            existing_error,
+        )
+    if not isinstance(selected_provider, DigiKeyProductApi):
+        return _external_cad_not_acquired(
+            "digikey",
+            exact_manufacturer,
+            exact_mpn,
+        )
+    try:
+        return DigiKeyCadSource(selected_provider).discover(
+            request,
+            exact_record=record,
+        )
+    except (AmbiguousMatchError, MpnMismatchError) as error:
+        raise _fatal_provider_error(error) from None
+    except ProviderError as error:
+        _record_provider_error(result, "digikey", error)
+        return _digikey_discovery_failure(
+            request,
+            selected_provider,
+            _error_code(error),
+        )
+
+
+def _digikey_discovery_failure(
+    request: CadRequest,
+    provider: MetadataProvider,
+    code: str,
+) -> CadDiscoveryResult:
+    auth_required = code in ("AUTH_MISSING", "AUTH_FAILED")
+    status = CAD_AUTH_REQUIRED if auth_required else CAD_DOWNLOAD_UNAVAILABLE
+    requirements = provider.describe_auth_requirements()
+    setup_url = requirements.help_url if auth_required else None
+    detail = (
+        "User-owned DigiKey Product Information V4 credentials are required "
+        "before CAD handoff discovery"
+        if auth_required
+        else "DigiKey Product Information V4 CAD handoff discovery failed safely"
+    )
+    return CadDiscoveryResult(
+        requested_source="digikey",
+        status=status,
+        request=request,
+        provenance=CadProvenance(
+            distributor="digikey",
+            delivery_partner=None,
+            model_creator=None,
+            landing_url=None,
+            retrieval_mode="official-api-handoff",
+        ),
+        action_required=CadActionRequired(
+            code=status,
+            detail=detail,
+            setup_url=setup_url,
+        ),
+    )
 
 
 def _discover_mouser_cad(

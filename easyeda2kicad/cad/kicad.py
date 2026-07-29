@@ -126,12 +126,64 @@ def select_exact_symbol(source_text: str, request: CadRequest) -> SymbolSelectio
     return candidates[0]
 
 
+def select_attested_symbol(
+    source_text: str,
+    request: CadRequest,
+) -> SymbolSelection:
+    """Select one exact-MPN symbol after a hash-bound manual handoff attestation."""
+
+    document = parse_document(source_text, "kicad_symbol_lib")
+    candidates: List[FormSpan] = []
+    identity_mismatch = False
+    for form in document.forms:
+        if form.head != "symbol":
+            continue
+        properties = extract_properties(form.text)
+        manufacturer = _identity_property(properties, _MANUFACTURER_KEYS)
+        mpn = _identity_property(properties, _MPN_KEYS)
+        if manufacturer is not None and normalize_manufacturer(
+            manufacturer
+        ) != normalize_manufacturer(request.manufacturer):
+            identity_mismatch = True
+            continue
+        if mpn is not None and normalize_mpn(mpn) != normalize_mpn(request.mpn):
+            identity_mismatch = True
+            continue
+        if mpn is None and _attested_mpn_evidence(properties, request.mpn) < 2:
+            continue
+        candidates.append(form)
+    if len(candidates) > 1:
+        raise CadPackageError(
+            "CAD_SYMBOL_AMBIGUOUS",
+            "multiple symbols match the hash-bound package evidence",
+        )
+    if not candidates:
+        raise CadPackageError(
+            "CAD_IDENTITY_MISMATCH" if identity_mismatch else "CAD_IDENTITY_UNPROVEN",
+            (
+                "package symbol identity conflicts with the manual handoff evidence"
+                if identity_mismatch
+                else "package symbol does not independently prove the exact MPN"
+            ),
+        )
+
+    selected = candidates[0]
+    rewritten_block = _add_attested_identity_properties(
+        selected.text,
+        request,
+    )
+    rewritten_library = (
+        source_text[: selected.start] + rewritten_block + source_text[selected.end :]
+    )
+    return select_exact_symbol(rewritten_library, request)
+
+
 def select_footprint(
     candidates: Sequence[Tuple[Path, str]],
     request: CadRequest,
     expected_name: Optional[str],
 ) -> FootprintSelection:
-    parsed: List[FootprintSelection] = []
+    parsed: List[Tuple[Path, FootprintSelection]] = []
     identity_mismatch = False
     for path, text in candidates:
         try:
@@ -169,14 +221,24 @@ def select_footprint(
                 path.name,
             )
         parsed.append(
-            FootprintSelection(
-                name=name,
-                text=document.text,
-                properties=properties,
-                pad_numbers=pads,
+            (
+                path,
+                FootprintSelection(
+                    name=name,
+                    text=document.text,
+                    properties=properties,
+                    pad_numbers=pads,
+                ),
             )
         )
     if len(parsed) > 1:
+        exact_filenames = [
+            selection
+            for path, selection in parsed
+            if expected_name is not None and path.stem == expected_name
+        ]
+        if len(exact_filenames) == 1:
+            return exact_filenames[0]
         raise CadPackageError(
             "CAD_FOOTPRINT_AMBIGUOUS",
             "multiple footprints match the selected symbol",
@@ -191,7 +253,61 @@ def select_footprint(
             "CAD_FOOTPRINT_UNRESOLVED",
             "package does not contain one uniquely matching footprint",
         )
-    return parsed[0]
+    return parsed[0][1]
+
+
+def _attested_mpn_evidence(properties: Dict[str, str], requested_mpn: str) -> int:
+    expected = normalize_mpn(requested_mpn)
+    values = (
+        _property_value(properties, "Value"),
+        _property_value(properties, "Datasheet"),
+        _property_value(properties, "ki_keywords"),
+    )
+    return sum(
+        1 for value in values if value is not None and normalize_mpn(value) == expected
+    )
+
+
+def _add_attested_identity_properties(
+    symbol_text: str,
+    request: CadRequest,
+) -> str:
+    document = parse_document(symbol_text, "symbol")
+    properties = extract_properties(symbol_text)
+    additions: List[Tuple[str, str]] = []
+    if _identity_property(properties, _MANUFACTURER_KEYS) is None:
+        additions.append(("Manufacturer", request.manufacturer))
+    if _identity_property(properties, _MPN_KEYS) is None:
+        additions.append(("MPN", request.mpn))
+    if not additions:
+        return symbol_text
+
+    property_forms = [form for form in document.forms if form.head == "property"]
+    if not property_forms:
+        raise CadPackageError(
+            "CAD_SYMBOL_INVALID",
+            "attested symbol has no KiCad properties",
+        )
+    property_ids = [
+        int(match.group(1))
+        for form in property_forms
+        for match in (re.search(r"\(\s*id\s+([0-9]+)\s*\)", form.text),)
+        if match is not None
+    ]
+    uses_property_ids = bool(property_ids)
+    next_property_id = max(property_ids, default=-1) + 1
+    rendered: List[str] = []
+    for index, (name, value) in enumerate(additions):
+        id_expression = (
+            " (id {0})".format(next_property_id + index) if uses_property_ids else ""
+        )
+        rendered.append(
+            '\n    (property "{0}" "{1}"{2} (at 0 0 0)\n'
+            "      (effects (font (size 1.27 1.27)) hide)\n"
+            "    )".format(_escape(name), _escape(value), id_expression)
+        )
+    insertion = property_forms[-1].end
+    return symbol_text[:insertion] + "".join(rendered) + symbol_text[insertion:]
 
 
 def verify_pin_pad_identity(
