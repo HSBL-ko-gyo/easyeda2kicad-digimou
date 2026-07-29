@@ -52,7 +52,7 @@ class _Response(io.BytesIO):
         self.headers: Dict[str, str] = {}
 
 
-class _UnusedLcscProvider:
+class _NoMatchLcscProvider:
     name = "lcsc"
 
     def get_cache_context(self) -> Dict[str, str]:
@@ -62,11 +62,11 @@ class _UnusedLcscProvider:
         self, manufacturer: Optional[str], mpn: str
     ) -> DistributorRecord:
         del manufacturer, mpn
-        raise AssertionError("LCSC metadata lookup was not requested")
+        raise NotFoundError("lcsc", operation="exact-match")
 
     def get_part_by_distributor_id(self, part_id: str) -> DistributorRecord:
         del part_id
-        raise AssertionError("LCSC metadata lookup was not requested")
+        raise NotFoundError("lcsc", operation="id-lookup")
 
 
 def _response(*, product_url: Optional[str] = PRODUCT_URL) -> Dict[str, Any]:
@@ -138,7 +138,7 @@ def _provider_factory(
     def factory(name: str, _api: EasyedaApi) -> MetadataProvider:
         if name == "mouser":
             return cast(MetadataProvider, mouser)
-        return cast(MetadataProvider, _UnusedLcscProvider())
+        return cast(MetadataProvider, _NoMatchLcscProvider())
 
     return factory
 
@@ -295,6 +295,8 @@ def test_service_returns_typed_auth_action_without_network_or_easyeda(
     assert result.cad_discovery.status == CAD_AUTH_REQUIRED
     assert result.blocking_error == CAD_AUTH_REQUIRED
     assert result.provider_errors == {"mouser": "AUTH_MISSING"}
+    assert result.jlcpcb is not None
+    assert result.jlcpcb.match_status == "MANUAL_GLOBAL_SOURCING_REQUIRED"
     assert result.cad_discovery.provenance.delivery_partner is None
     assert requests == []
     payload = manifest_to_dict(result.to_merged())
@@ -375,7 +377,13 @@ def test_selected_mouser_provider_is_live_only_and_offline_never_uses_network(
         cad_provider_factory=lambda _api: pytest.fail("EasyEDA fallback"),
     )
 
-    assert result.provider_errors == {"mouser": "OFFLINE_CACHE_MISS"}
+    assert result.provider_errors == {
+        "lcsc": "OFFLINE_CACHE_MISS",
+        "mouser": "OFFLINE_CACHE_MISS",
+    }
+    assert result.jlcpcb is not None
+    assert result.jlcpcb.match_status == "JLCPCB_LOOKUP_FAILED"
+    assert result.jlcpcb.cache_state == "OFFLINE_MISS"
     assert result.cad_discovery is not None
     assert result.cad_discovery.status == CAD_NOT_ACQUIRED
     assert result.cad_discovery.provenance.retrieval_mode == "offline"
@@ -414,7 +422,12 @@ def test_old_mouser_cache_entry_is_not_replayed_offline(tmp_path: Path) -> None:
         cad_provider_factory=lambda _api: pytest.fail("EasyEDA fallback"),
     )
 
-    assert result.provider_errors == {"mouser": "OFFLINE_CACHE_MISS"}
+    assert result.provider_errors == {
+        "lcsc": "OFFLINE_CACHE_MISS",
+        "mouser": "OFFLINE_CACHE_MISS",
+    }
+    assert result.jlcpcb is not None
+    assert result.jlcpcb.match_status == "JLCPCB_LOOKUP_FAILED"
     assert result.distributor_records == []
     assert result.cad_discovery is not None
     assert result.cad_discovery.status == CAD_NOT_ACQUIRED

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Union, cast
 
 # Local imports
 from .cache import sanitize_public_url, strip_secrets
-from .models import DistributorRecord, MergedPart, model_to_dict
+from .models import DistributorRecord, JlcpcbResolution, MergedPart, model_to_dict
 
 CSV_COLUMNS = (
     "Manufacturer",
@@ -21,6 +21,14 @@ CSV_COLUMNS = (
     "Lifecycle",
     "Manufacturer Datasheet",
     "LCSC Part",
+    "JLCPCB Part #",
+    "LCSC Part #",
+    "JLCPCB Match Status",
+    "JLCPCB Checked At",
+    "JLCPCB Stock",
+    "JLCPCB Cache State",
+    "Manual Action Required",
+    "Global Sourcing Candidates",
     "LCSC Product URL",
     "DigiKey Part",
     "DigiKey Product URL",
@@ -86,6 +94,17 @@ def manifest_to_dict(
                 package_provenance["landing_url"] = sanitize_public_url(
                     package_provenance.get("landing_url")
                 )
+    jlcpcb = result.get("jlcpcb")
+    if isinstance(jlcpcb, dict):
+        if not include_stock:
+            jlcpcb["stock"] = None
+        candidates = jlcpcb.get("global_sourcing_candidates")
+        if isinstance(candidates, list):
+            for candidate in candidates:
+                if isinstance(candidate, dict):
+                    candidate["product_url"] = sanitize_public_url(
+                        candidate.get("product_url")
+                    )
     for record in result["distributor_records"]:
         record["product_url"] = sanitize_public_url(record.get("product_url"))
         record["datasheet_url"] = sanitize_public_url(record.get("datasheet_url"))
@@ -129,6 +148,15 @@ def csv_manifest_rows(
     lcsc_record = by_provider.get("lcsc")
     digikey_record = by_provider.get("digikey")
     mouser_record = by_provider.get("mouser")
+    jlcpcb = merged.jlcpcb
+    legacy_lcsc_part = _text(
+        cad.lcsc_part_number
+        if cad is not None and cad.lcsc_part_number
+        else (lcsc_record.distributor_part_number if lcsc_record is not None else None)
+    )
+    resolved_lcsc_part = (
+        _text(jlcpcb.lcsc_part_number) if jlcpcb is not None else legacy_lcsc_part
+    )
     stable = {
         "Manufacturer": _text(merged.identity.manufacturer),
         "MPN": _text(merged.identity.mpn),
@@ -137,12 +165,24 @@ def csv_manifest_rows(
         "Manufacturer Datasheet": _text(
             sanitize_public_url(merged.identity.manufacturer_datasheet_url)
         ),
-        "LCSC Part": _text(
-            cad.lcsc_part_number
-            if cad is not None and cad.lcsc_part_number
-            else (
-                lcsc_record.distributor_part_number if lcsc_record is not None else None
-            )
+        "LCSC Part": resolved_lcsc_part,
+        "JLCPCB Part #": _text(
+            jlcpcb.jlcpcb_part_number if jlcpcb is not None else None
+        ),
+        "LCSC Part #": resolved_lcsc_part,
+        "JLCPCB Match Status": _text(
+            jlcpcb.match_status if jlcpcb is not None else None
+        ),
+        "JLCPCB Checked At": _text(jlcpcb.checked_at if jlcpcb is not None else None),
+        "JLCPCB Stock": _text(
+            jlcpcb.stock if jlcpcb is not None and include_stock else None
+        ),
+        "JLCPCB Cache State": _text(jlcpcb.cache_state if jlcpcb is not None else None),
+        "Manual Action Required": _text(
+            jlcpcb.manual_action_required if jlcpcb is not None else None
+        ),
+        "Global Sourcing Candidates": _compact_json(
+            _safe_global_sourcing_candidates(jlcpcb)
         ),
         "LCSC Product URL": _record_value(lcsc_record, "product_url"),
         "DigiKey Part": _record_value(digikey_record, "distributor_part_number"),
@@ -271,6 +311,19 @@ def _record_value(record: Optional[DistributorRecord], field_name: str) -> str:
     if field_name in ("product_url", "datasheet_url"):
         value = sanitize_public_url(value)
     return _text(value)
+
+
+def _safe_global_sourcing_candidates(
+    resolution: Optional[JlcpcbResolution],
+) -> List[Dict[str, Any]]:
+    if resolution is None:
+        return []
+    candidates: List[Dict[str, Any]] = []
+    for candidate in resolution.global_sourcing_candidates:
+        value = candidate.to_dict()
+        value["product_url"] = sanitize_public_url(value.get("product_url"))
+        candidates.append(value)
+    return candidates
 
 
 def _text(value: Any) -> str:

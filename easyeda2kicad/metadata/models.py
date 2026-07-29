@@ -46,7 +46,34 @@ CAD_DISCOVERY_STATUSES = frozenset(
         CAD_SOURCE_LOCK_MISMATCH,
     )
 )
+JLCPCB_PART_FOUND = "JLCPCB_PART_FOUND"
+MANUAL_GLOBAL_SOURCING_REQUIRED = "MANUAL_GLOBAL_SOURCING_REQUIRED"
+JLCPCB_LOOKUP_FAILED = "JLCPCB_LOOKUP_FAILED"
+JLCPCB_IDENTITY_AMBIGUOUS = "JLCPCB_IDENTITY_AMBIGUOUS"
+JLCPCB_IDENTITY_CONFLICT = "JLCPCB_IDENTITY_CONFLICT"
+JLCPCB_MATCH_STATUSES = frozenset(
+    (
+        JLCPCB_PART_FOUND,
+        MANUAL_GLOBAL_SOURCING_REQUIRED,
+        JLCPCB_LOOKUP_FAILED,
+        JLCPCB_IDENTITY_AMBIGUOUS,
+        JLCPCB_IDENTITY_CONFLICT,
+    )
+)
+JLCPCB_CACHE_LIVE = "LIVE"
+JLCPCB_CACHE_CACHED = "CACHED"
+JLCPCB_CACHE_OFFLINE_MISS = "OFFLINE_MISS"
+JLCPCB_CACHE_ERROR = "CACHE_ERROR"
+JLCPCB_CACHE_STATES = frozenset(
+    (
+        JLCPCB_CACHE_LIVE,
+        JLCPCB_CACHE_CACHED,
+        JLCPCB_CACHE_OFFLINE_MISS,
+        JLCPCB_CACHE_ERROR,
+    )
+)
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
+_CANONICAL_LCSC_ID_RE = re.compile(r"C[1-9][0-9]*")
 
 
 def identity_text(value: Any, field_name: str = "identity") -> str:
@@ -259,6 +286,169 @@ class DistributorRecord:
             raw_response_cache_key=_optional_string(
                 mapping.get("raw_response_cache_key")
             ),
+        )
+
+
+@dataclass
+class GlobalSourcingCandidate:
+    """One exact distributor record usable as a manual sourcing hint."""
+
+    provider: str
+    manufacturer_part_number: str
+    distributor_part_number: str
+    product_url: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.provider = identity_text(
+            self.provider, "GlobalSourcingCandidate.provider"
+        ).lower()
+        if self.provider not in ("digikey", "mouser"):
+            raise ValueError("unsupported global-sourcing provider")
+        self.manufacturer_part_number = identity_text(
+            self.manufacturer_part_number,
+            "GlobalSourcingCandidate.manufacturer_part_number",
+        )
+        self.distributor_part_number = identity_text(
+            self.distributor_part_number,
+            "GlobalSourcingCandidate.distributor_part_number",
+        )
+        self.product_url = _optional_string(self.product_url)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], model_to_dict(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "GlobalSourcingCandidate":
+        mapping = _mapping(data, "GlobalSourcingCandidate")
+        return cls(
+            provider=identity_text(mapping.get("provider"), "provider"),
+            manufacturer_part_number=identity_text(
+                mapping.get("manufacturer_part_number"),
+                "manufacturer_part_number",
+            ),
+            distributor_part_number=identity_text(
+                mapping.get("distributor_part_number"),
+                "distributor_part_number",
+            ),
+            product_url=_optional_string(mapping.get("product_url")),
+        )
+
+
+@dataclass
+class JlcpcbResolution:
+    """Fail-closed result of the invocation's exact JLCPCB/LCSC lookup."""
+
+    match_status: str
+    checked_at: str
+    cache_state: str
+    jlcpcb_part_number: Optional[str] = None
+    lcsc_part_number: Optional[str] = None
+    stock: Optional[int] = None
+    manual_action_required: Optional[str] = None
+    global_sourcing_candidates: List[GlobalSourcingCandidate] = dataclass_field(
+        default_factory=list
+    )
+
+    def __post_init__(self) -> None:
+        self.match_status = identity_text(
+            self.match_status, "JlcpcbResolution.match_status"
+        )
+        if self.match_status not in JLCPCB_MATCH_STATUSES:
+            raise ValueError("unsupported JLCPCB match status")
+        self.checked_at = identity_text(self.checked_at, "JlcpcbResolution.checked_at")
+        self.cache_state = identity_text(
+            self.cache_state, "JlcpcbResolution.cache_state"
+        )
+        if self.cache_state not in JLCPCB_CACHE_STATES:
+            raise ValueError("unsupported JLCPCB cache state")
+        for field_name in ("jlcpcb_part_number", "lcsc_part_number"):
+            value = getattr(self, field_name)
+            if value is not None:
+                value = identity_text(value, "JlcpcbResolution.{0}".format(field_name))
+                if _CANONICAL_LCSC_ID_RE.fullmatch(value) is None:
+                    raise ValueError(
+                        "{0} must be a canonical C-number".format(field_name)
+                    )
+                setattr(self, field_name, value)
+        if self.stock is not None:
+            self.stock = _non_negative_integer(self.stock, "JlcpcbResolution.stock")
+        self.manual_action_required = _optional_identity_text(
+            self.manual_action_required,
+            "JlcpcbResolution.manual_action_required",
+        )
+        normalized_candidates = [
+            candidate
+            if isinstance(candidate, GlobalSourcingCandidate)
+            else GlobalSourcingCandidate.from_dict(candidate)
+            for candidate in self.global_sourcing_candidates
+        ]
+        unique_candidates = {
+            (
+                candidate.provider,
+                candidate.manufacturer_part_number,
+                candidate.distributor_part_number,
+                candidate.product_url,
+            ): candidate
+            for candidate in normalized_candidates
+        }
+        self.global_sourcing_candidates = sorted(
+            unique_candidates.values(),
+            key=lambda candidate: (
+                candidate.provider,
+                candidate.distributor_part_number,
+                candidate.product_url or "",
+            ),
+        )
+
+        if self.match_status == JLCPCB_PART_FOUND:
+            if self.jlcpcb_part_number is None and self.lcsc_part_number is None:
+                raise ValueError("JLCPCB_PART_FOUND requires a canonical part number")
+            if self.manual_action_required is not None:
+                raise ValueError("found JLCPCB parts cannot require manual sourcing")
+        else:
+            if (
+                self.jlcpcb_part_number is not None
+                or self.lcsc_part_number is not None
+                or self.stock is not None
+            ):
+                raise ValueError(
+                    "unresolved JLCPCB results cannot expose a part number or stock"
+                )
+        if self.match_status == MANUAL_GLOBAL_SOURCING_REQUIRED:
+            if self.manual_action_required is None:
+                raise ValueError(
+                    "manual global sourcing status requires an explicit action"
+                )
+        elif self.manual_action_required is not None:
+            raise ValueError(
+                "manual action is only valid for MANUAL_GLOBAL_SOURCING_REQUIRED"
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], model_to_dict(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "JlcpcbResolution":
+        mapping = _mapping(data, "JlcpcbResolution")
+        raw_candidates = mapping.get("global_sourcing_candidates", [])
+        return cls(
+            match_status=identity_text(mapping.get("match_status"), "match_status"),
+            checked_at=identity_text(mapping.get("checked_at"), "checked_at"),
+            cache_state=identity_text(mapping.get("cache_state"), "cache_state"),
+            jlcpcb_part_number=_optional_identity_text(
+                mapping.get("jlcpcb_part_number"), "jlcpcb_part_number"
+            ),
+            lcsc_part_number=_optional_identity_text(
+                mapping.get("lcsc_part_number"), "lcsc_part_number"
+            ),
+            stock=_optional_integer(mapping.get("stock"), "stock"),
+            manual_action_required=_optional_identity_text(
+                mapping.get("manual_action_required"), "manual_action_required"
+            ),
+            global_sourcing_candidates=[
+                GlobalSourcingCandidate.from_dict(item)
+                for item in _list(raw_candidates, "global_sourcing_candidates")
+            ],
         )
 
 
@@ -744,6 +934,7 @@ class MergedPart:
         default_factory=dict
     )
     cad_discovery: Optional[CadDiscoveryResult] = None
+    jlcpcb: Optional[JlcpcbResolution] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, PartIdentity):
@@ -793,6 +984,8 @@ class MergedPart:
             self.cad_discovery, CadDiscoveryResult
         ):
             self.cad_discovery = CadDiscoveryResult.from_dict(self.cad_discovery)
+        if self.jlcpcb is not None and not isinstance(self.jlcpcb, JlcpcbResolution):
+            self.jlcpcb = JlcpcbResolution.from_dict(self.jlcpcb)
 
     def to_dict(self) -> Dict[str, Any]:
         document = cast(Dict[str, Any], model_to_dict(self))
@@ -801,6 +994,8 @@ class MergedPart:
             _omit_empty_cad_extensions(cad)
         if document.get("cad_discovery") is None:
             document.pop("cad_discovery", None)
+        if document.get("jlcpcb") is None:
+            document.pop("jlcpcb", None)
         diagnostics = cast(Dict[str, Any], document["provider_diagnostics"])
         for provider, code in self.provider_errors.items():
             diagnostics.setdefault(provider, ProviderDiagnostic(code=code).to_dict())
@@ -817,6 +1012,7 @@ class MergedPart:
         raw_errors = mapping.get("provider_errors", {})
         raw_diagnostics = mapping.get("provider_diagnostics", {})
         raw_cad_discovery = mapping.get("cad_discovery")
+        raw_jlcpcb = mapping.get("jlcpcb")
         if not isinstance(raw_records, (list, tuple)):
             raise ValueError("distributor_records must be a list")
         if not isinstance(raw_conflicts, (list, tuple)):
@@ -855,6 +1051,11 @@ class MergedPart:
             cad_discovery=(
                 CadDiscoveryResult.from_dict(raw_cad_discovery)
                 if raw_cad_discovery is not None
+                else None
+            ),
+            jlcpcb=(
+                JlcpcbResolution.from_dict(raw_jlcpcb)
+                if raw_jlcpcb is not None
                 else None
             ),
         )

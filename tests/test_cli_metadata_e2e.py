@@ -17,6 +17,8 @@ from easyeda2kicad.metadata.merge import CAD_NOT_FOUND, PARTIAL, VERIFIED
 from easyeda2kicad.metadata.models import (
     CadRecord,
     DistributorRecord,
+    JLCPCB_CACHE_LIVE,
+    JLCPCB_PART_FOUND,
     PriceBreak,
 )
 from easyeda2kicad.metadata.service import (
@@ -471,6 +473,10 @@ def test_no_network_service_to_cli_combines_all_providers(
     assert document["identity"]["mpn"] == "OPA333AIDBVR"
     assert document["verification_status"] == VERIFIED
     assert document["provider_errors"] == {}
+    assert document["jlcpcb"]["match_status"] == JLCPCB_PART_FOUND
+    assert document["jlcpcb"]["jlcpcb_part_number"] == "C30878"
+    assert document["jlcpcb"]["lcsc_part_number"] == "C30878"
+    assert document["jlcpcb"]["cache_state"] == JLCPCB_CACHE_LIVE
     assert output.with_suffix(".kicad_sym").read_text(encoding="utf-8") == (
         "mock symbol export"
     )

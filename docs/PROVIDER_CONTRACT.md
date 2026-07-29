@@ -299,6 +299,21 @@ totals are parsed as strict non-negative integers. Every fetched page must repor
 the same total, and conflicting top-level/nested totals are `INVALID_RESPONSE`;
 bounded truncation remains `AMBIGUOUS`.
 
+Every exact-MPN metadata invocation performs this lookup once even when `lcsc`
+is absent from `--providers` and CAD is explicitly `digikey` or `mouser`.
+Provider selection still controls which full distributor records are emitted;
+the independent `JlcpcbResolution` retains only the proven canonical JLCPCB and
+LCSC part numbers, lookup status/time/cache state, stock, manual action, and
+sanitized exact DigiKey/Mouser sourcing candidates.
+
+A canonical `C[1-9][0-9]*` result is `JLCPCB_PART_FOUND` even when stock is
+zero. A successful live no-match is `MANUAL_GLOBAL_SOURCING_REQUIRED`.
+Transport/cache failure, ambiguous exact results, and identity conflicts remain
+`JLCPCB_LOOKUP_FAILED`, `JLCPCB_IDENTITY_AMBIGUOUS`, and
+`JLCPCB_IDENTITY_CONFLICT`; they never become a false no-match or manual
+sourcing recommendation. The native KiCad compatibility field remains
+`LCSC Part` and contains only the proven canonical identifier.
+
 ### DigiKey Product Information V4
 
 - MPN: `ManufacturerProductNumber`

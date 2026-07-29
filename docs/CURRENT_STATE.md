@@ -26,6 +26,20 @@ gates remain.
 
 ## Completed
 
+- Added a same-command `JlcpcbResolution` for every exact-MPN metadata
+  acquisition. The anonymous public LCSC/JLCPCB catalogue lookup now runs
+  independently of metadata-provider and CAD-source selection, while explicit
+  legacy `--lcsc_id` behavior remains unchanged.
+- Added fixed `JLCPCB_PART_FOUND`, `MANUAL_GLOBAL_SOURCING_REQUIRED`,
+  `JLCPCB_LOOKUP_FAILED`, `JLCPCB_IDENTITY_AMBIGUOUS`, and
+  `JLCPCB_IDENTITY_CONFLICT` states. A canonical C-number remains FOUND at
+  stock zero; lookup failures, ambiguity, and conflicts never become false
+  no-match results.
+- Added separate JLCPCB/LCSC number, check time, stock, cache state, manual
+  action, and sanitized exact DigiKey/Mouser sourcing-candidate fields to JSON
+  and generic CSV. Part-number cells contain only a canonical C-number or an
+  empty string. The native KiCad compatibility field remains `LCSC Part`;
+  sourcing status and sales data remain Manifest-only.
 - Added DigiKey Product Information V4 `Media` discovery for explicit
   `--cad-source digikey`. The CAD source reuses or performs an exact
   manufacturer/full-MPN lookup, requests media only for the proven DigiKey part
@@ -218,6 +232,26 @@ gates remain.
   GitHub pre-release without PyPI.
 - Recomputed post-answer canaries: 23/23 source-table entries, 7/7 direct
   attachments, and exact package-input tree equality.
+
+## Issue #6 quality evidence
+
+| Gate | Result |
+| --- | --- |
+| Focused JLCPCB/metadata/CLI/legacy tests | `292 passed` |
+| Full Python 3.12.13 pytest | `876 passed, 75 skipped` |
+| Ruff format check | PASS, 314 files |
+| Ruff lint | PASS |
+| Strict mypy over package/tests/setup | PASS, 82 source files |
+| Package build and `twine check` | PASS, wheel and sdist |
+| Secret, secret-URL, and machine-path scan | PASS |
+| `git diff --check` | PASS; Git emitted only LF/CRLF notices |
+
+The credential-free public JLCPCB/LCSC path was also exercised live with exact
+identity `Texas Instruments / OPA333AIDBVR`. It returned
+`JLCPCB_PART_FOUND`, canonical `C30878`, and cache state `LIVE`. Explicit
+`--cad-source digikey` remained `CAD_NOT_ACQUIRED`; it did not fall back to
+EasyEDA. The sanitized temporary manifest passed the secret/path scan and was
+removed.
 
 ## Preserved RC3 quality evidence
 

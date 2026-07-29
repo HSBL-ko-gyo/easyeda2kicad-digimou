@@ -19,6 +19,7 @@ from .base import (
     BaseMetadataProvider,
     CacheCorruptError,
     InvalidResponseError,
+    MpnMismatchError,
     NetworkError,
     NotFoundError,
     OfflineCacheMissError,
@@ -298,18 +299,23 @@ class LcscProvider(BaseMetadataProvider):
             )
         except (TypeError, ValueError):
             raise InvalidResponseError(self.name, operation="exact-match") from None
-        exact = [
+        exact_mpn = [
             candidate
             for candidate in candidates
-            if candidate.mpn
-            and normalize_mpn(candidate.mpn) == requested_mpn
-            and (
+            if candidate.mpn and normalize_mpn(candidate.mpn) == requested_mpn
+        ]
+        exact = [
+            candidate
+            for candidate in exact_mpn
+            if (
                 not requested_manufacturer
                 or normalize_manufacturer(candidate.manufacturer)
                 == requested_manufacturer
             )
         ]
         if not exact:
+            if requested_manufacturer and exact_mpn:
+                raise MpnMismatchError(self.name, operation="manufacturer-exact-match")
             raise NotFoundError(self.name, operation="exact-match")
         lcsc_ids = {
             (candidate.distributor_part_number or "").strip().casefold()

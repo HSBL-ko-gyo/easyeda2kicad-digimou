@@ -5,6 +5,7 @@ from __future__ import annotations
 # Global imports
 import re
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, cast
 
 # Local imports
@@ -36,6 +37,15 @@ from .models import (
     CAD_IDENTITY_UNRESOLVED,
     CAD_MANUAL_DOWNLOAD_REQUIRED,
     CAD_NOT_ACQUIRED,
+    JLCPCB_CACHE_CACHED,
+    JLCPCB_CACHE_ERROR,
+    JLCPCB_CACHE_LIVE,
+    JLCPCB_CACHE_OFFLINE_MISS,
+    JLCPCB_IDENTITY_AMBIGUOUS,
+    JLCPCB_IDENTITY_CONFLICT,
+    JLCPCB_LOOKUP_FAILED,
+    JLCPCB_PART_FOUND,
+    MANUAL_GLOBAL_SOURCING_REQUIRED,
     SUPPORTED_CAD_SOURCES,
     CadActionRequired,
     CadDiscoveryResult,
@@ -43,6 +53,8 @@ from .models import (
     CadRecord,
     CadRequest,
     DistributorRecord,
+    GlobalSourcingCandidate,
+    JlcpcbResolution,
     MergedPart,
     PartIdentity,
     ProviderDiagnostic,
@@ -54,6 +66,9 @@ from .models import (
 
 MetadataProviderFactory = Callable[[str, EasyedaApi], MetadataProvider]
 CadProviderFactory = Callable[[EasyedaApi], CadProvider]
+JLCPCB_MANUAL_ACTION = (
+    "Search/order exact MPN in JLCPCB Parts Manager > Global Sourcing"
+)
 
 
 class MetadataServiceError(RuntimeError):
@@ -86,6 +101,7 @@ class MetadataResolution:
     provider_errors: Dict[str, str] = field(default_factory=dict)
     provider_diagnostics: Dict[str, ProviderDiagnostic] = field(default_factory=dict)
     cad_discovery: Optional[CadDiscoveryResult] = None
+    jlcpcb: Optional[JlcpcbResolution] = None
     blocking_error: Optional[str] = None
 
     def to_merged(
@@ -137,6 +153,7 @@ class MetadataResolution:
             )
             _set_identity_provenance(merged, "mpn", self.mpn_source)
             merged.cad_discovery = self.cad_discovery
+            merged.jlcpcb = self.jlcpcb
             return merged
 
         # An ID-only confirmed CAD miss can legitimately lack any MPN evidence.
@@ -151,6 +168,7 @@ class MetadataResolution:
             verification_status=status,
             provider_errors=dict(sorted(self.provider_errors.items())),
             provider_diagnostics=dict(sorted(self.provider_diagnostics.items())),
+            jlcpcb=self.jlcpcb,
         )
         _set_identity_provenance(merged, "mpn", self.mpn_source)
         _set_identity_provenance(merged, "manufacturer", self.manufacturer_source)
@@ -232,15 +250,12 @@ def resolve_metadata(
     lcsc_record: Optional[DistributorRecord] = None
     lcsc_id_lookup_attempted = False
     lcsc_id = _clean(requested_lcsc_id)
+    jlcpcb_checked_at = _jlcpcb_checked_at()
 
-    # EasyEDA/auto MPN requests need a conservative LCSC exact match to identify
-    # the component. An explicitly selected LCSC metadata provider needs the
-    # same lookup independently of the selected CAD source.
-    if (
-        lcsc_id is None
-        and result.trusted_mpn
-        and (use_easyeda_cad or "lcsc" in selected)
-    ):
+    # Every exact-MPN acquisition resolves JLCPCB/LCSC during this invocation,
+    # independently of the selected metadata providers and CAD source.
+    if lcsc_id is None and result.trusted_mpn:
+        lookup_state: List[str] = []
         try:
             lcsc_record = _cached_exact_lookup(
                 lcsc_provider,
@@ -249,32 +264,69 @@ def resolve_metadata(
                 result.trusted_mpn,
                 offline=offline,
                 refresh=refresh_metadata,
+                cache_state_out=lookup_state,
             )
-            lcsc_id = _clean(lcsc_record.distributor_part_number)
-            if not lcsc_id or not re.fullmatch(r"C[1-9][0-9]*", lcsc_id):
+            resolved_lcsc_id = _clean(lcsc_record.distributor_part_number)
+            if not resolved_lcsc_id or not re.fullmatch(
+                r"C[1-9][0-9]*", resolved_lcsc_id
+            ):
                 raise MetadataServiceError(
                     "INVALID_RESPONSE",
                     "exact result omitted a canonical LCSC ID",
                     "lcsc",
                 )
-            result.trusted_manufacturer = result.trusted_manufacturer or _clean(
-                lcsc_record.manufacturer
+            lcsc_id = resolved_lcsc_id
+            result.jlcpcb = _found_jlcpcb(
+                lcsc_record,
+                jlcpcb_checked_at,
+                _successful_cache_state(lookup_state),
             )
-            if result.manufacturer_source is None and result.trusted_manufacturer:
-                result.manufacturer_source = "lcsc"
-            _remember_manufacturer_evidence(result, "lcsc", lcsc_record.manufacturer)
-        except NotFoundError as error:
+            if lcsc_record is not None:
+                result.trusted_manufacturer = result.trusted_manufacturer or _clean(
+                    lcsc_record.manufacturer
+                )
+                if result.manufacturer_source is None and result.trusted_manufacturer:
+                    result.manufacturer_source = "lcsc"
+                _remember_manufacturer_evidence(
+                    result, "lcsc", lcsc_record.manufacturer
+                )
+        except NotFoundError:
+            result.jlcpcb = _unresolved_jlcpcb(
+                MANUAL_GLOBAL_SOURCING_REQUIRED,
+                jlcpcb_checked_at,
+                JLCPCB_CACHE_LIVE,
+                manual_action=JLCPCB_MANUAL_ACTION,
+            )
             if use_easyeda_cad:
                 result.cad = CadRecord(
                     source="easyeda", verification_status=CAD_NOT_FOUND
                 )
-            else:
-                _record_provider_error(result, "lcsc", error)
-        except (AmbiguousMatchError, MpnMismatchError) as error:
-            raise _fatal_provider_error(error) from None
+        except AmbiguousMatchError as error:
+            _record_provider_error(result, "lcsc", error)
+            result.jlcpcb = _unresolved_jlcpcb(
+                JLCPCB_IDENTITY_AMBIGUOUS,
+                jlcpcb_checked_at,
+                _jlcpcb_cache_state_for_error(error, offline),
+            )
+            result.blocking_error = JLCPCB_IDENTITY_AMBIGUOUS
+        except MpnMismatchError as error:
+            _record_provider_error(result, "lcsc", error)
+            result.jlcpcb = _unresolved_jlcpcb(
+                JLCPCB_IDENTITY_CONFLICT,
+                jlcpcb_checked_at,
+                _jlcpcb_cache_state_for_error(error, offline),
+            )
+            result.blocking_error = JLCPCB_IDENTITY_CONFLICT
         except (ProviderError, CacheError) as error:
             code = _error_code(error)
             _record_provider_error(result, "lcsc", error)
+            result.jlcpcb = _unresolved_jlcpcb(
+                JLCPCB_LOOKUP_FAILED,
+                jlcpcb_checked_at,
+                _jlcpcb_cache_state_for_error(error, offline),
+            )
+            # Keep the established exact-LCSC lookup exit behavior while the
+            # independent DigiKey/Mouser metadata loop below continues.
             result.blocking_error = code
 
     # Fetch CAD before contacting DigiKey/Mouser so an explicit LCSC/MPN
@@ -374,9 +426,11 @@ def resolve_metadata(
         lcsc_record is None
         and lcsc_id is not None
         and ("lcsc" in selected or mandatory_identity_lookup)
+        and result.blocking_error is None
     )
     if should_lookup_lcsc and lcsc_id is not None:
         lcsc_id_lookup_attempted = True
+        lookup_state = []
         try:
             lcsc_record = _cached_id_lookup(
                 lcsc_provider,
@@ -384,6 +438,7 @@ def resolve_metadata(
                 lcsc_id,
                 offline=offline,
                 refresh=refresh_metadata,
+                cache_state_out=lookup_state,
             )
             _validate_record_identity(
                 lcsc_record,
@@ -399,6 +454,12 @@ def resolve_metadata(
             if result.manufacturer_source is None and result.trusted_manufacturer:
                 result.manufacturer_source = "lcsc"
             _remember_manufacturer_evidence(result, "lcsc", lcsc_record.manufacturer)
+            if result.trusted_mpn:
+                result.jlcpcb = _found_jlcpcb(
+                    lcsc_record,
+                    jlcpcb_checked_at,
+                    _successful_cache_state(lookup_state),
+                )
         except NotFoundError as error:
             if mandatory_identity_lookup:
                 raise MetadataServiceError(
@@ -406,7 +467,15 @@ def resolve_metadata(
                     mandatory_lookup_detail,
                     "lcsc",
                 ) from None
-            _record_provider_error(result, "lcsc", error)
+            elif result.trusted_mpn:
+                result.jlcpcb = _unresolved_jlcpcb(
+                    MANUAL_GLOBAL_SOURCING_REQUIRED,
+                    jlcpcb_checked_at,
+                    JLCPCB_CACHE_LIVE,
+                    manual_action=JLCPCB_MANUAL_ACTION,
+                )
+            else:
+                _record_provider_error(result, "lcsc", error)
         except (AmbiguousMatchError, MpnMismatchError) as error:
             raise _fatal_provider_error(error) from None
         except (ProviderError, CacheError) as error:
@@ -417,6 +486,12 @@ def resolve_metadata(
                     "lcsc",
                 ) from None
             _record_provider_error(result, "lcsc", error)
+            if result.trusted_mpn:
+                result.jlcpcb = _unresolved_jlcpcb(
+                    JLCPCB_LOOKUP_FAILED,
+                    jlcpcb_checked_at,
+                    _jlcpcb_cache_state_for_error(error, offline),
+                )
 
     if "lcsc" in selected and lcsc_record is not None:
         _append_once(result.distributor_records, lcsc_record)
@@ -501,6 +576,8 @@ def resolve_metadata(
         except (ProviderError, CacheError) as error:
             _record_provider_error(result, name, error)
 
+    _attach_global_sourcing_candidates(result)
+
     if selected_cad_source == "digikey":
         result.cad_discovery = _discover_digikey_cad(
             result,
@@ -539,6 +616,110 @@ def resolve_metadata(
             result.blocking_error = result.cad_discovery.status
 
     return result
+
+
+def _found_jlcpcb(
+    record: DistributorRecord,
+    checked_at: str,
+    cache_state: str,
+) -> JlcpcbResolution:
+    part_number = _clean(record.distributor_part_number)
+    if (
+        record.provider != "lcsc"
+        or part_number is None
+        or re.fullmatch(r"C[1-9][0-9]*", part_number) is None
+    ):
+        raise MetadataServiceError(
+            "INVALID_RESPONSE",
+            "exact JLCPCB result omitted a canonical LCSC ID",
+            "lcsc",
+        )
+    return JlcpcbResolution(
+        match_status=JLCPCB_PART_FOUND,
+        checked_at=checked_at,
+        cache_state=cache_state,
+        jlcpcb_part_number=part_number,
+        lcsc_part_number=part_number,
+        stock=record.stock,
+    )
+
+
+def _unresolved_jlcpcb(
+    status: str,
+    checked_at: str,
+    cache_state: str,
+    *,
+    manual_action: Optional[str] = None,
+) -> JlcpcbResolution:
+    return JlcpcbResolution(
+        match_status=status,
+        checked_at=checked_at,
+        cache_state=cache_state,
+        manual_action_required=manual_action,
+    )
+
+
+def _attach_global_sourcing_candidates(result: MetadataResolution) -> None:
+    resolution = result.jlcpcb
+    trusted_mpn = _clean(result.trusted_mpn)
+    if (
+        resolution is None
+        or resolution.match_status != MANUAL_GLOBAL_SOURCING_REQUIRED
+        or trusted_mpn is None
+    ):
+        return
+    candidates: List[GlobalSourcingCandidate] = []
+    for record in result.distributor_records:
+        part_number = _clean(record.distributor_part_number)
+        if (
+            record.provider not in ("digikey", "mouser")
+            or part_number is None
+            or normalize_mpn(record.mpn) != normalize_mpn(trusted_mpn)
+        ):
+            continue
+        candidates.append(
+            GlobalSourcingCandidate(
+                provider=record.provider,
+                manufacturer_part_number=trusted_mpn,
+                distributor_part_number=part_number,
+                product_url=sanitize_public_url(record.product_url),
+            )
+        )
+    result.jlcpcb = replace(
+        resolution,
+        global_sourcing_candidates=candidates,
+    )
+
+
+def _successful_cache_state(states: Sequence[str]) -> str:
+    if len(states) != 1 or states[0] not in (
+        JLCPCB_CACHE_CACHED,
+        JLCPCB_CACHE_LIVE,
+    ):
+        raise MetadataServiceError(
+            "INVALID_RESPONSE",
+            "JLCPCB lookup did not report a valid cache state",
+            "lcsc",
+        )
+    return states[0]
+
+
+def _jlcpcb_cache_state_for_error(error: Any, offline: bool) -> str:
+    code = _error_code(error)
+    if code == "OFFLINE_CACHE_MISS":
+        return JLCPCB_CACHE_OFFLINE_MISS
+    if "CACHE" in code:
+        return JLCPCB_CACHE_ERROR
+    return JLCPCB_CACHE_OFFLINE_MISS if offline else JLCPCB_CACHE_LIVE
+
+
+def _jlcpcb_checked_at() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def _discover_auto_cad_handoff(
@@ -888,6 +1069,7 @@ def _cached_exact_lookup(
     *,
     offline: bool,
     refresh: bool,
+    cache_state_out: Optional[List[str]] = None,
 ) -> DistributorRecord:
     request = cache.canonical_request(
         provider.name,
@@ -909,6 +1091,7 @@ def _cached_exact_lookup(
         ),
         offline=offline,
         refresh=refresh,
+        cache_state_out=cache_state_out,
     )
 
 
@@ -919,6 +1102,7 @@ def _cached_id_lookup(
     *,
     offline: bool,
     refresh: bool,
+    cache_state_out: Optional[List[str]] = None,
 ) -> DistributorRecord:
     request = cache.canonical_request(
         provider.name,
@@ -940,6 +1124,7 @@ def _cached_id_lookup(
         ),
         offline=offline,
         refresh=refresh,
+        cache_state_out=cache_state_out,
     )
 
 
@@ -952,6 +1137,7 @@ def _cached_lookup(
     *,
     offline: bool,
     refresh: bool,
+    cache_state_out: Optional[List[str]] = None,
 ) -> DistributorRecord:
     if getattr(provider, "persistent_cache_allowed", True) is False:
         if offline:
@@ -985,6 +1171,8 @@ def _cached_lookup(
             cached_record.datasheet_url = sanitize_public_url(
                 cached_record.datasheet_url
             )
+            if cache_state_out is not None:
+                cache_state_out.append(JLCPCB_CACHE_CACHED)
             return cached_record
         except (OverflowError, TypeError, ValueError):
             if offline:
@@ -1021,6 +1209,8 @@ def _cached_lookup(
         raise MetadataServiceError(
             "CACHE_WRITE_ERROR", "metadata cache could not be written", provider.name
         ) from None
+    if cache_state_out is not None:
+        cache_state_out.append(JLCPCB_CACHE_LIVE)
     return record
 
 

@@ -45,7 +45,7 @@ class _Response(io.BytesIO):
         self.headers: dict[str, str] = {}
 
 
-class _UnusedLcscProvider:
+class _NoMatchLcscProvider:
     name = "lcsc"
 
     def get_cache_context(self) -> dict[str, str]:
@@ -55,11 +55,11 @@ class _UnusedLcscProvider:
         self, manufacturer: Optional[str], mpn: str
     ) -> DistributorRecord:
         del manufacturer, mpn
-        raise AssertionError("LCSC lookup was not requested")
+        raise NotFoundError("lcsc", operation="exact-match")
 
     def get_part_by_distributor_id(self, part_id: str) -> DistributorRecord:
         del part_id
-        raise AssertionError("LCSC lookup was not requested")
+        raise NotFoundError("lcsc", operation="id-lookup")
 
 
 def _record(
@@ -351,7 +351,7 @@ def test_service_returns_typed_auth_action_without_network_or_easyeda(
     def provider_factory(name: str, _api: EasyedaApi) -> MetadataProvider:
         if name == "digikey":
             return digikey
-        return cast(MetadataProvider, _UnusedLcscProvider())
+        return cast(MetadataProvider, _NoMatchLcscProvider())
 
     result = resolve_metadata(
         requested_mpn="AD5314BRM",
@@ -370,6 +370,8 @@ def test_service_returns_typed_auth_action_without_network_or_easyeda(
     assert result.cad_discovery.status == CAD_AUTH_REQUIRED
     assert result.blocking_error == CAD_AUTH_REQUIRED
     assert result.provider_errors == {"digikey": "AUTH_MISSING"}
+    assert result.jlcpcb is not None
+    assert result.jlcpcb.match_status == "MANUAL_GLOBAL_SOURCING_REQUIRED"
     assert result.cad_discovery.provenance.delivery_partner is None
     assert requests == []
     payload = manifest_to_dict(result.to_merged())
@@ -416,7 +418,7 @@ def test_service_reuses_exact_metadata_record_for_media_discovery(
     def provider_factory(name: str, _api: EasyedaApi) -> MetadataProvider:
         if name == "digikey":
             return provider
-        return cast(MetadataProvider, _UnusedLcscProvider())
+        return cast(MetadataProvider, _NoMatchLcscProvider())
 
     result = resolve_metadata(
         requested_mpn="AD5314BRM",
