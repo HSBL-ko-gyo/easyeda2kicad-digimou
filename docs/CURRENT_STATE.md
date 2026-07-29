@@ -241,8 +241,18 @@ no partial output.
 
 ## Issue #7 Phase D quality evidence
 
-The branch-level quality results will be refreshed after the Phase C/Phase D
-integration merge. Two opt-in tests remain deliberate external gates:
+| Gate | Result |
+| --- | --- |
+| Mouser/DigiKey/package/docs focused tests | `108 passed, 2 skipped` |
+| Python 3.12.13 full pytest | `837 passed, 75 skipped` |
+| Ruff format check | PASS, 77 files |
+| Ruff lint | PASS |
+| Python 3.12 strict mypy | PASS, 77 source files |
+| `git diff --check` | PASS |
+| Build and Twine check | PASS for sdist and wheel |
+| Changed source and unpacked distribution secret/path scan | PASS |
+
+The two focused skips remain deliberate external gates:
 `MOUSER_API_KEY` for the single-request official API smoke and
 `MOUSER_FM220A_CAD_PACKAGE` for real-package import, project registration, and
 KiCad CLI 7/9/10 rendering. A skip is not counted as live success.
