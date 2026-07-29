@@ -32,6 +32,7 @@ from .metadata.models import (
 )
 
 MACHINE_SCHEMA_VERSION = "1"
+MACHINE_EVENT_SCHEMA_VERSION = "1"
 
 EXIT_SUCCESS = 0
 EXIT_INVALID_REQUEST = 2
@@ -111,7 +112,11 @@ def invalid_machine_result(
     )
 
 
-def internal_machine_result(request_id: str) -> Dict[str, Any]:
+def internal_machine_result(
+    request_id: str,
+    *,
+    code: str = "INTERNAL_ERROR",
+) -> Dict[str, Any]:
     """Return a bounded unexpected-failure result without exception contents."""
 
     return _base_result(
@@ -119,7 +124,7 @@ def internal_machine_result(request_id: str) -> Dict[str, Any]:
         status="FAILED",
         exit_code=EXIT_INTERNAL,
         identity={"manufacturer": None, "mpn": None},
-        errors=[_diagnostic("INTERNAL_ERROR")],
+        errors=[_diagnostic(code)],
     )
 
 
@@ -319,6 +324,113 @@ def write_machine_json(
     target = sys.stdout.buffer if stream is None else stream
     target.write(payload)
     target.flush()
+
+
+class MachineEventWriter:
+    """Write one credential-safe UTF-8 JSON Lines event stream."""
+
+    def __init__(
+        self,
+        request_id: str,
+        *,
+        stream: Optional[BinaryIO] = None,
+    ) -> None:
+        self.request_id = request_id
+        self.sequence = 0
+        self.stream = sys.stdout.buffer if stream is None else stream
+
+    def emit(self, event_type: str, payload: Mapping[str, Any]) -> None:
+        self.sequence += 1
+        event = {
+            "event_schema_version": MACHINE_EVENT_SCHEMA_VERSION,
+            "request_id": self.request_id,
+            "sequence": self.sequence,
+            "type": event_type,
+            "payload": dict(payload),
+        }
+        safe_event = strip_secrets(event)
+        encoded = (
+            json.dumps(
+                safe_event,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+        self.stream.write(encoded)
+        self.stream.flush()
+
+
+def emit_machine_result_events(
+    writer: MachineEventWriter,
+    document: Mapping[str, Any],
+) -> None:
+    """Emit typed stage summaries followed by the complete Phase A result."""
+
+    providers = document.get("providers")
+    if isinstance(providers, Mapping):
+        for provider in sorted(providers):
+            provider_result = providers[provider]
+            status = None
+            diagnostic_code = None
+            if isinstance(provider_result, Mapping):
+                status = _optional_text(provider_result.get("status"))
+                diagnostic = provider_result.get("diagnostic")
+                if isinstance(diagnostic, Mapping):
+                    diagnostic_code = _optional_text(diagnostic.get("code"))
+            writer.emit(
+                "provider",
+                {
+                    "provider": str(provider),
+                    "status": status,
+                    "diagnostic_code": diagnostic_code,
+                },
+            )
+
+    cad = document.get("cad")
+    writer.emit(
+        "cad",
+        {
+            "selected_source": (
+                _optional_text(cad.get("selected_source"))
+                if isinstance(cad, Mapping)
+                else None
+            ),
+            "verification_status": (
+                _optional_text(cad.get("verification_status"))
+                if isinstance(cad, Mapping)
+                else None
+            ),
+            "discovery_status": (
+                _optional_text(cad.get("discovery_status"))
+                if isinstance(cad, Mapping)
+                else None
+            ),
+        },
+    )
+    writer.emit(
+        "validation",
+        {
+            "status": _optional_text(document.get("status")),
+            "warning_codes": _codes_from_diagnostics(document.get("warnings")),
+            "error_codes": _codes_from_diagnostics(document.get("errors")),
+            "action_codes": _codes_from_diagnostics(document.get("actions_required")),
+        },
+    )
+    project_changes = document.get("project_changes")
+    writer.emit(
+        "project",
+        {
+            "changes": (
+                [dict(value) for value in project_changes if isinstance(value, Mapping)]
+                if isinstance(project_changes, list)
+                else []
+            )
+        },
+    )
+    writer.emit("completed", {"result": dict(document)})
 
 
 def _base_result(
@@ -784,6 +896,20 @@ def _optional_text(value: Any) -> Optional[str]:
     return text or None
 
 
+def _codes_from_diagnostics(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return sorted(
+        {
+            code
+            for item in value
+            if isinstance(item, Mapping)
+            for code in [_optional_text(item.get("code"))]
+            if code is not None
+        }
+    )
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -802,9 +928,12 @@ __all__ = [
     "EXIT_PROJECT",
     "EXIT_PROVIDER",
     "EXIT_SUCCESS",
+    "MACHINE_EVENT_SCHEMA_VERSION",
     "MACHINE_EXIT_CODES",
     "MACHINE_SCHEMA_VERSION",
+    "MachineEventWriter",
     "build_machine_result",
+    "emit_machine_result_events",
     "internal_machine_result",
     "invalid_machine_result",
     "write_machine_json",
