@@ -500,6 +500,16 @@ KiCad, pin/pad, and 3D validation. Material differences produce
 SHA-256 are stored atomically in `<output>.cad-source-lock.json`; reruns must
 match that lock and can rebuild from the same local package with `--offline`.
 
+EasyEDA wins only when it can safely export every requested artifact. With
+`--cad-source auto`, a missing or invalid requested symbol or footprint, a
+pin/pad mismatch, or a missing requested 3D model continues to DigiKey and then
+Mouser CAD discovery even when they were not selected as metadata providers. A
+provider is preferred only when its product-specific handoff advertises the
+missing artifact kinds. A validated local `--cad-candidate` can then be
+selected and imported automatically; an interactive login, agreement, or
+package request remains a typed manual handoff and is never bypassed or
+scraped.
+
 ## Registering libraries in one KiCad project
 
 Project modification is explicit opt-in. Keep `--output` inside a disposable or

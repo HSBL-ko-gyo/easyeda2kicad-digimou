@@ -736,11 +736,13 @@ def _discover_auto_cad_handoff(
     provider_factory: MetadataProviderFactory,
     metadata_api: EasyedaApi,
     offline: bool,
+    required_artifacts: Sequence[str] = (),
 ) -> Optional[CadDiscoveryResult]:
     """Return an action only; a landing page is never an auto-selected package."""
 
     attempts: List[CadDiscoveryResult] = []
     selected = frozenset(selected_providers)
+    required = frozenset(required_artifacts)
     for source in ("digikey", "mouser"):
         if source not in selected:
             continue
@@ -763,9 +765,61 @@ def _discover_auto_cad_handoff(
                 offline=offline,
             )
         attempts.append(discovery)
-        if discovery.status == CAD_MANUAL_DOWNLOAD_REQUIRED:
+        available = {
+            artifact
+            for candidate in discovery.available_sources
+            for artifact in candidate.artifact_kinds
+        }
+        if discovery.status == CAD_MANUAL_DOWNLOAD_REQUIRED and required.issubset(
+            available
+        ):
             return _auto_handoff_result(discovery)
     return _auto_handoff_result(attempts[0]) if attempts else None
+
+
+def discover_auto_cad_fallback(
+    result: MetadataResolution,
+    selected_providers: Sequence[str],
+    missing_easyeda_artifacts: Sequence[str],
+    *,
+    metadata_api: EasyedaApi,
+    offline: bool,
+    provider_factory: MetadataProviderFactory = create_metadata_provider,
+) -> Optional[CadDiscoveryResult]:
+    """Discover a provider handoff for requested artifacts missing from EasyEDA."""
+
+    missing = tuple(
+        dict.fromkeys(
+            str(artifact).strip().lower() for artifact in missing_easyeda_artifacts
+        )
+    )
+    if not missing or any(
+        artifact not in ("symbol", "footprint", "model_3d") for artifact in missing
+    ):
+        raise ValueError("missing EasyEDA artifacts must name supported CAD kinds")
+    records = {
+        record.provider: record
+        for record in result.distributor_records
+        if record.provider in ("digikey", "mouser")
+    }
+    discovery = _discover_auto_cad_handoff(
+        result,
+        selected_providers,
+        {},
+        records,
+        provider_factory=provider_factory,
+        metadata_api=metadata_api,
+        offline=offline,
+        required_artifacts=missing,
+    )
+    if discovery is None or discovery.action_required is None:
+        return discovery
+    missing_display = ", ".join(missing)
+    discovery.action_required.detail = (
+        "EasyEDA did not provide usable requested CAD artifacts "
+        f"({missing_display}). {discovery.action_required.detail}"
+    )
+    return discovery
 
 
 def _auto_handoff_result(discovery: CadDiscoveryResult) -> CadDiscoveryResult:
@@ -1432,5 +1486,6 @@ __all__ = [
     "MetadataServiceError",
     "create_cad_provider",
     "create_metadata_provider",
+    "discover_auto_cad_fallback",
     "resolve_metadata",
 ]
