@@ -333,6 +333,50 @@ offline rebuild, package import, disposable-project registration, and KiCad
 CLI 7/9/10 rendering. They are not substituted for the still required real
 Mouser package and GUI proof.
 
+## Issue #8 live-provider smoke infrastructure
+
+- Added the opt-in `live_provider` marker and an independent
+  `--run-live-provider` gate. The ordinary suite skips these tests even if a
+  developer shell happens to contain provider credentials.
+- Added a manual-only GitHub Actions workflow bound to the `provider-live`
+  environment. It uses `contents: read`, one serial job, a ten-minute timeout,
+  one API attempt per provider, no schedule, no pull-request trigger, and a
+  default-branch-only job condition.
+- Fixed the live canaries at `Texas Instruments / OPA333AIDBVR` for DigiKey
+  Product Information V4 and `Texas Instruments / LM321MF/NOPB` for Mouser
+  Search API V2. Both tests require exact manufacturer/full-MPN identity,
+  a normalized record, a well-formed distributor part number, sanitized URLs,
+  and compatibility with the normal Manifest path; volatile commercial values
+  are not asserted.
+- Added strict schema-v1 evidence with an allow list only for commit, UTC,
+  provider, requested and normalized non-secret identity, pass/fail/skip, API
+  operation/version, safe HTTP status category, failure category, and test-code
+  hash. Evidence writes are atomic. Raw responses, credentials, tokens, headers,
+  secret URLs, stock, price, and local paths are not accepted fields.
+- Added deterministic seeded-canary scanning across stdout, stderr, cache,
+  Manifest, and artifact surfaces. The workflow validates evidence against the
+  configured secret values without printing those values and requires both
+  providers to report `pass` before the job succeeds.
+
+| Gate | Result |
+| --- | --- |
+| Deterministic live-infrastructure focused tests | `13 passed` |
+| Explicit credentialed smoke in this process | `2 skipped` because all three credential variables are absent |
+| Python 3.12.13 full pytest | `889 passed, 75 skipped` |
+| Workflow YAML and static contract checks | PASS |
+| Ruff lint / format | PASS, 125 files |
+| Python 3.12 strict mypy | PASS, 84 source files |
+| Build and Twine check | PASS for sdist and wheel |
+| Changed source and unpacked distribution secret/path scan | PASS |
+| Skip-evidence schema validation | PASS, 2 sanitized files; required-pass validator rejected them |
+
+Infrastructure completion is not Issue #8 completion. A post-merge dispatch
+must run with protected environment secrets `DIGIKEY_CLIENT_ID`,
+`DIGIKEY_CLIENT_SECRET`, and `MOUSER_API_KEY`, and the sanitized artifact must
+contain a real pass for both providers. Until that happens, Issue #8 remains
+open and documentation must not replace the current unverified Mouser status
+with a success claim.
+
 ## Remaining
 
 - Mouser/SamacSys exact official Product Detail discovery is implemented, but
@@ -345,6 +389,9 @@ Mouser package and GUI proof.
   closes. Fixture-only dual-source evidence does not meet that gate.
 - Credentialed Mouser live calls and native Linux process E2E remain disclosed
   external validation gaps.
+- Issue #8's protected `provider-live` workflow still requires owner-provisioned
+  secrets and one confirmed DigiKey plus Mouser passing dispatch. Skips and
+  infrastructure-only CI are not counted as live success.
 
 ## Explicit limitations and risks
 

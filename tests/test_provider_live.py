@@ -3,6 +3,8 @@ from __future__ import annotations
 # Global imports
 import json
 import os
+import re
+import shutil
 import subprocess
 import urllib.request
 from pathlib import Path
@@ -14,14 +16,25 @@ import pytest
 # Local imports
 from easyeda2kicad import __main__ as cli
 from easyeda2kicad.cad import DigiKeyCadSource
+from easyeda2kicad.live_provider import (
+    build_live_provider_evidence,
+    classify_provider_failure,
+    file_sha256,
+    secret_value_hit_names,
+    write_live_provider_evidence,
+)
+from easyeda2kicad.metadata.manifest import manifest_to_dict
+from easyeda2kicad.metadata.merge import merge_records
 from easyeda2kicad.metadata.models import (
     CAD_MANUAL_DOWNLOAD_REQUIRED,
     CAD_PACKAGE_READY,
     CadRequest,
+    DistributorRecord,
     normalize_manufacturer,
     normalize_mpn,
 )
-from easyeda2kicad.providers import DigiKeyProvider, MouserProvider
+from easyeda2kicad.metadata.cache import sanitize_public_url
+from easyeda2kicad.providers import DigiKeyProvider, MouserProvider, ProviderError
 
 
 KICAD_CLI = {
@@ -29,26 +42,184 @@ KICAD_CLI = {
     "9": Path(r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe"),
     "10": Path(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe"),
 }
+_PART_NUMBER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/+:-]*")
+
+
+def _repository_commit() -> str:
+    configured = (
+        os.environ.get("PROVIDER_LIVE_COMMIT", "").strip()
+        or os.environ.get("GITHUB_SHA", "").strip()
+    )
+    if configured:
+        return configured
+    executable = shutil.which("git")
+    if executable is None:
+        raise RuntimeError("Git is required to identify the live test commit")
+    result = subprocess.run(  # noqa: S603 - resolved Git executable
+        [executable, "rev-parse", "HEAD"],
+        cwd=Path(__file__).parents[1],
+        capture_output=True,
+        check=True,
+        text=True,
+        timeout=5,
+    )
+    return result.stdout.strip()
+
+
+def _emit_live_evidence(
+    *,
+    provider: str,
+    requested_manufacturer: str,
+    requested_mpn: str,
+    state: str,
+    operation: str,
+    api_version: str,
+    record: DistributorRecord | None = None,
+    failure_category: str | None = None,
+    status_category: str | None = None,
+) -> str:
+    configured_directory = os.environ.get("LIVE_PROVIDER_EVIDENCE_DIR", "").strip()
+    if not configured_directory:
+        return ""
+    evidence = build_live_provider_evidence(
+        repository_commit=_repository_commit(),
+        provider=provider,
+        requested_manufacturer=requested_manufacturer,
+        requested_mpn=requested_mpn,
+        state=state,
+        operation=operation,
+        api_version=api_version,
+        test_config_sha256=file_sha256(Path(__file__)),
+        record=record,
+        failure_category=failure_category,
+        status_category=status_category,
+    )
+    destination = write_live_provider_evidence(
+        Path(configured_directory),
+        evidence,
+    )
+    return destination.read_text(encoding="utf-8")
+
+
+def _validate_live_record(
+    record: DistributorRecord,
+    *,
+    provider: str,
+    manufacturer: str,
+    mpn: str,
+) -> str:
+    assert record.provider == provider
+    assert normalize_manufacturer(record.manufacturer) == normalize_manufacturer(
+        manufacturer
+    )
+    assert normalize_mpn(record.mpn) == normalize_mpn(mpn)
+    part_number = (record.distributor_part_number or "").strip()
+    assert _PART_NUMBER_RE.fullmatch(part_number)
+    assert DistributorRecord.from_dict(record.to_dict()) == record
+    for url in (record.product_url, record.datasheet_url):
+        if url is not None:
+            assert sanitize_public_url(url) == url
+    merged = merge_records(
+        [record],
+        mpn=mpn,
+        manufacturer=manufacturer,
+    )
+    payload = manifest_to_dict(merged)
+    assert len(payload["distributor_records"]) == 1
+    return json.dumps(payload, sort_keys=True)
+
+
+def _configured_secret_values(names: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(
+        value for value in (os.environ.get(name, "") for name in names) if value.strip()
+    )
 
 
 @pytest.mark.network
-def test_digikey_live_exact_mpn_smoke() -> None:
+@pytest.mark.live_provider
+def test_digikey_live_exact_mpn_smoke(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     required = ("DIGIKEY_CLIENT_ID", "DIGIKEY_CLIENT_SECRET")
+    requested_manufacturer = "Texas Instruments"
+    requested_mpn = "OPA333AIDBVR"
+    operation = "Product Information V4 KeywordSearch"
     if not all(os.environ.get(name, "").strip() for name in required):
+        _emit_live_evidence(
+            provider="digikey",
+            requested_manufacturer=requested_manufacturer,
+            requested_mpn=requested_mpn,
+            state="skip",
+            operation=operation,
+            api_version="v4",
+        )
         pytest.skip(
             "DigiKey live smoke requires DIGIKEY_CLIENT_ID and DIGIKEY_CLIENT_SECRET"
         )
 
-    requested_mpn = "OPA333AIDBVR"
     provider = DigiKeyProvider(timeout=30.0)
     # One OAuth transaction and one keyword request are the minimum. Disable
     # automatic retries so this smoke test cannot multiply live API traffic.
     provider.max_attempts = 1
 
-    record = provider.search_exact_mpn(None, requested_mpn)
+    try:
+        record = provider.search_exact_mpn(requested_manufacturer, requested_mpn)
+        manifest = _validate_live_record(
+            record,
+            provider="digikey",
+            manufacturer=requested_manufacturer,
+            mpn=requested_mpn,
+        )
+    except ProviderError as error:
+        failure, status = classify_provider_failure(error)
+        _emit_live_evidence(
+            provider="digikey",
+            requested_manufacturer=requested_manufacturer,
+            requested_mpn=requested_mpn,
+            state="fail",
+            operation=operation,
+            api_version="v4",
+            failure_category=failure,
+            status_category=status,
+        )
+        raise
+    except Exception:
+        _emit_live_evidence(
+            provider="digikey",
+            requested_manufacturer=requested_manufacturer,
+            requested_mpn=requested_mpn,
+            state="fail",
+            operation=operation,
+            api_version="v4",
+            failure_category="ASSERTION_OR_SCHEMA_DRIFT",
+        )
+        raise
 
-    assert record.provider == "digikey"
-    assert normalize_mpn(record.mpn) == normalize_mpn(requested_mpn)
+    evidence = _emit_live_evidence(
+        provider="digikey",
+        requested_manufacturer=requested_manufacturer,
+        requested_mpn=requested_mpn,
+        state="pass",
+        operation=operation,
+        api_version="v4",
+        record=record,
+    )
+    captured = capsys.readouterr()
+    assert (
+        secret_value_hit_names(
+            {
+                "stdout": captured.out,
+                "stderr": captured.err,
+                "logs": caplog.text,
+                "normalized_record": json.dumps(record.to_dict(), sort_keys=True),
+                "manifest": manifest,
+                "evidence": evidence,
+            },
+            _configured_secret_values(required),
+        )
+        == ()
+    )
 
 
 @pytest.mark.network
@@ -312,16 +483,84 @@ def test_digikey_live_ad5314_package_project_e2e(
 
 
 @pytest.mark.network
-def test_mouser_live_exact_mpn_smoke() -> None:
+@pytest.mark.live_provider
+def test_mouser_live_exact_mpn_smoke(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    required = ("MOUSER_API_KEY",)
+    requested_manufacturer = "Texas Instruments"
+    requested_mpn = "LM321MF/NOPB"
+    operation = "Search API V2 SearchByPartnumber"
     if not os.environ.get("MOUSER_API_KEY", "").strip():
+        _emit_live_evidence(
+            provider="mouser",
+            requested_manufacturer=requested_manufacturer,
+            requested_mpn=requested_mpn,
+            state="skip",
+            operation=operation,
+            api_version="v2",
+        )
         pytest.skip("Mouser live smoke requires MOUSER_API_KEY")
 
-    requested_mpn = "LM321MF/NOPB"
     provider = MouserProvider(timeout=30.0)
     # A single official exact-part request is sufficient for this smoke test.
     provider.max_attempts = 1
 
-    record = provider.search_exact_mpn(None, requested_mpn)
+    try:
+        record = provider.search_exact_mpn(requested_manufacturer, requested_mpn)
+        manifest = _validate_live_record(
+            record,
+            provider="mouser",
+            manufacturer=requested_manufacturer,
+            mpn=requested_mpn,
+        )
+    except ProviderError as error:
+        failure, status = classify_provider_failure(error)
+        _emit_live_evidence(
+            provider="mouser",
+            requested_manufacturer=requested_manufacturer,
+            requested_mpn=requested_mpn,
+            state="fail",
+            operation=operation,
+            api_version="v2",
+            failure_category=failure,
+            status_category=status,
+        )
+        raise
+    except Exception:
+        _emit_live_evidence(
+            provider="mouser",
+            requested_manufacturer=requested_manufacturer,
+            requested_mpn=requested_mpn,
+            state="fail",
+            operation=operation,
+            api_version="v2",
+            failure_category="ASSERTION_OR_SCHEMA_DRIFT",
+        )
+        raise
 
-    assert record.provider == "mouser"
-    assert normalize_mpn(record.mpn) == normalize_mpn(requested_mpn)
+    evidence = _emit_live_evidence(
+        provider="mouser",
+        requested_manufacturer=requested_manufacturer,
+        requested_mpn=requested_mpn,
+        state="pass",
+        operation=operation,
+        api_version="v2",
+        record=record,
+    )
+    captured = capsys.readouterr()
+    assert (
+        secret_value_hit_names(
+            {
+                "stdout": captured.out,
+                "stderr": captured.err,
+                "logs": caplog.text,
+                "normalized_record": json.dumps(record.to_dict(), sort_keys=True),
+                "manifest": manifest,
+                "evidence": evidence,
+            },
+            _configured_secret_values(required),
+        )
+        == ()
+    )
