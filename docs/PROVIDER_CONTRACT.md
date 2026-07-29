@@ -376,6 +376,27 @@ distributor part number and product URL only, never MOQ, stock, or price; sales
 fields remain attached to the selected record rather than becoming identity
 evidence.
 
+For explicit DigiKey CAD discovery, `digikey` is the distributor, not a fixed
+delivery partner. Relevant Product Information V4 `MediaLinks` are classified
+per exact product as manufacturer-provided, Ultra Librarian, SnapMagic,
+SamacSys, or another named interactive source. When the media response has no
+CAD links, the adapter may make one public, credential-free and cookie-free GET
+of the canonical `/en/models/<numeric-product-id>` page. Only anchors containing
+the exact full MPN and an explicit symbol, footprint, or 3D label are accepted.
+Failure to read or recognize that page preserves an actionable DigiKey model
+URL with no claimed delivery partner.
+
+Discovery emits `available_sources` with artifact kinds, sanitized URLs,
+support state, and separate model creator, plus `missing_artifacts`. It never
+combines artifacts from different sources. Ultra Librarian remains a supported
+full-package adapter. A hash-bound `manufacturer-kicad` receipt additionally
+permits a unique native KiCad footprint plus STEP/STP or WRL package with no
+symbol. The receipt retains every reviewed artifact URL in `source_urls`. That
+intake installs the verified artifacts, records their hashes,
+returns `CAD_PARTIAL`/`SYMBOL_UNAVAILABLE`, and never invents or substitutes a
+symbol. Login, CAPTCHA, agreements, guest limits, and interactive export flows
+are not automated.
+
 ### Mouser Search API V2
 
 - MPN: `ManufacturerPartNumber`

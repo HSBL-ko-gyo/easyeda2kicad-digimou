@@ -50,12 +50,12 @@ def test_readme_capability_matrix_states_current_product_boundaries() -> None:
     assert "`--providers` selects metadata" in flattened
     assert "`--cad-source` selects CAD" in flattened
     assert "never silently falls back to EasyEDA" in flattened
-    assert "DigiKey / Ultra Librarian" in section
+    assert "DigiKey-linked CAD" in section
     assert "Mouser / SamacSys" in section
     assert "`distributor`, `delivery_partner`, and `model_creator`" in flattened
     assert "does not provide complete DigiKey or Mouser CAD support" in flattened
-    assert "2026-07-29" in section
-    assert "real package" in section
+    assert "2026-07-30" in section
+    assert "real-package import" in section
     assert "not yet complete" in section
 
 
@@ -162,14 +162,19 @@ def test_readme_documents_safe_provider_cad_handoffs_and_import() -> None:
     )
     flattened = section.replace("\n", " ")
 
-    assert "### Discover the DigiKey / Ultra Librarian CAD handoff" in section
+    assert "### Discover a product-specific DigiKey CAD handoff" in section
     assert '--manufacturer "Analog Devices Inc."' in section
     assert "--mpn AD5314BRM" in section
     assert "`CAD_MANUAL_DOWNLOAD_REQUIRED`" in section
     assert "`CAD_AUTH_REQUIRED`" in section
     assert "`CAD_DOWNLOAD_UNAVAILABLE`" in section
-    assert "never fetches or scrapes" in flattened
-    assert "review the model download agreement" in flattened
+    assert "credential-free, cookie-free GET" in flattened
+    assert "does not bypass login, CAPTCHA, agreements" in flattened
+    assert "`cad_discovery.available_sources`" in section
+    assert "`missing_artifacts`" in section
+    assert "Unknown hosts remain truthful manual handoffs" in flattened
+    assert "review the applicable terms" in flattened
+    assert "Same Sky `MJ-2523-SMT-TR`" in section
     assert "KiCad CLI 7/9/10 and KiCad" in flattened
     assert "### Discover the Mouser / SamacSys CAD handoff" in section
     assert "--manufacturer Rectron" in section
@@ -178,7 +183,9 @@ def test_readme_documents_safe_provider_cad_handoffs_and_import() -> None:
     assert "still required" in flattened
     assert "--cad-package ./downloads/official-ultralibrarian-kicad.zip" in section
     assert "--cad-package-format ultralibrarian-kicad" in section
+    assert "--cad-package-format manufacturer-kicad" in section
     assert "--cad-package-evidence" in section
+    assert "`CAD_PARTIAL` with `SYMBOL_UNAVAILABLE`" in section
     assert "CLI input alone is insufficient proof of identity" in flattened
     assert "hash-bound evidence" in flattened
     assert "more than 4096 entries" in flattened

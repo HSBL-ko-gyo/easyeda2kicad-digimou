@@ -238,8 +238,9 @@ def test_digikey_live_ad5314_cad_handoff_smoke() -> None:
     requested_manufacturer = "Analog Devices Inc."
     requested_mpn = "AD5314BRM"
     provider = DigiKeyProvider(timeout=30.0)
-    # One OAuth transaction, one exact keyword lookup, and one Media request
-    # are sufficient. Never multiply live traffic with automatic retries.
+    # One OAuth transaction, one exact keyword lookup, one Media request, and
+    # at most one public exact-model-page GET are sufficient. Never multiply
+    # live traffic with automatic retries.
     provider.max_attempts = 1
 
     record = provider.search_exact_mpn(requested_manufacturer, requested_mpn)
@@ -261,7 +262,7 @@ def test_digikey_live_ad5314_cad_handoff_smoke() -> None:
     assert result.status == CAD_MANUAL_DOWNLOAD_REQUIRED
     assert result.package is None
     assert result.provenance.distributor == "digikey"
-    assert result.provenance.delivery_partner == "ultralibrarian"
+    assert result.provenance.delivery_partner in (None, "ultralibrarian")
     assert result.provenance.model_creator is None
     assert result.action_required is not None
     assert result.action_required.code == CAD_MANUAL_DOWNLOAD_REQUIRED

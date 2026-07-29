@@ -54,6 +54,7 @@ from .models import (
     CadProvenance,
     CadRecord,
     CadRequest,
+    CadSourceAvailability,
     DistributorRecord,
     GlobalSourcingCandidate,
     JlcpcbResolution,
@@ -801,6 +802,11 @@ def _auto_handoff_result(discovery: CadDiscoveryResult) -> CadDiscoveryResult:
             detail=detail,
             setup_url=(action.setup_url if action is not None else None),
         ),
+        available_sources=[
+            CadSourceAvailability.from_dict(source.to_dict())
+            for source in discovery.available_sources
+        ],
+        missing_artifacts=list(discovery.missing_artifacts),
     )
 
 
@@ -1045,7 +1051,7 @@ def _external_cad_not_acquired(
     """Return the Phase-A fail-closed result without touching EasyEDA CAD."""
 
     partners = {
-        "digikey": ("ultralibrarian", "DigiKey / Ultra Librarian"),
+        "digikey": (None, "DigiKey-linked official"),
         "mouser": ("samacsys", "Mouser / SamacSys"),
     }
     delivery_partner, label = partners[source]

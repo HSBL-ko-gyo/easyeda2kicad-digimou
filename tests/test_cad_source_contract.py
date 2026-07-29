@@ -111,10 +111,10 @@ def test_external_cad_request_requires_complete_identity(tmp_path: Path) -> None
 
 @pytest.mark.parametrize(
     ("source", "delivery_partner"),
-    [("digikey", "ultralibrarian"), ("mouser", "samacsys")],
+    [("digikey", None), ("mouser", "samacsys")],
 )
 def test_manifest_keeps_cad_provenance_roles_separate(
-    source: str, delivery_partner: str, tmp_path: Path
+    source: str, delivery_partner: str | None, tmp_path: Path
 ) -> None:
     resolution = resolve_metadata(
         requested_mpn="OPA333AIDBVR",
