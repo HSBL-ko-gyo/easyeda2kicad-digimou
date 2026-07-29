@@ -4,17 +4,19 @@ Last updated: 2026-07-29 (Asia/Tokyo)
 
 ## Current phase
 
-The post-beta issue sequence is now active on the actual default branch.
-Issues #2 and #1 are merged and closed; Issue #4 Phase A and Issue #7 Phase A
-are merged while their parent issues remain open. Issue #7 Phase B implements
-the intermediate, local-package intake milestone. Issue #5 adds explicit,
-project-local library registration after validated CAD generation. Issue #7
-Phase C now completes the DigiKey/Ultra Librarian real-service path through
-official manual download, intake, registration, and KiCad CLI/GUI validation;
-Phase D provides the policy-safe Mouser/SamacSys handoff infrastructure.
-Phase E now implements deterministic selection among verified EasyEDA CAD and
-fully validated local provider packages. Mouser real-package proof and final
-multi-source live completion remain outstanding.
+The post-beta issue sequence is active on the actual default branch. Issues #1,
+#2, #3, #6, and #9 are merged and closed. Issue #4 Phase B now replaces the
+README with the verified end-to-end user workflow and completes the planned
+documentation work. Issue #7 Phase B implements the intermediate,
+local-package intake milestone. Issue #5 adds explicit, project-local library
+registration after validated CAD generation. Issue #7 Phase C completes the
+DigiKey/Ultra Librarian real-service path through official manual download,
+intake, registration, and KiCad CLI/GUI validation; Phase D provides the
+policy-safe Mouser/SamacSys handoff infrastructure. Phase E implements
+deterministic selection among verified EasyEDA CAD and fully validated local
+provider packages. Mouser real-package proof and final multi-source live
+completion remain outstanding. Issue #8 has its credentialed live-test
+infrastructure but remains open until both provider runs pass.
 
 RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
 limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
@@ -458,6 +460,35 @@ optional-provider `PARTIAL`/status-0 behavior is unchanged.
 | Build and Twine check | PASS for sdist and wheel |
 | Three schemas present once in sdist and wheel | PASS |
 | Changed source and distribution secret/path scan | PASS |
+
+## Issue #4 Phase B verified README workflow
+
+- Reorganized the README around the user path: current capabilities,
+  account-free quick start, API setup, provider smoke tests, CAD handoff/import,
+  project registration, same-command JLCPCB resolution, KiCad verification,
+  machine JSON, troubleshooting, and advanced references.
+- Replaced ambiguous provider claims with an explicit metadata/CAD boundary.
+  DigiKey and Mouser metadata require user-owned credentials; explicit
+  distributor CAD sources never fall back to EasyEDA. DigiKey's verified real
+  package and the still-outstanding Mouser/SamacSys real-package proof are
+  dated separately.
+- Documented current-terminal-only PowerShell, cmd.exe, and POSIX credential
+  setup, boolean-only presence checks, official account/setup links, and the
+  rule that OAuth tokens, raw responses, credentials, cookies, and
+  secret-bearing URLs are never copied into project artifacts.
+- Added a standard-library provider-manifest checker used by the documented
+  smoke workflow. README acceptance tests parse the documented CLI commands,
+  validate relative links, exercise the checker, and scan for secrets and
+  machine-specific paths.
+
+| Gate | Result |
+| --- | --- |
+| README/workflow/machine/provider focused tests | `90 passed` |
+| Python 3.12.13 full pytest | `958 passed, 75 skipped` |
+| Ruff lint / format | PASS |
+| Python 3.12 strict mypy | PASS |
+| Build and Twine check | PASS for sdist and wheel |
+| Changed source and unpacked distribution secret/path scan | PASS |
 
 ## Remaining
 
