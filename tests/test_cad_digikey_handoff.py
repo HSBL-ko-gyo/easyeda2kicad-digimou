@@ -406,6 +406,9 @@ def test_service_returns_typed_auth_action_without_network_or_easyeda(
     assert result.cad_discovery.status == CAD_AUTH_REQUIRED
     assert result.blocking_error == CAD_AUTH_REQUIRED
     assert result.provider_errors == {"digikey": "GUEST_LOOKUP_UNSUPPORTED"}
+    assert result.cad_discovery.action_required is not None
+    assert "DIGIKEY_CLIENT_ID" in result.cad_discovery.action_required.detail
+    assert "DIGIKEY_CLIENT_SECRET" in result.cad_discovery.action_required.detail
     assert result.jlcpcb is not None
     assert result.jlcpcb.match_status == "MANUAL_GLOBAL_SOURCING_REQUIRED"
     assert result.cad_discovery.provenance.delivery_partner is None

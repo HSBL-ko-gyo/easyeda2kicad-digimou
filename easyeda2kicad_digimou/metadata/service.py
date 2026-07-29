@@ -957,8 +957,9 @@ def _digikey_discovery_failure(
     requirements = provider.describe_auth_requirements()
     setup_url = requirements.help_url if auth_required else None
     detail = (
-        "User-owned DigiKey Product Information V4 credentials are required "
-        "before CAD handoff discovery"
+        "Set DIGIKEY_CLIENT_ID and DIGIKEY_CLIENT_SECRET in the current "
+        "terminal and rerun; DigiKey Product Information V4 cannot return "
+        "CAD results without valid user-owned credentials"
         if auth_required
         else "DigiKey Product Information V4 CAD handoff discovery failed safely"
     )
@@ -1074,7 +1075,8 @@ def _mouser_discovery_failure(
     requirements = provider.describe_auth_requirements()
     setup_url = requirements.help_url if auth_required else None
     detail = (
-        "A user-owned Mouser Search API key is required before CAD handoff discovery"
+        "Set MOUSER_API_KEY in the current terminal and rerun; Mouser Search "
+        "API V2 cannot return CAD results without a valid user-owned key"
         if auth_required
         else "Mouser Search API V2 product handoff discovery failed safely"
     )

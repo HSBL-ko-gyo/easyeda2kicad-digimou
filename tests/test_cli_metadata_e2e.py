@@ -20,6 +20,7 @@ from easyeda2kicad_digimou.metadata.models import (
     JLCPCB_CACHE_LIVE,
     JLCPCB_PART_FOUND,
     PriceBreak,
+    ProviderDiagnostic,
 )
 from easyeda2kicad_digimou.metadata.service import (
     MetadataResolution,
@@ -639,6 +640,13 @@ def test_provider_errors_are_logged_without_manifest_or_conflict_output(
     result = MetadataResolution(
         trusted_mpn="OPA333AIDBVR",
         provider_errors={"mouser": "AUTH_MISSING"},
+        provider_diagnostics={
+            "mouser": ProviderDiagnostic(
+                code="AUTH_MISSING",
+                operation="part-search",
+                setup_url="https://www.mouser.com/api-search/",
+            )
+        },
     )
     monkeypatch.setattr(cli, "resolve_metadata", lambda **kwargs: result)
 
@@ -651,6 +659,9 @@ def test_provider_errors_are_logged_without_manifest_or_conflict_output(
         and "AUTH_MISSING" in record.getMessage()
         for record in caplog.records
     )
+    assert "MOUSER_API_KEY" in caplog.text
+    assert "API results are unavailable without valid credentials" in caplog.text
+    assert "https://www.mouser.com/api-search/" in caplog.text
 
 
 def test_explicit_datasheet_failure_keeps_verified_cad_status(

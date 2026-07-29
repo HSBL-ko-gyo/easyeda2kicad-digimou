@@ -99,6 +99,19 @@ from .project_registration import (
 
 SUPPORTED_PROVIDERS = ("lcsc", "digikey", "mouser")
 SUPPORTED_CAD_SOURCE_CHOICES = ("easyeda", "digikey", "mouser", "auto")
+_API_CREDENTIAL_GUIDANCE = {
+    "digikey": (
+        ("DIGIKEY_CLIENT_ID", "DIGIKEY_CLIENT_SECRET"),
+        "https://developer.digikey.com/tutorials-and-resources/oauth-20-2-legged-flow",
+    ),
+    "mouser": (
+        ("MOUSER_API_KEY",),
+        "https://www.mouser.com/api-search/",
+    ),
+}
+_API_CREDENTIAL_ERROR_CODES = frozenset(
+    ("AUTH_MISSING", "AUTH_FAILED", "GUEST_LOOKUP_UNSUPPORTED")
+)
 RESERVED_METADATA_FIELDS = {
     "Reference",
     "Value",
@@ -1575,6 +1588,19 @@ def _log_metadata_diagnostics(merged: MergedPart, *, require_cad: bool) -> None:
             operation,
             status,
         )
+        guidance = _API_CREDENTIAL_GUIDANCE.get(provider)
+        if guidance is not None and diagnostic in _API_CREDENTIAL_ERROR_CODES:
+            environment_names, default_setup_url = guidance
+            credential_action = "Verify" if diagnostic == "AUTH_FAILED" else "Set"
+            logging.warning(
+                "%s API credentials required: %s %s in the current terminal "
+                "and rerun; API results are unavailable without valid credentials.",
+                provider,
+                credential_action,
+                " and ".join(environment_names),
+            )
+            if setup_url is None:
+                setup_url = default_setup_url
         if setup_url is not None:
             logging.warning("Metadata provider %s setup: %s", provider, setup_url)
 
