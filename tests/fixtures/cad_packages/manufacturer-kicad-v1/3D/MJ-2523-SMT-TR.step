@@ -1,0 +1,9 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('Synthetic Same Sky-shaped fixture'),'2;1');
+FILE_NAME('MJ-2523-SMT-TR.step','2026-07-29T00:00:00',('fixture'),('fixture'),'','','');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2'));
+ENDSEC;
+DATA;
+ENDSEC;
+END-ISO-10303-21;

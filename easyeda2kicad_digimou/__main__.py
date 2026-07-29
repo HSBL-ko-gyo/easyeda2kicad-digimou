@@ -64,6 +64,7 @@ from .metadata.merge import (
     VERIFIED,
 )
 from .metadata.models import (
+    CAD_PARTIAL,
     CAD_SOURCE_CONFLICT,
     CAD_SOURCE_LOCK_MISMATCH,
     CadActionRequired,
@@ -298,7 +299,9 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cad-package",
         type=str,
-        help="Import a locally downloaded Ultra Librarian or SamacSys ZIP package",
+        help=(
+            "Import a reviewed Ultra Librarian, manufacturer, or SamacSys ZIP package"
+        ),
         required=False,
     )
 
@@ -1763,7 +1766,7 @@ def _finish_metadata_mode(
 
 
 def _run_auto_cad_package_mode(arguments: dict[str, Any]) -> int:
-    """Prefer verified EasyEDA CAD, then select only fully validated packages."""
+    """Prefer verified EasyEDA CAD, then select validated provider packages."""
 
     manufacturer = arguments.get("manufacturer")
     mpn = arguments.get("mpn")
@@ -1992,7 +1995,11 @@ def _finish_ingested_package(
     manifests_ok = _write_requested_manifests(merged, arguments)
     if arguments.get("show_conflicts"):
         _show_metadata_conflicts(merged)
-    return 0 if manifests_ok else 1
+    if not manifests_ok:
+        return 1
+    if result.discovery.status == CAD_PARTIAL and arguments.get("full"):
+        return 1
+    return 0
 
 
 def _configure_machine_logging() -> tuple[int, list[logging.Handler]]:

@@ -32,6 +32,8 @@ CAD_NOT_ACQUIRED = "CAD_NOT_ACQUIRED"
 CAD_AUTH_REQUIRED = "CAD_AUTH_REQUIRED"
 CAD_DOWNLOAD_UNAVAILABLE = "CAD_DOWNLOAD_UNAVAILABLE"
 CAD_MANUAL_DOWNLOAD_REQUIRED = "CAD_MANUAL_DOWNLOAD_REQUIRED"
+CAD_PARTIAL = "CAD_PARTIAL"
+SYMBOL_UNAVAILABLE = "SYMBOL_UNAVAILABLE"
 CAD_IDENTITY_UNRESOLVED = "CAD_IDENTITY_UNRESOLVED"
 CAD_SOURCE_CONFLICT = "CAD_SOURCE_CONFLICT"
 CAD_SOURCE_LOCK_MISMATCH = "CAD_SOURCE_LOCK_MISMATCH"
@@ -42,6 +44,7 @@ CAD_DISCOVERY_STATUSES = frozenset(
         CAD_AUTH_REQUIRED,
         CAD_DOWNLOAD_UNAVAILABLE,
         CAD_MANUAL_DOWNLOAD_REQUIRED,
+        CAD_PARTIAL,
         CAD_IDENTITY_UNRESOLVED,
         CAD_SOURCE_CONFLICT,
         CAD_SOURCE_LOCK_MISMATCH,
@@ -674,6 +677,95 @@ class CadActionRequired:
 
 
 @dataclass
+class CadSourceAvailability:
+    """One product-specific official CAD source exposed by a distributor."""
+
+    delivery_partner: str
+    artifact_kinds: List[str]
+    source_urls: List[str]
+    support_status: str
+    model_creator: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.delivery_partner = identity_text(
+            self.delivery_partner,
+            "CadSourceAvailability.delivery_partner",
+        ).lower()
+        self.artifact_kinds = sorted(
+            {
+                identity_text(kind, "CadSourceAvailability.artifact_kinds").lower()
+                for kind in self.artifact_kinds
+            }
+        )
+        if not self.artifact_kinds or any(
+            kind not in ("symbol", "footprint", "model_3d")
+            for kind in self.artifact_kinds
+        ):
+            raise ValueError(
+                "CadSourceAvailability.artifact_kinds contains an unsupported kind"
+            )
+        self.source_urls = sorted(
+            {
+                identity_text(url, "CadSourceAvailability.source_urls")
+                for url in self.source_urls
+            }
+        )
+        if not self.source_urls:
+            raise ValueError("CadSourceAvailability requires at least one source URL")
+        self.support_status = identity_text(
+            self.support_status,
+            "CadSourceAvailability.support_status",
+        ).lower()
+        if self.support_status not in (
+            "local-package-supported",
+            "manual-handoff",
+            "unsupported-interactive",
+        ):
+            raise ValueError("unsupported CadSourceAvailability.support_status")
+        self.model_creator = _optional_identity_text(
+            self.model_creator,
+            "CadSourceAvailability.model_creator",
+        )
+        if self.model_creator is not None:
+            self.model_creator = self.model_creator.lower()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], model_to_dict(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CadSourceAvailability":
+        mapping = _mapping(data, "CadSourceAvailability")
+        return cls(
+            delivery_partner=identity_text(
+                mapping.get("delivery_partner"),
+                "CadSourceAvailability.delivery_partner",
+            ),
+            artifact_kinds=[
+                identity_text(item, "CadSourceAvailability.artifact_kinds")
+                for item in _list(
+                    mapping.get("artifact_kinds"),
+                    "CadSourceAvailability.artifact_kinds",
+                )
+            ],
+            source_urls=[
+                identity_text(item, "CadSourceAvailability.source_urls")
+                for item in _list(
+                    mapping.get("source_urls"),
+                    "CadSourceAvailability.source_urls",
+                )
+            ],
+            support_status=identity_text(
+                mapping.get("support_status"),
+                "CadSourceAvailability.support_status",
+            ),
+            model_creator=_optional_identity_text(
+                mapping.get("model_creator"),
+                "CadSourceAvailability.model_creator",
+            ),
+        )
+
+
+@dataclass
 class CadDiscoveryResult:
     """A typed discovery result that never implies an unverified CAD package."""
 
@@ -683,6 +775,10 @@ class CadDiscoveryResult:
     provenance: CadProvenance = dataclass_field(default_factory=CadProvenance)
     action_required: Optional[CadActionRequired] = None
     package: Optional[NormalizedCadPackage] = None
+    available_sources: List[CadSourceAvailability] = dataclass_field(
+        default_factory=list
+    )
+    missing_artifacts: List[str] = dataclass_field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.requested_source = identity_text(
@@ -709,9 +805,29 @@ class CadDiscoveryResult:
             self.package, NormalizedCadPackage
         ):
             self.package = NormalizedCadPackage.from_dict(self.package)
-        if self.status == CAD_PACKAGE_READY and self.package is None:
-            raise ValueError("CAD_PACKAGE_READY requires a normalized package")
-        if self.status != CAD_PACKAGE_READY and self.package is not None:
+        self.available_sources = [
+            item
+            if isinstance(item, CadSourceAvailability)
+            else CadSourceAvailability.from_dict(item)
+            for item in self.available_sources
+        ]
+        self.missing_artifacts = sorted(
+            {
+                identity_text(kind, "CadDiscoveryResult.missing_artifacts").lower()
+                for kind in self.missing_artifacts
+            }
+        )
+        if any(
+            kind not in ("symbol", "footprint", "model_3d")
+            for kind in self.missing_artifacts
+        ):
+            raise ValueError("CadDiscoveryResult has an unsupported missing artifact")
+        if self.status in (CAD_PACKAGE_READY, CAD_PARTIAL) and self.package is None:
+            raise ValueError("{0} requires a normalized package".format(self.status))
+        if (
+            self.status not in (CAD_PACKAGE_READY, CAD_PARTIAL)
+            and self.package is not None
+        ):
             raise ValueError("an unready CAD result cannot contain a package")
 
     def to_dict(self) -> Dict[str, Any]:
@@ -723,6 +839,8 @@ class CadDiscoveryResult:
         raw_request = mapping.get("request")
         raw_action = mapping.get("action_required")
         raw_package = mapping.get("package")
+        raw_sources = mapping.get("available_sources", [])
+        raw_missing = mapping.get("missing_artifacts", [])
         return cls(
             requested_source=identity_text(
                 mapping.get("requested_source"),
@@ -743,6 +861,20 @@ class CadDiscoveryResult:
                 if raw_package is not None
                 else None
             ),
+            available_sources=[
+                CadSourceAvailability.from_dict(item)
+                for item in _list(
+                    raw_sources,
+                    "CadDiscoveryResult.available_sources",
+                )
+            ],
+            missing_artifacts=[
+                identity_text(item, "CadDiscoveryResult.missing_artifacts")
+                for item in _list(
+                    raw_missing,
+                    "CadDiscoveryResult.missing_artifacts",
+                )
+            ],
         )
 
 

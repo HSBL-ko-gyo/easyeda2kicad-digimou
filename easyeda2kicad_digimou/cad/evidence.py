@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 # Global imports
+import ipaddress
 import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Optional, Set, cast
+from typing import Any, Mapping, Optional, Set, Tuple, cast
 from urllib.parse import urlsplit
 
 # Local imports
@@ -41,13 +42,10 @@ _REQUIRED_KEYS = frozenset(
         "source",
     )
 )
-_DELIVERY_PARTNER = {
-    "digikey": "ultralibrarian",
-    "mouser": "samacsys",
-}
-_PACKAGE_FORMAT = {
-    "digikey": "ultralibrarian-kicad",
-    "mouser": "samacsys-kicad",
+_OPTIONAL_KEYS = frozenset(("source_urls",))
+_PACKAGE_FORMATS = {
+    "digikey": frozenset(("ultralibrarian-kicad", "manufacturer-kicad")),
+    "mouser": frozenset(("samacsys-kicad",)),
 }
 
 
@@ -67,6 +65,7 @@ class CadPackageEvidence:
     retrieval_mode: str
     retrieved_at_utc: str
     model_creator: Optional[str]
+    source_urls: Tuple[str, ...]
 
 
 def load_package_evidence(
@@ -109,7 +108,9 @@ def load_package_evidence(
         )
     mapping = cast(Mapping[str, Any], payload)
     keys = set(mapping)
-    if keys != _REQUIRED_KEYS:
+    if _REQUIRED_KEYS.difference(keys) or keys.difference(
+        _REQUIRED_KEYS | _OPTIONAL_KEYS
+    ):
         raise CadPackageError(
             "CAD_PACKAGE_EVIDENCE_INVALID",
             "package evidence fields do not match schema version 1",
@@ -132,21 +133,61 @@ def load_package_evidence(
     retrieval_mode = _required_text(mapping, "retrieval_mode")
     retrieved_at_utc = _utc_timestamp(mapping, "retrieved_at_utc")
     model_creator = _optional_text(mapping, "model_creator")
+    raw_source_urls = mapping.get("source_urls")
+    source_urls: Tuple[str, ...]
+    if raw_source_urls is None:
+        source_urls = (landing_url,)
+    elif not isinstance(raw_source_urls, list) or not raw_source_urls:
+        raise CadPackageError(
+            "CAD_PACKAGE_EVIDENCE_INVALID",
+            "package evidence source_urls must be a nonempty list",
+        )
+    else:
+        source_urls = tuple(
+            sorted(
+                {
+                    _safe_public_url(
+                        {"source_url": value},
+                        "source_url",
+                        source,
+                    )
+                    for value in raw_source_urls
+                }
+            )
+        )
 
-    if source != request.source or source not in _DELIVERY_PARTNER:
+    if source != request.source or source not in _PACKAGE_FORMATS:
         raise CadPackageError(
             "CAD_PACKAGE_EVIDENCE_SOURCE_MISMATCH",
             "package evidence does not match the explicit CAD source",
         )
-    if delivery_partner != _DELIVERY_PARTNER[source]:
+    if package_format not in _PACKAGE_FORMATS[source]:
+        raise CadPackageError(
+            "CAD_PACKAGE_EVIDENCE_FORMAT_MISMATCH",
+            "package evidence names an unexpected package format",
+        )
+    if (
+        package_format == "ultralibrarian-kicad"
+        and delivery_partner != "ultralibrarian"
+    ) or (package_format == "samacsys-kicad" and delivery_partner != "samacsys"):
         raise CadPackageError(
             "CAD_PACKAGE_EVIDENCE_SOURCE_MISMATCH",
             "package evidence names an unexpected delivery partner",
         )
-    if package_format != _PACKAGE_FORMAT[source]:
+    if package_format == "manufacturer-kicad" and (
+        delivery_partner in ("ultralibrarian", "snapmagic", "samacsys")
+        or model_creator is None
+    ):
         raise CadPackageError(
-            "CAD_PACKAGE_EVIDENCE_FORMAT_MISMATCH",
-            "package evidence names an unexpected package format",
+            "CAD_PACKAGE_EVIDENCE_SOURCE_MISMATCH",
+            "manufacturer CAD evidence must name the actual manufacturer",
+        )
+    if package_format == "manufacturer-kicad" and (
+        raw_source_urls is None or landing_url not in source_urls
+    ):
+        raise CadPackageError(
+            "CAD_PACKAGE_EVIDENCE_INVALID",
+            "manufacturer CAD evidence must retain all reviewed source URLs",
         )
     if requested_format not in ("auto", package_format):
         raise CadPackageError(
@@ -170,7 +211,14 @@ def load_package_evidence(
             "CAD_PACKAGE_EVIDENCE_INVALID",
             "package evidence retrieval mode must be manual-official-download",
         )
-    _validate_source_urls(source, product_url, landing_url, agreement_url)
+    _validate_source_urls(
+        source,
+        package_format,
+        product_url,
+        landing_url,
+        agreement_url,
+        source_urls,
+    )
     return CadPackageEvidence(
         source=source,
         delivery_partner=delivery_partner,
@@ -184,6 +232,7 @@ def load_package_evidence(
         retrieval_mode=retrieval_mode,
         retrieved_at_utc=retrieved_at_utc,
         model_creator=model_creator,
+        source_urls=source_urls,
     )
 
 
@@ -234,7 +283,7 @@ def _safe_public_url(mapping: Mapping[str, Any], name: str, source: str) -> str:
             "CAD_PACKAGE_EVIDENCE_URL_UNSAFE",
             "package evidence contains an unsafe {0}".format(name),
         )
-    if source not in _DELIVERY_PARTNER:
+    if source not in _PACKAGE_FORMATS:
         raise CadPackageError(
             "CAD_PACKAGE_EVIDENCE_SOURCE_MISMATCH",
             "package evidence names an unsupported source",
@@ -254,9 +303,11 @@ def _optional_public_url(
 
 def _validate_source_urls(
     source: str,
+    package_format: str,
     product_url: str,
     landing_url: str,
     agreement_url: Optional[str],
+    source_urls: Tuple[str, ...],
 ) -> None:
     product = urlsplit(product_url)
     landing = urlsplit(landing_url)
@@ -279,10 +330,31 @@ def _validate_source_urls(
         landing_is_ultralibrarian = landing_host == "ultralibrarian.com" or (
             landing_host.endswith(".ultralibrarian.com")
         )
-        if not (landing_is_digikey or landing_is_ultralibrarian):
+        manufacturer_landing = (
+            package_format == "manufacturer-kicad"
+            and _is_public_provider_hostname(landing_host)
+        )
+        if not (
+            landing_is_digikey or landing_is_ultralibrarian or manufacturer_landing
+        ):
             raise CadPackageError(
                 "CAD_PACKAGE_EVIDENCE_URL_UNSAFE",
                 "DigiKey CAD evidence must use an official model handoff URL",
+            )
+        if package_format == "manufacturer-kicad" and agreement is None:
+            raise CadPackageError(
+                "CAD_PACKAGE_EVIDENCE_URL_UNSAFE",
+                "manufacturer CAD evidence requires the exact DigiKey model URL",
+            )
+        if package_format == "manufacturer-kicad" and any(
+            not _is_public_provider_hostname(
+                (urlsplit(source_url).hostname or "").casefold()
+            )
+            for source_url in source_urls
+        ):
+            raise CadPackageError(
+                "CAD_PACKAGE_EVIDENCE_URL_UNSAFE",
+                "manufacturer CAD source URLs must use public HTTPS provider hosts",
             )
         if agreement is not None and (
             (agreement.hostname or "").casefold() != "www.digikey.com"
@@ -321,6 +393,27 @@ def _validate_source_urls(
                 "CAD_PACKAGE_EVIDENCE_URL_UNSAFE",
                 "SamacSys agreement evidence must use an official URL",
             )
+
+
+def _is_public_provider_hostname(hostname: str) -> bool:
+    if (
+        not hostname
+        or hostname in ("localhost", "localhost.localdomain")
+        or hostname.endswith(".local")
+    ):
+        return False
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return "." in hostname
+    return not (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+    )
 
 
 def _utc_timestamp(mapping: Mapping[str, Any], name: str) -> str:

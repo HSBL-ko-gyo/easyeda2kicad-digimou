@@ -2,8 +2,12 @@ from __future__ import annotations
 
 # Global imports
 import json
+import re
+import socket
 import urllib.parse
+import urllib.error
 import urllib.request
+from contextlib import suppress
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from easyeda2kicad_digimou.metadata.models import (
@@ -20,6 +24,7 @@ from .base import (
     AuthRequirements,
     BaseMetadataProvider,
     InvalidResponseError,
+    NetworkError,
     NotFoundError,
     identity_text,
     optional_float,
@@ -36,6 +41,7 @@ DIGIKEY_MEDIA_URL_TEMPLATE = (
 DIGIKEY_AUTH_HELP_URL = (
     "https://developer.digikey.com/tutorials-and-resources/oauth-20-2-legged-flow"
 )
+_MAX_PUBLIC_MODEL_PAGE_SIZE = 2 * 1024 * 1024
 
 
 class DigiKeyProvider(BaseMetadataProvider):
@@ -211,6 +217,83 @@ class DigiKeyProvider(BaseMetadataProvider):
         # retained on the provider where callers might persist them as raw
         # cache evidence.
         return response
+
+    def get_public_model_page(self, model_page_url: str) -> str:
+        """Fetch one exact public DigiKey model page without credentials/cookies."""
+
+        try:
+            parsed = urllib.parse.urlsplit(model_page_url)
+            if (
+                parsed.scheme.casefold() != "https"
+                or (parsed.hostname or "").casefold() != "www.digikey.com"
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.port not in (None, 443)
+                or parsed.query
+                or parsed.fragment
+                or re.fullmatch(r"/en/models/[1-9][0-9]*", parsed.path) is None
+            ):
+                raise ValueError("unsafe model page URL")
+        except (TypeError, ValueError):
+            raise InvalidResponseError(
+                self.name,
+                operation="model-page-query",
+            ) from None
+        request = urllib.request.Request(  # noqa: S310 - validated official URL
+            model_page_url,
+            headers={
+                "Accept": "text/html,application/xhtml+xml",
+                "User-Agent": "easyeda2kicad-digimou/1 DigiKey-CAD-discovery",
+            },
+            method="GET",
+        )
+        response = None
+        try:
+            response = self._call_opener(request)
+            status = self._status_of(response)
+            if status >= 400:
+                self._raise_http_error(status, "model-page", ())
+            final_url_getter = getattr(response, "geturl", None)
+            final_url = (
+                final_url_getter() if callable(final_url_getter) else model_page_url
+            )
+            final = urllib.parse.urlsplit(final_url)
+            if (
+                final.scheme.casefold() != "https"
+                or (final.hostname or "").casefold() != "www.digikey.com"
+                or re.fullmatch(r"/en/models/[1-9][0-9]*", final.path) is None
+            ):
+                raise InvalidResponseError(
+                    self.name,
+                    operation="model-page-redirect",
+                )
+            body = response.read(_MAX_PUBLIC_MODEL_PAGE_SIZE + 1)
+        except urllib.error.HTTPError as error:
+            try:
+                self._raise_http_error(int(error.code), "model-page", ())
+            finally:
+                with suppress(Exception):
+                    error.close()
+        except (urllib.error.URLError, socket.timeout, OSError):
+            raise NetworkError(self.name, operation="model-page") from None
+        except (TypeError, ValueError):
+            raise InvalidResponseError(
+                self.name,
+                operation="model-page",
+            ) from None
+        finally:
+            if response is not None and hasattr(response, "close"):
+                with suppress(Exception):
+                    response.close()
+        if not isinstance(body, bytes) or len(body) > _MAX_PUBLIC_MODEL_PAGE_SIZE:
+            raise InvalidResponseError(self.name, operation="model-page")
+        try:
+            return body.decode("utf-8")
+        except UnicodeDecodeError:
+            raise InvalidResponseError(
+                self.name,
+                operation="model-page",
+            ) from None
 
     @staticmethod
     def _identity_from(value: Mapping[str, Any], *field_names: str) -> Optional[str]:

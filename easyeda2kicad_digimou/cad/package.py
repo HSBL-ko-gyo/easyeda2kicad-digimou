@@ -16,11 +16,15 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from easyeda2kicad_digimou.metadata.merge import PARTIAL
 from easyeda2kicad_digimou.metadata.models import (
     CAD_PACKAGE_READY,
+    CAD_PARTIAL,
+    SYMBOL_UNAVAILABLE,
+    CadActionRequired,
     CadArtifact,
     CadDiscoveryResult,
     CadProvenance,
     CadRecord,
     CadRequest,
+    CadSourceAvailability,
     NormalizedCadPackage,
 )
 
@@ -43,6 +47,7 @@ from .kicad import (
 
 CAD_PACKAGE_FORMATS = (
     "auto",
+    "manufacturer-kicad",
     "ultralibrarian-kicad",
     "samacsys-kicad",
 )
@@ -59,13 +64,14 @@ class PackageAdapter:
     source: str
     delivery_partner: str
     marker_phrases: Tuple[str, ...]
+    symbol_required: bool = True
 
 
 @dataclass(frozen=True)
 class PreparedCadPackage:
     request: CadRequest
     normalized: NormalizedCadPackage
-    symbol: SymbolSelection
+    symbol: Optional[SymbolSelection]
     footprint: FootprintSelection
     footprint_path: Path
     model_paths: Tuple[Path, ...]
@@ -84,7 +90,7 @@ class CadPackageInspection:
     """Output-free evidence used to compare validated CAD candidates."""
 
     package: NormalizedCadPackage
-    symbol_name: str
+    symbol_name: Optional[str]
     footprint_name: str
     pin_numbers: Tuple[str, ...]
     pad_numbers: Tuple[str, ...]
@@ -108,6 +114,14 @@ _ADAPTERS: Dict[str, PackageAdapter] = {
         source="digikey",
         delivery_partner="ultralibrarian",
         marker_phrases=("ultra librarian", "ultralibrarian"),
+    ),
+    "manufacturer-kicad": PackageAdapter(
+        format_name="manufacturer-kicad",
+        format_version="1",
+        source="digikey",
+        delivery_partner="manufacturer",
+        marker_phrases=(),
+        symbol_required=False,
     ),
     "samacsys-kicad": PackageAdapter(
         format_name="samacsys-kicad",
@@ -172,9 +186,13 @@ def inspect_cad_package(
         primary_model = _primary_model_path(prepared)
         return CadPackageInspection(
             package=prepared.normalized,
-            symbol_name=prepared.symbol.name,
+            symbol_name=(prepared.symbol.name if prepared.symbol is not None else None),
             footprint_name=prepared.footprint.name,
-            pin_numbers=tuple(sorted(prepared.symbol.pin_numbers)),
+            pin_numbers=(
+                tuple(sorted(prepared.symbol.pin_numbers))
+                if prepared.symbol is not None
+                else ()
+            ),
             pad_numbers=tuple(sorted(prepared.footprint.pad_numbers)),
             primary_model_name=primary_model.name,
         )
@@ -254,12 +272,48 @@ def ingest_cad_package(
             overwrite=overwrite,
             project_relative_model_path=project_relative_model_path,
         )
+    missing_symbol = prepared.symbol is None
+    available_sources = (
+        [
+            CadSourceAvailability(
+                delivery_partner=evidence.delivery_partner,
+                model_creator=evidence.model_creator,
+                artifact_kinds=sorted(
+                    {
+                        (
+                            "model_3d"
+                            if artifact.kind in ("step", "stp", "wrl")
+                            else artifact.kind
+                        )
+                        for artifact in prepared.normalized.artifacts
+                    }
+                ),
+                source_urls=list(evidence.source_urls),
+                support_status="local-package-supported",
+            )
+        ]
+        if evidence is not None
+        else []
+    )
     discovery = CadDiscoveryResult(
         requested_source=request.source,
-        status=CAD_PACKAGE_READY,
+        status=CAD_PARTIAL if missing_symbol else CAD_PACKAGE_READY,
         request=request,
         provenance=prepared.normalized.provenance,
+        action_required=(
+            CadActionRequired(
+                code=SYMBOL_UNAVAILABLE,
+                detail=(
+                    "The official package supplied a verified footprint and 3D "
+                    "model but no symbol; installed artifacts were preserved"
+                ),
+            )
+            if missing_symbol
+            else None
+        ),
         package=prepared.normalized,
+        available_sources=available_sources,
+        missing_artifacts=["symbol"] if missing_symbol else [],
     )
     return CadPackageIngestResult(
         package=prepared.normalized,
@@ -292,7 +346,12 @@ def _prepare_package(
         ),
         key=lambda path: _relative(path, extraction_root).casefold(),
     )
-    if not symbol_files:
+    if adapter.format_name == "manufacturer-kicad" and evidence is None:
+        raise CadPackageError(
+            "CAD_PACKAGE_EVIDENCE_REQUIRED",
+            "manufacturer CAD packages require hash-bound DigiKey handoff evidence",
+        )
+    if adapter.symbol_required and not symbol_files:
         raise CadPackageError(
             "CAD_SYMBOL_MISSING", "package has no native KiCad symbol"
         )
@@ -303,16 +362,20 @@ def _prepare_package(
     if not model_files:
         raise CadPackageError("CAD_3D_MISSING", "package has no STEP or WRL model")
 
-    symbol = _select_symbol_files(
-        symbol_files,
-        request,
-        attested=evidence is not None,
+    symbol = (
+        _select_symbol_files(
+            symbol_files,
+            request,
+            attested=evidence is not None,
+        )
+        if symbol_files
+        else None
     )
     footprint_texts = [(path, _read_text(path)) for path in footprint_files]
     footprint = select_footprint(
         footprint_texts,
         request,
-        symbol.footprint_name,
+        symbol.footprint_name if symbol is not None else None,
     )
     matching_footprint_paths = [
         path for path, text in footprint_texts if text == footprint.text
@@ -322,7 +385,8 @@ def _prepare_package(
             "CAD_FOOTPRINT_AMBIGUOUS",
             "selected footprint cannot be mapped to one package artifact",
         )
-    verify_pin_pad_identity(symbol, footprint)
+    if symbol is not None:
+        verify_pin_pad_identity(symbol, footprint)
 
     model_stems = {path.stem.casefold() for path in model_files}
     if len(model_stems) != 1:
@@ -353,7 +417,7 @@ def _prepare_package(
             for word in ("notice", "readme", "import", "license")
         )
     ]
-    properties = extract_properties(symbol.block)
+    properties = extract_properties(symbol.block) if symbol is not None else {}
     package_model_creator = _property_by_key(properties, "modelcreator")
     evidence_model_creator = evidence.model_creator if evidence is not None else None
     if (
@@ -371,7 +435,11 @@ def _prepare_package(
         license_items.append(evidence.agreement_url)
     provenance = CadProvenance(
         distributor=request.source,
-        delivery_partner=adapter.delivery_partner,
+        delivery_partner=(
+            evidence.delivery_partner
+            if evidence is not None
+            else adapter.delivery_partner
+        ),
         model_creator=model_creator,
         landing_url=(evidence.landing_url if evidence is not None else None),
         retrieval_mode=(
@@ -392,25 +460,29 @@ def _prepare_package(
     # The filtered source library is intentionally not required to be byte-identical
     # when the provider bundled unrelated symbols. Always record the source file that
     # proved the exact selected symbol.
-    symbol_artifacts = [
-        CadArtifact(
-            kind="symbol",
-            relative_path=_relative(path, extraction_root),
-            sha256=_sha256_file(path),
-        )
-        for path in symbol_files
-        if _symbol_file_matches(
-            path,
-            symbol,
-            request,
-            attested=evidence is not None,
-        )
-    ]
+    symbol_artifacts = (
+        [
+            CadArtifact(
+                kind="symbol",
+                relative_path=_relative(path, extraction_root),
+                sha256=_sha256_file(path),
+            )
+            for path in symbol_files
+            if _symbol_file_matches(
+                path,
+                symbol,
+                request,
+                attested=evidence is not None,
+            )
+        ]
+        if symbol is not None
+        else []
+    )
     artifacts = [
         *symbol_artifacts,
         *artifacts,
     ]
-    if len(symbol_artifacts) != 1:
+    if symbol is not None and len(symbol_artifacts) != 1:
         raise CadPackageError(
             "CAD_SYMBOL_AMBIGUOUS",
             "selected symbol cannot be mapped to one package artifact",
@@ -444,7 +516,12 @@ def _install_prepared_package(
     symbol_target = Path("{0}.kicad_sym".format(output_base))
     footprint_directory = Path("{0}.pretty".format(output_base))
     model_directory = Path("{0}.3dshapes".format(output_base))
-    for target in (symbol_target, footprint_directory, model_directory):
+    output_targets = [
+        footprint_directory,
+        model_directory,
+        *([symbol_target] if prepared.symbol is not None else []),
+    ]
+    for target in output_targets:
         if target.is_symlink():
             raise CadPackageError(
                 "CAD_OUTPUT_LINK_REJECTED",
@@ -452,10 +529,7 @@ def _install_prepared_package(
             )
     _reject_tree_links(footprint_directory)
     _reject_tree_links(model_directory)
-    target_snapshots = {
-        target: _path_fingerprint(target)
-        for target in (symbol_target, footprint_directory, model_directory)
-    }
+    target_snapshots = {target: _path_fingerprint(target) for target in output_targets}
 
     footprint_filename = _safe_artifact_filename(prepared.footprint.name + ".kicad_mod")
     primary_model = _primary_model_path(prepared)
@@ -475,21 +549,28 @@ def _install_prepared_package(
         prepared.request,
         prepared.footprint.name,
     )
-    installed_symbol = rewrite_symbol_footprint(
-        prepared.symbol,
-        prepared.request,
-        output_base.name,
-        parse_target.name,
+    installed_symbol = (
+        rewrite_symbol_footprint(
+            prepared.symbol,
+            prepared.request,
+            output_base.name,
+            parse_target.name,
+        )
+        if prepared.symbol is not None
+        else None
     )
-    verify_pin_pad_identity(installed_symbol, parse_target)
-
-    existing_symbol_text = _read_text(symbol_target) if symbol_target.exists() else None
-    merged_symbol_text = merge_symbol_library(
-        existing_symbol_text,
-        installed_symbol,
-        prepared.request,
-        overwrite=overwrite,
-    )
+    merged_symbol_text: Optional[str] = None
+    if installed_symbol is not None:
+        verify_pin_pad_identity(installed_symbol, parse_target)
+        existing_symbol_text = (
+            _read_text(symbol_target) if symbol_target.exists() else None
+        )
+        merged_symbol_text = merge_symbol_library(
+            existing_symbol_text,
+            installed_symbol,
+            prepared.request,
+            overwrite=overwrite,
+        )
 
     with tempfile.TemporaryDirectory(
         prefix=".easyeda2kicad_digimou-stage-",
@@ -499,7 +580,8 @@ def _install_prepared_package(
         staged_symbol = transaction_root / symbol_target.name
         staged_footprints = transaction_root / footprint_directory.name
         staged_models = transaction_root / model_directory.name
-        _write_text_fsync(staged_symbol, merged_symbol_text)
+        if merged_symbol_text is not None:
+            _write_text_fsync(staged_symbol, merged_symbol_text)
         _stage_directory(footprint_directory, staged_footprints)
         _stage_directory(model_directory, staged_models)
 
@@ -524,21 +606,32 @@ def _install_prepared_package(
                     )
             _write_bytes_fsync(target_model, model_data)
 
-        _commit_paths_atomically(
-            (
-                (staged_symbol, symbol_target),
-                (staged_footprints, footprint_directory),
-                (staged_models, model_directory),
+        staged_targets = [
+            (staged_footprints, footprint_directory),
+            (staged_models, model_directory),
+            *(
+                [(staged_symbol, symbol_target)]
+                if merged_symbol_text is not None
+                else []
             ),
+        ]
+        _commit_paths_atomically(
+            staged_targets,
             transaction_root,
             target_snapshots,
         )
 
     installed_artifacts = [
-        CadArtifact(
-            kind="symbol",
-            relative_path=symbol_target.name,
-            sha256=_sha256_file(symbol_target),
+        *(
+            [
+                CadArtifact(
+                    kind="symbol",
+                    relative_path=symbol_target.name,
+                    sha256=_sha256_file(symbol_target),
+                )
+            ]
+            if installed_symbol is not None
+            else []
         ),
         CadArtifact(
             kind="footprint",
@@ -559,16 +652,17 @@ def _install_prepared_package(
     provenance = prepared.normalized.provenance
     return CadRecord(
         source=prepared.request.source,
-        symbol_name=prepared.symbol.name,
+        symbol_name=(prepared.symbol.name if prepared.symbol is not None else None),
         footprint_name=prepared.footprint.name,
         model_3d=primary_model.stem,
-        symbol_path=symbol_target.name,
+        symbol_path=(symbol_target.name if installed_symbol is not None else None),
         footprint_path="{0}/{1}".format(footprint_directory.name, footprint_filename),
         model_3d_path="{0}/{1}".format(model_directory.name, primary_model.name),
         verification_status=PARTIAL,
         distributor=provenance.distributor,
         delivery_partner=provenance.delivery_partner,
         model_creator=provenance.model_creator,
+        landing_url=provenance.landing_url,
         retrieval_mode=provenance.retrieval_mode,
         package_hash=provenance.package_hash,
         license=provenance.license,
@@ -602,6 +696,15 @@ def _select_adapter(
         for adapter in _ADAPTERS.values()
         if any(marker in package_evidence_text for marker in adapter.marker_phrases)
     ]
+    if (
+        evidence is not None
+        and matches
+        and all(adapter.format_name != evidence.package_format for adapter in matches)
+    ):
+        raise CadPackageError(
+            "CAD_PACKAGE_FORMAT_CONFLICT",
+            "package markers conflict with the hash-bound handoff evidence",
+        )
     if requested_format != "auto":
         selected = _ADAPTERS[requested_format]
         if selected not in matches:
@@ -633,8 +736,6 @@ def _matches_attested_layout(
     files: Sequence[Path],
     root: Path,
 ) -> bool:
-    if adapter.format_name != "ultralibrarian-kicad":
-        return False
     relative_paths = [PurePosixPath(_relative(path, root)) for path in files]
     symbol_paths = [
         path
@@ -654,7 +755,11 @@ def _matches_attested_layout(
         for path in relative_paths
         if path.suffix.casefold() in (".step", ".stp", ".wrl")
     ]
-    return len(symbol_paths) == 1 and bool(footprint_paths) and bool(model_paths)
+    if adapter.format_name == "ultralibrarian-kicad":
+        return len(symbol_paths) == 1 and bool(footprint_paths) and bool(model_paths)
+    if adapter.format_name == "manufacturer-kicad":
+        return bool(footprint_paths) and bool(model_paths)
+    return False
 
 
 def _select_symbol_files(
@@ -732,7 +837,8 @@ def _check_existing_footprint(
             "existing footprint cannot be identity-checked safely",
             target.name,
         ) from None
-    verify_pin_pad_identity(prepared.symbol, existing)
+    if prepared.symbol is not None:
+        verify_pin_pad_identity(prepared.symbol, existing)
     if _canonical_text(existing_text) == _canonical_text(incoming_text):
         return
     if not overwrite:

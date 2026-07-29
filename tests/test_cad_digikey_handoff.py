@@ -156,7 +156,7 @@ def test_official_media_handoff_is_manual_sanitized_and_never_scraped() -> None:
         delivery_partner="ultralibrarian",
         model_creator=None,
         landing_url=expected_handoff,
-        retrieval_mode="official-api-manual-handoff",
+        retrieval_mode="official-api-product-specific-handoff",
     )
     assert [request.full_url for request in requests] == [
         DIGIKEY_TOKEN_URL,
@@ -170,12 +170,13 @@ def test_official_media_handoff_is_manual_sanitized_and_never_scraped() -> None:
     assert "secret" not in json.dumps(result.to_dict(), sort_keys=True)
 
 
-def test_empty_media_falls_back_to_exact_official_product_page_handoff() -> None:
+def test_empty_media_falls_back_to_exact_official_model_page_handoff() -> None:
     requests: List[urllib.request.Request] = []
     provider = _provider(
         [
             {"access_token": "memory-only-token", "expires_in": 3600},
             {"MediaLinks": []},
+            {},
         ],
         requests=requests,
     )
@@ -189,22 +190,21 @@ def test_empty_media_falls_back_to_exact_official_product_page_handoff() -> None
         exact_record=_record(),
     )
 
-    product_url = (
-        "https://www.digikey.com/en/products/detail/analog-devices-inc/AD5314BRM/617418"
-    )
+    model_url = "https://www.digikey.com/en/models/617418"
     assert result.status == CAD_MANUAL_DOWNLOAD_REQUIRED
     assert result.action_required is not None
-    assert result.action_required.setup_url == product_url
+    assert result.action_required.setup_url == model_url
     assert result.provenance == CadProvenance(
         distributor="digikey",
-        delivery_partner="ultralibrarian",
+        delivery_partner=None,
         model_creator=None,
-        landing_url=product_url,
-        retrieval_mode="official-api-product-page-handoff",
+        landing_url=model_url,
+        retrieval_mode="official-api-product-model-handoff",
     )
     assert [request.full_url for request in requests] == [
         DIGIKEY_TOKEN_URL,
         DIGIKEY_MEDIA_URL_TEMPLATE.format(product_number="AD5314BRM-ND"),
+        model_url,
     ]
 
 
@@ -239,7 +239,8 @@ def test_unknown_or_ambiguous_model_handoff_fails_closed(
 
     assert result.status == CAD_DOWNLOAD_UNAVAILABLE
     assert result.action_required is not None
-    assert result.action_required.setup_url is None
+    assert result.action_required.setup_url is not None
+    assert result.available_sources
     assert result.package is None
 
 
@@ -339,6 +340,41 @@ def test_media_request_encodes_distributor_number_and_keeps_secret_in_headers() 
     assert headers["authorization"] == "Bearer memory-only-token"
     assert "memory-only-token" not in requests[1].full_url
     assert "fixture-client-secret" not in requests[1].full_url
+
+
+def test_public_model_page_request_uses_no_credentials_or_cookies() -> None:
+    requests: List[urllib.request.Request] = []
+    provider = _provider([{}], requests=requests)
+    model_url = "https://www.digikey.com/en/models/281299"
+
+    response = provider.get_public_model_page(model_url)
+
+    assert response == "{}"
+    assert [request.full_url for request in requests] == [model_url]
+    headers = {key.casefold(): value for key, value in requests[0].header_items()}
+    assert "authorization" not in headers
+    assert "cookie" not in headers
+    assert "x-digikey-client-id" not in headers
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://www.digikey.com/en/models/281299",
+        "https://www.digikey.com/en/models/not-a-number",
+        "https://user:password@www.digikey.com/en/models/281299",
+        "https://www.digikey.com/en/models/281299?token=secret",
+        "https://example.com/en/models/281299",
+    ],
+)
+def test_public_model_page_request_rejects_noncanonical_urls(url: str) -> None:
+    requests: List[urllib.request.Request] = []
+    provider = _provider([], requests=requests)
+
+    with pytest.raises(InvalidResponseError, match="model-page-query"):
+        provider.get_public_model_page(url)
+
+    assert requests == []
 
 
 @pytest.mark.parametrize("provider_names", [(), ("digikey",)])

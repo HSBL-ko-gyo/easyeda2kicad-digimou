@@ -23,7 +23,7 @@ EasyEDA.
 | Provider path | Metadata | CAD delivery today | Account / guest behavior | Verified evidence |
 | --- | --- | --- | --- | --- |
 | LCSC / JLCPCB + EasyEDA | Anonymous exact LCSC/JLCPCB catalogue lookup | Automated EasyEDA symbol, footprint, and 3D download | No account | Public OPA333AIDBVR and LM321MF/NOPB runs, 2026-07-22 |
-| DigiKey / Ultra Librarian | Product Information V4 API | Official API handoff, then user-reviewed Ultra Librarian ZIP import | User-owned DigiKey developer app for metadata; model download agreement and limits are controlled by DigiKey/Ultra Librarian | Authenticated AD5314BRM discovery, real package import, KiCad CLI 7/9/10, and KiCad 10 GUI, 2026-07-29 |
+| DigiKey-linked CAD | Product Information V4 API | Product-specific discovery of manufacturer, Ultra Librarian, and other linked sources; verified full or manufacturer footprint+3D package import | User-owned DigiKey developer app for metadata; source agreements and limits remain provider-controlled | Authenticated Same Sky MJ-2523-SMT-TR source discovery plus AD5314BRM real-package import, KiCad CLI 7/9/10, and KiCad 10 GUI, 2026-07-30 |
 | Mouser / SamacSys | Search API V2 | Official Product Detail handoff, then user-owned MyMouser/SamacSys or Library Loader export | User-owned Mouser API key and download session | Adapter/fixture coverage only; credentialed FM220A-W package and final GUI proof are not yet complete |
 
 ```text
@@ -366,7 +366,7 @@ Common provider diagnostics:
 
 ## CAD handoff and package import
 
-### Discover the DigiKey / Ultra Librarian CAD handoff
+### Discover a product-specific DigiKey CAD handoff
 
 ```bash
 python -m easyeda2kicad_digimou \
@@ -377,16 +377,32 @@ python -m easyeda2kicad_digimou \
   --manifest-json ./build/AD5314BRM-handoff.json
 ```
 
-The CLI uses only Product Information V4, revalidates exact identity, and
-accepts only an unambiguous sanitized model/product URL. It never fetches or
-scrapes that page. A valid manual handoff returns
-`CAD_MANUAL_DOWNLOAD_REQUIRED`; missing credentials return `CAD_AUTH_REQUIRED`;
-an unsafe or ambiguous handoff returns `CAD_DOWNLOAD_UNAVAILABLE`.
+The CLI revalidates exact identity and classifies every relevant safe URL from
+the Product Information V4 `Media` operation. If the API has no CAD links, it
+may make one credential-free, cookie-free GET of the exact canonical DigiKey
+model page. Only links whose visible context binds the full MPN to an explicit
+symbol, footprint, or 3D artifact are accepted. It does not bypass login,
+CAPTCHA, agreements, guest limits, or rate limits.
 
-Open the official URL yourself, review the model download agreement, verify
-manufacturer/full MPN, and download a KiCad v6+ ZIP with STEP or WRL. The
-AD5314BRM path was completed with a real package in KiCad CLI 7/9/10 and KiCad
-10 GUI on 2026-07-29. Guest availability and download limits can change.
+`cad_discovery.available_sources` keeps manufacturer-provided files, Ultra
+Librarian, SnapMagic, SamacSys, TraceParts, and unknown linked providers
+separate. `missing_artifacts` records unavailable symbol/footprint/3D types.
+Known provider rules are data-driven; a manufacturer link requires either a
+manufacturer-provided label or a manufacturer/domain identity match. Unknown
+hosts remain truthful manual handoffs and are never silently claimed as the
+manufacturer.
+
+A valid manual handoff returns `CAD_MANUAL_DOWNLOAD_REQUIRED`; missing
+credentials return `CAD_AUTH_REQUIRED`; unsupported-only, unsafe, or ambiguous
+handoffs return `CAD_DOWNLOAD_UNAVAILABLE`. Open the official URL yourself,
+review the applicable terms, verify manufacturer/full MPN, and download only
+the offered artifacts.
+
+Same Sky `MJ-2523-SMT-TR` was verified live on 2026-07-30: DigiKey exposed a
+manufacturer footprint and 3D model but no symbol, and the source was not
+misidentified as Ultra Librarian. The earlier AD5314BRM Ultra Librarian path
+remains validated with a real package in KiCad CLI 7/9/10 and KiCad 10 GUI.
+Guest availability and download limits can change.
 
 ### Discover the Mouser / SamacSys CAD handoff
 
@@ -435,6 +451,21 @@ SamacSys example uses:
 --cad-package-evidence ./downloads/FM220A-W.evidence.json
 ```
 
+Manufacturer-provided footprint plus STEP/WRL packages use:
+
+```text
+--cad-source digikey
+--cad-package ./downloads/official-manufacturer-kicad.zip
+--cad-package-format manufacturer-kicad
+--cad-package-evidence ./downloads/exact-part.evidence.json
+```
+
+The hash-bound evidence must preserve the exact DigiKey product/model URLs,
+the actual manufacturer source URLs, delivery partner, model creator, and full
+manufacturer/MPN identity. A verified footprint plus 3D package without a
+symbol is installed as `CAD_PARTIAL` with `SYMBOL_UNAVAILABLE`; the importer
+does not invent or substitute a symbol.
+
 CLI input alone is insufficient proof of identity. The package or reviewed
 hash-bound evidence must prove exact Manufacturer and full MPN. Mismatch,
 ambiguous symbol/footprint selection, missing 3D, malformed KiCad, pin/pad
@@ -448,7 +479,7 @@ private responses must not be committed.
 
 ### Deterministic automatic CAD source selection
 
-`auto` uses verified EasyEDA first, then validated DigiKey/Ultra Librarian,
+`auto` uses verified EasyEDA first, then a validated DigiKey-linked package,
 then validated Mouser/SamacSys packages:
 
 ```bash

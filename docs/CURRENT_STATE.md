@@ -24,6 +24,12 @@ Python package `easyeda2kicad_digimou` no longer overwrite upstream's
 `easyeda2kicad` files or command. Generated KiCad library naming and the legacy
 CLI/output contract remain unchanged.
 
+Issue #27 removes the former `digikey -> ultralibrarian` assumption. DigiKey
+CAD discovery now reports the actual product-specific manufacturer/provider
+links, safely inspects the exact public model page when the API media response
+has no CAD links, and supports hash-bound partial intake of a manufacturer
+KiCad footprint plus STEP/WRL with an explicit missing-symbol result.
+
 RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
 limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
 The subsequent public-beta field-table audit found and fixed runtime issues.
@@ -55,16 +61,23 @@ gates remain.
   and generic CSV. Part-number cells contain only a canonical C-number or an
   empty string. The native KiCad compatibility field remains `LCSC Part`;
   sourcing status and sales data remain Manifest-only.
-- Added DigiKey Product Information V4 `Media` discovery for explicit
-  `--cad-source digikey`. The CAD source reuses or performs an exact
-  manufacturer/full-MPN lookup, requests media only for the proven DigiKey part
-  number, accepts one recognized Ultra Librarian `Model` URL, sanitizes it, and
-  returns `CAD_MANUAL_DOWNLOAD_REQUIRED`. It does not fetch or scrape the
-  returned page and never falls back to EasyEDA.
-- When the exact authenticated record has no `MediaType=Model` entry, the CAD
-  source now returns its sanitized official DigiKey `ProductUrl` as the manual
-  product-page handoff. Unknown/unsafe/ambiguous model media still fail closed,
-  and the CLI does not fetch or scrape the product or model page.
+- Added product-specific DigiKey CAD discovery for explicit
+  `--cad-source digikey`. Relevant Product Information V4 `MediaLinks` are
+  classified as manufacturer, Ultra Librarian, SnapMagic, SamacSys, or another
+  interactive source; DigiKey remains the distributor and is not treated as a
+  delivery-partner alias.
+- When the exact authenticated record has no relevant CAD media, the source may
+  make one credential-free, cookie-free GET of the canonical numeric DigiKey
+  model page. Only exact-full-MPN anchors with explicit symbol, footprint, or
+  3D labels are accepted. Challenge/unrecognized pages and transport failures
+  preserve an actionable model-page URL without claiming a provider.
+- Added manifest `available_sources` and `missing_artifacts` diagnostics.
+  Multiple providers remain separate, unsupported interactive sources are
+  explicit, and unsafe/malformed/ambiguous URLs still fail closed.
+- Added the hash-bound `manufacturer-kicad` adapter for a unique native KiCad
+  footprint plus STEP/STP or WRL without a symbol. It installs and hashes the
+  verified partial artifacts, rewrites the portable 3D reference, and reports
+  `CAD_PARTIAL` with `SYMBOL_UNAVAILABLE` instead of inventing a symbol.
 - Added typed `CAD_AUTH_REQUIRED` and `CAD_DOWNLOAD_UNAVAILABLE` DigiKey
   outcomes, credential-safe CLI handoff logging, unsafe/ambiguous URL rejection,
   and tests proving OAuth/media requests do not place credentials in URLs or
@@ -77,8 +90,9 @@ gates remain.
   user-owned DigiKey developer credentials.
 - Completed the credentialed AD5314BRM live discovery smoke with one OAuth,
   exact lookup, and `Media` request. The API returned no recognized model media,
-  so the exact official product-page handoff was used without retaining a raw
-  response, token, credential, or secret-bearing URL.
+  so the then-current adapter used the exact official product-page handoff
+  without retaining a raw response, token, credential, or secret-bearing URL.
+  Issue #27 now derives the canonical numeric model-page handoff instead.
 - Downloaded the unmodified guest KiCad v6+ plus STEP package after owner
   approval of DigiKey's Model Download Agreement. The ZIP contains five
   entries, stays within all archive limits, and is not committed or
@@ -124,7 +138,7 @@ gates remain.
   cover the remaining checks without retaining responses, credentials, or
   provider packages.
 - Added deterministic `--cad-source auto` selection with the fixed priority
-  verified EasyEDA, validated DigiKey/Ultra Librarian package, then validated
+  verified EasyEDA, a validated DigiKey-linked package, then validated
   Mouser/SamacSys package. A provider landing URL remains an action-only
   handoff and is never treated as an acquired package.
 - Added repeatable, source-labelled `--cad-candidate SOURCE=ZIP` and optional

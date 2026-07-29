@@ -94,6 +94,18 @@ def manifest_to_dict(
                 package_provenance["landing_url"] = sanitize_public_url(
                     package_provenance.get("landing_url")
                 )
+        available_sources = cad_discovery.get("available_sources")
+        if isinstance(available_sources, list):
+            for source in available_sources:
+                if not isinstance(source, dict):
+                    continue
+                urls = source.get("source_urls")
+                if isinstance(urls, list):
+                    source["source_urls"] = [
+                        safe_url
+                        for safe_url in (sanitize_public_url(url) for url in urls)
+                        if safe_url is not None
+                    ]
     jlcpcb = result.get("jlcpcb")
     if isinstance(jlcpcb, dict):
         if not include_stock:

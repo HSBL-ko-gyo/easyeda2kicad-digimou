@@ -1,0 +1,2 @@
+Synthetic manufacturer-provided footprint and 3D fixture for offline tests.
+No symbol is included.

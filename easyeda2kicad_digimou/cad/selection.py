@@ -23,7 +23,7 @@ from .package import CadPackageInspection, inspect_cad_package
 
 AUTO_PACKAGE_SOURCE_PRIORITY = ("digikey", "mouser")
 _PACKAGE_FORMAT_BY_SOURCE = {
-    "digikey": "ultralibrarian-kicad",
+    "digikey": "auto",
     "mouser": "samacsys-kicad",
 }
 _LOCK_FIELDS = frozenset(

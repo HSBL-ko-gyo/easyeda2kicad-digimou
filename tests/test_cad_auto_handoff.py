@@ -15,6 +15,7 @@ from easyeda2kicad_digimou.metadata.models import (
     CadDiscoveryResult,
     CadProvenance,
     CadRequest,
+    CadSourceAvailability,
 )
 from easyeda2kicad_digimou.metadata.service import MetadataResolution
 
@@ -43,6 +44,17 @@ def _discovery(source: str, status: str) -> CadDiscoveryResult:
             detail="manual handoff only",
             setup_url="https://www.{0}.com/productdetail/example/part".format(source),
         ),
+        available_sources=[
+            CadSourceAvailability(
+                delivery_partner=partner,
+                artifact_kinds=["footprint", "model_3d"],
+                source_urls=[
+                    "https://www.{0}.com/productdetail/example/part".format(source)
+                ],
+                support_status="manual-handoff",
+            )
+        ],
+        missing_artifacts=["symbol"],
     )
 
 
@@ -87,6 +99,8 @@ def test_auto_handoff_preserves_priority_but_never_marks_landing_as_package(
     assert result.package is None
     assert result.provenance.distributor == "digikey"
     assert result.provenance.delivery_partner == "ultralibrarian"
+    assert result.available_sources[0].delivery_partner == "ultralibrarian"
+    assert result.missing_artifacts == ["symbol"]
     assert result.action_required is not None
     assert "No acquired, identity-verified" in result.action_required.detail
 
