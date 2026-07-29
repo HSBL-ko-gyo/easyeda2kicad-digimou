@@ -25,7 +25,7 @@ from .easyeda.parameters_easyeda import EeFootprint, EeSymbol
 from .kicad.export_kicad_3d_model import Exporter3dModelKicad
 from .kicad.export_kicad_footprint import ExporterFootprintKicad
 from .kicad.export_kicad_symbol import ExporterSymbolKicad
-from .metadata.cache import strip_secrets
+from .metadata.cache import sanitize_public_url, strip_secrets
 from .metadata.manifest import write_csv_manifest, write_json_manifest
 from .metadata.merge import (
     CAD_NOT_FOUND,
@@ -270,6 +270,13 @@ def get_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--cad-package-evidence",
+        type=str,
+        help=("Sanitized hash-bound JSON receipt for an official manual CAD download"),
+        required=False,
+    )
+
+    parser.add_argument(
         "--datasheet-link",
         choices=("manufacturer", "lcsc", "digikey", "mouser"),
         help="Select the KiCad Datasheet property source",
@@ -460,6 +467,7 @@ def is_metadata_mode(arguments: dict[str, Any]) -> bool:
         or arguments.get("cad_source", "easyeda") != "easyeda"
         or arguments.get("cad_package")
         or arguments.get("cad_package_format", "auto") != "auto"
+        or arguments.get("cad_package_evidence")
         or arguments.get("datasheet_link") is not None
         or arguments.get("manifest_json")
         or arguments.get("manifest_csv")
@@ -554,8 +562,17 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
         if not Path(arguments["cad_package"]).is_file():
             logging.error("--cad-package path must be an existing ZIP file")
             return False
+        if (
+            arguments.get("cad_package_evidence")
+            and not Path(arguments["cad_package_evidence"]).is_file()
+        ):
+            logging.error("--cad-package-evidence path must be an existing JSON file")
+            return False
     elif arguments.get("cad_package_format", "auto") != "auto":
         logging.error("--cad-package-format requires --cad-package")
+        return False
+    elif arguments.get("cad_package_evidence"):
+        logging.error("--cad-package-evidence requires --cad-package")
         return False
 
     if not arguments["lcsc_id"] and not arguments.get("mpn"):
@@ -1223,6 +1240,12 @@ def _log_metadata_diagnostics(merged: MergedPart, *, require_cad: bool) -> None:
             merged.cad_discovery.requested_source,
             merged.cad_discovery.status,
         )
+        action = merged.cad_discovery.action_required
+        if action is not None:
+            logging.warning("CAD action required %s: %s", action.code, action.detail)
+            setup_url = sanitize_public_url(action.setup_url)
+            if setup_url is not None:
+                logging.warning("CAD handoff: %s", setup_url)
 
     if merged.verification_status == CAD_NOT_FOUND:
         if require_cad:
@@ -1398,6 +1421,11 @@ def _run_cad_package_mode(arguments: dict[str, Any]) -> int:
             output_base=Path(arguments["output"]),
             overwrite=arguments["overwrite"],
             project_relative_model_path=model_relative_path,
+            evidence_path=(
+                Path(arguments["cad_package_evidence"])
+                if arguments.get("cad_package_evidence")
+                else None
+            ),
         )
     except CadPackageError as error:
         logging.error("%s", error)
