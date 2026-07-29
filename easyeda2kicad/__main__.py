@@ -34,8 +34,19 @@ from .easyeda.parameters_easyeda import EeFootprint, EeSymbol
 from .kicad.export_kicad_3d_model import Exporter3dModelKicad
 from .kicad.export_kicad_footprint import ExporterFootprintKicad
 from .kicad.export_kicad_symbol import ExporterSymbolKicad
+from .headless import (
+    HEADLESS_COMMANDS,
+    HeadlessCommandError,
+    acquire_plan_result,
+    capabilities_result,
+    error_result,
+    project_inspection_result,
+    verify_artifacts_result,
+)
 from .machine import (
+    MachineEventWriter,
     build_machine_result,
+    emit_machine_result_events,
     internal_machine_result,
     invalid_machine_result,
     write_machine_json,
@@ -521,10 +532,17 @@ def get_acquire_parser() -> argparse.ArgumentParser:
 
     parser = get_parser()
     parser.prog = "easyeda2kicad acquire"
-    parser.add_argument(
+    parser.allow_abbrev = False
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument(
         "--machine-json",
         action="store_true",
         help="Write one schema-v1 UTF-8 result document to stdout",
+    )
+    output.add_argument(
+        "--json-events",
+        action="store_true",
+        help="Write a versioned UTF-8 JSON Lines event stream to stdout",
     )
     parser.add_argument(
         "--require-provider",
@@ -546,6 +564,60 @@ def get_acquire_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def get_headless_parser(command: str) -> argparse.ArgumentParser:
+    """Return one read-only discovery parser."""
+
+    parser = argparse.ArgumentParser(
+        prog="easyeda2kicad {0}".format(command),
+        allow_abbrev=False,
+    )
+    parser.add_argument(
+        "--machine-json",
+        action="store_true",
+        help="Accepted for explicit machine-mode invocation; output is always JSON",
+    )
+    if command == "capabilities":
+        return parser
+    if command == "inspect-project":
+        parser.add_argument("project_path", nargs="?")
+        parser.add_argument("--project")
+        return parser
+    if command == "plan-acquire":
+        parser.add_argument("--manufacturer")
+        parser.add_argument("--mpn")
+        parser.add_argument("--lcsc-id", "--lcsc_id", dest="lcsc_id")
+        parser.add_argument("--providers", default="lcsc")
+        parser.add_argument(
+            "--require-provider",
+            dest="required_providers",
+            action="append",
+            choices=SUPPORTED_PROVIDERS,
+            default=[],
+        )
+        parser.add_argument(
+            "--cad-source",
+            choices=SUPPORTED_CAD_SOURCE_CHOICES,
+            default="easyeda",
+        )
+        parser.add_argument("--cad-package")
+        parser.add_argument("--offline", action="store_true")
+        parser.add_argument("--require-cad", action="store_true")
+        parser.add_argument("--require-jlcpcb-resolution", action="store_true")
+        parser.add_argument("--project")
+        parser.add_argument("--output")
+        parser.add_argument("--register-project-libraries", action="store_true")
+        parser.add_argument("--require-project-registration", action="store_true")
+        return parser
+    if command == "verify-artifacts":
+        parser.add_argument("result_path", nargs="?")
+        parser.add_argument("--result")
+        parser.add_argument("--project-root")
+        parser.add_argument("--output-root")
+        parser.add_argument("--cwd-root")
+        return parser
+    raise ValueError("unsupported headless command")
+
+
 def is_metadata_mode(arguments: dict[str, Any]) -> bool:
     """Return whether any additive metadata behavior was explicitly requested."""
     return bool(
@@ -565,6 +637,7 @@ def is_metadata_mode(arguments: dict[str, Any]) -> bool:
         or arguments.get("require_cad")
         or arguments.get("require_providers")
         or arguments.get("machine_json")
+        or arguments.get("json_events")
         or arguments.get("offline")
         or arguments.get("refresh_metadata")
         or arguments.get("show_conflicts")
@@ -865,6 +938,7 @@ def valid_arguments(arguments: dict[str, Any]) -> bool:
             arguments.get("require_cad"),
             arguments.get("require_providers"),
             arguments.get("machine_json"),
+            arguments.get("json_events"),
             arguments.get("show_conflicts"),
             arguments.get("cad_package"),
             arguments.get("cad_candidates"),
@@ -1942,16 +2016,20 @@ def _restore_machine_logging(
 
 
 def _main_machine_acquire(argv: list[str]) -> int:
-    """Execute one non-interactive acquisition and emit exactly one JSON result."""
+    """Execute one non-interactive acquisition and emit JSON or JSON Lines."""
 
     request_id = uuid.uuid4().hex
+    event_mode = "--json-events" in argv
+    event_writer = MachineEventWriter(request_id) if event_mode else None
+    if event_writer is not None:
+        event_writer.emit("started", {"command": "acquire"})
     previous_level, previous_handlers = _configure_machine_logging()
     document: dict[str, Any]
     exit_code = 70
     try:
         parser = get_acquire_parser()
         if any(value in ("-h", "--help") for value in argv):
-            if "--machine-json" in argv:
+            if "--machine-json" in argv or event_mode:
                 document = invalid_machine_result(
                     request_id,
                     code="HELP_UNAVAILABLE_IN_MACHINE_MODE",
@@ -1971,10 +2049,10 @@ def _main_machine_acquire(argv: list[str]) -> int:
                 logging.getLogger().setLevel(
                     logging.DEBUG if arguments["debug"] else logging.INFO
                 )
-                if not arguments.get("machine_json"):
-                    logging.error("acquire currently requires --machine-json")
+                if not (arguments.get("machine_json") or arguments.get("json_events")):
+                    logging.error("acquire requires --machine-json or --json-events")
                     document = invalid_machine_result(
-                        request_id, code="MACHINE_JSON_REQUIRED"
+                        request_id, code="MACHINE_OUTPUT_REQUIRED"
                     )
                     exit_code = 2
                 elif not arguments["lcsc_id"] and not arguments.get("mpn"):
@@ -2045,9 +2123,104 @@ def _main_machine_acquire(argv: list[str]) -> int:
                                 core_exit_code=core_exit,
                                 request_id=request_id,
                             )
+    except KeyboardInterrupt:
+        logging.error("Machine acquisition interrupted")
+        document = internal_machine_result(request_id, code="INTERRUPTED")
+        exit_code = 70
     except Exception:
         logging.error("Unexpected machine acquisition failure")
         document = internal_machine_result(request_id)
+        exit_code = 70
+    finally:
+        _restore_machine_logging(previous_level, previous_handlers)
+    if event_writer is not None:
+        emit_machine_result_events(event_writer, document)
+    else:
+        write_machine_json(document)
+    return exit_code
+
+
+def _main_headless(command: str, argv: list[str]) -> int:
+    """Run one read-only discovery command and emit one bounded JSON result."""
+
+    request_id = uuid.uuid4().hex
+    previous_level, previous_handlers = _configure_machine_logging()
+    document: dict[str, Any]
+    exit_code = 70
+    try:
+        parser = get_headless_parser(command)
+        if "--machine-json" in argv and any(
+            value in ("-h", "--help") for value in argv
+        ):
+            raise HeadlessCommandError("HELP_UNAVAILABLE_IN_MACHINE_MODE", 2)
+        try:
+            arguments = vars(parser.parse_args(argv))
+        except SystemExit as error:
+            if error.code == 0:
+                return 0
+            document = error_result(
+                command,
+                request_id=request_id,
+                code="INVALID_REQUEST",
+                exit_code=2,
+            )
+            exit_code = 2
+        else:
+            if command == "capabilities":
+                document = capabilities_result(request_id)
+            elif command == "inspect-project":
+                document = project_inspection_result(
+                    _headless_path_argument(
+                        arguments,
+                        option_name="project",
+                        positional_name="project_path",
+                        missing_code="PROJECT_REQUIRED",
+                    ),
+                    request_id=request_id,
+                )
+            elif command == "plan-acquire":
+                document = acquire_plan_result(arguments, request_id=request_id)
+            elif command == "verify-artifacts":
+                document = verify_artifacts_result(
+                    _headless_path_argument(
+                        arguments,
+                        option_name="result",
+                        positional_name="result_path",
+                        missing_code="MACHINE_RESULT_REQUIRED",
+                    ),
+                    request_id=request_id,
+                    project_root=arguments.get("project_root"),
+                    output_root=arguments.get("output_root"),
+                    cwd_root=arguments.get("cwd_root"),
+                )
+            else:
+                raise RuntimeError("unsupported headless command")
+            exit_code = int(document["exit_code"])
+    except HeadlessCommandError as error:
+        document = error_result(
+            command,
+            request_id=request_id,
+            code=error.code,
+            exit_code=error.exit_code,
+        )
+        exit_code = error.exit_code
+    except KeyboardInterrupt:
+        logging.error("Read-only command interrupted")
+        document = error_result(
+            command,
+            request_id=request_id,
+            code="INTERRUPTED",
+            exit_code=70,
+        )
+        exit_code = 70
+    except Exception:
+        logging.error("Unexpected read-only command failure")
+        document = error_result(
+            command,
+            request_id=request_id,
+            code="INTERNAL_ERROR",
+            exit_code=70,
+        )
         exit_code = 70
     finally:
         _restore_machine_logging(previous_level, previous_handlers)
@@ -2055,9 +2228,28 @@ def _main_machine_acquire(argv: list[str]) -> int:
     return exit_code
 
 
+def _headless_path_argument(
+    arguments: dict[str, Any],
+    *,
+    option_name: str,
+    positional_name: str,
+    missing_code: str,
+) -> str:
+    option = arguments.get(option_name)
+    positional = arguments.get(positional_name)
+    if option and positional:
+        raise HeadlessCommandError("DUPLICATE_PATH_ARGUMENT", 2)
+    selected = option or positional
+    if not isinstance(selected, str) or not selected.strip():
+        raise HeadlessCommandError(missing_code, 2)
+    return selected
+
+
 def main(argv: list[str] = sys.argv[1:]) -> int:
     if argv and argv[0] == "acquire":
         return _main_machine_acquire(argv[1:])
+    if argv and argv[0] in HEADLESS_COMMANDS:
+        return _main_headless(argv[0], argv[1:])
 
     print(f"-- easyeda2kicad.py v{__version__} --")
 

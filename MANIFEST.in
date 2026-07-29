@@ -1,7 +1,7 @@
 include LICENSE
 include NOTICE
 include README.md
-include easyeda2kicad/schemas/machine-result-v1.schema.json
+recursive-include easyeda2kicad/schemas *.json
 
 prune devtools
 prune tests

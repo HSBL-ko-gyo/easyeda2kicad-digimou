@@ -1,0 +1,651 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/schemas/headless-result-v1.schema.json",
+  "title": "easyeda2kicad read-only discovery result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "command",
+    "status",
+    "exit_code",
+    "result",
+    "warnings",
+    "errors",
+    "actions_required"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "command": {
+      "enum": [
+        "capabilities",
+        "inspect-project",
+        "plan-acquire",
+        "verify-artifacts"
+      ]
+    },
+    "status": {
+      "enum": [
+        "SUCCEEDED",
+        "FAILED"
+      ]
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        2,
+        7,
+        8,
+        70
+      ]
+    },
+    "result": {},
+    "warnings": {
+      "$ref": "#/$defs/diagnostics"
+    },
+    "errors": {
+      "$ref": "#/$defs/diagnostics"
+    },
+    "actions_required": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "command": {
+          "const": "capabilities"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/capabilities"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "inspect-project"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/projectInspection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "plan-acquire"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/acquirePlan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "verify-artifacts"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/artifactVerification"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "provider"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "provider",
+        "action",
+        "handoff_url"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handoff_url": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "providerCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authentication_required",
+        "authentication_configured",
+        "guest_lookup_supported",
+        "metadata_transport"
+      ],
+      "properties": {
+        "authentication_required": {
+          "type": "boolean"
+        },
+        "authentication_configured": {
+          "type": "boolean"
+        },
+        "guest_lookup_supported": {
+          "type": "boolean"
+        },
+        "metadata_transport": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "cadCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "automated_download",
+        "manual_handoff",
+        "delivery_partner"
+      ],
+      "properties": {
+        "automated_download": {
+          "type": "boolean"
+        },
+        "manual_handoff": {
+          "type": "boolean"
+        },
+        "delivery_partner": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providers",
+        "cad_sources",
+        "commands"
+      ],
+      "properties": {
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lcsc",
+            "digikey",
+            "mouser"
+          ],
+          "properties": {
+            "lcsc": {
+              "$ref": "#/$defs/providerCapability"
+            },
+            "digikey": {
+              "$ref": "#/$defs/providerCapability"
+            },
+            "mouser": {
+              "$ref": "#/$defs/providerCapability"
+            }
+          }
+        },
+        "cad_sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "easyeda",
+            "digikey",
+            "mouser",
+            "auto"
+          ],
+          "properties": {
+            "easyeda": {
+              "$ref": "#/$defs/cadCapability"
+            },
+            "digikey": {
+              "$ref": "#/$defs/cadCapability"
+            },
+            "mouser": {
+              "$ref": "#/$defs/cadCapability"
+            },
+            "auto": {
+              "$ref": "#/$defs/cadCapability"
+            }
+          }
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "capabilities",
+              "inspect-project",
+              "plan-acquire",
+              "verify-artifacts"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "libraryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nickname",
+        "uri"
+      ],
+      "properties": {
+        "nickname": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      }
+    },
+    "tableInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "path_base",
+        "exists",
+        "sha256",
+        "entries"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path_base": {
+          "const": "project"
+        },
+        "exists": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/libraryEntry"
+          }
+        }
+      }
+    },
+    "projectInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_file",
+        "project_file_path_base",
+        "tables"
+      ],
+      "properties": {
+        "project_file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_file_path_base": {
+          "const": "project"
+        },
+        "tables": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "symbol",
+            "footprint"
+          ],
+          "properties": {
+            "symbol": {
+              "$ref": "#/$defs/tableInspection"
+            },
+            "footprint": {
+              "$ref": "#/$defs/tableInspection"
+            }
+          }
+        }
+      }
+    },
+    "projectChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "path_base",
+        "action",
+        "nickname",
+        "uri"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path_base": {
+          "const": "project"
+        },
+        "action": {
+          "enum": [
+            "create",
+            "update",
+            "unchanged"
+          ]
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      }
+    },
+    "acquirePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "providers",
+        "required_providers",
+        "authentication_configured",
+        "cad_source",
+        "cad_package_configured",
+        "offline",
+        "network_access_planned",
+        "requirements",
+        "steps",
+        "write_operations",
+        "project_changes"
+      ],
+      "properties": {
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "manufacturer",
+            "mpn",
+            "lcsc_id"
+          ],
+          "properties": {
+            "manufacturer": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "mpn": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "lcsc_id": {
+              "$ref": "#/$defs/nullableString"
+            }
+          }
+        },
+        "providers": {
+          "$ref": "#/$defs/providerList"
+        },
+        "required_providers": {
+          "$ref": "#/$defs/providerList"
+        },
+        "authentication_configured": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "propertyNames": {
+            "enum": [
+              "lcsc",
+              "digikey",
+              "mouser"
+            ]
+          }
+        },
+        "cad_source": {
+          "enum": [
+            "easyeda",
+            "digikey",
+            "mouser",
+            "auto"
+          ]
+        },
+        "cad_package_configured": {
+          "type": "boolean"
+        },
+        "offline": {
+          "type": "boolean"
+        },
+        "network_access_planned": {
+          "type": "boolean"
+        },
+        "requirements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "providers",
+            "cad",
+            "jlcpcb_resolution",
+            "project_registration"
+          ],
+          "properties": {
+            "providers": {
+              "$ref": "#/$defs/providerList"
+            },
+            "cad": {
+              "type": "boolean"
+            },
+            "jlcpcb_resolution": {
+              "type": "boolean"
+            },
+            "project_registration": {
+              "type": "boolean"
+            }
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "write_operations": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "cad-artifacts",
+              "project-library-tables"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "project_changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/projectChange"
+          }
+        }
+      }
+    },
+    "providerList": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "lcsc",
+          "digikey",
+          "mouser"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "artifactVerificationItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "path",
+        "path_base",
+        "expected_sha256",
+        "actual_sha256",
+        "status"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path_base": {
+          "enum": [
+            "project",
+            "output",
+            "cwd"
+          ]
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "MISSING",
+            "HASH_MISMATCH",
+            "UNSAFE_PATH",
+            "BASE_MISSING"
+          ]
+        }
+      }
+    },
+    "artifactVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifacts",
+        "summary"
+      ],
+      "properties": {
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifactVerificationItem"
+          }
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "total",
+            "verified",
+            "failed"
+          ],
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "verified": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}

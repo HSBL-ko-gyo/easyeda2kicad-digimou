@@ -67,6 +67,21 @@ class ProjectRegistrationResult:
     changed_paths: Tuple[Path, ...]
 
 
+@dataclass(frozen=True)
+class ProjectLibraryTableInspection:
+    path: Path
+    root_name: str
+    exists: bool
+    sha256: Optional[str]
+    entries: Tuple[LibraryEntry, ...]
+
+
+@dataclass(frozen=True)
+class ProjectInspection:
+    context: ProjectContext
+    tables: Tuple[ProjectLibraryTableInspection, ...]
+
+
 def resolve_project(project: str | Path) -> ProjectContext:
     """Resolve an explicit project file or an unambiguous project directory."""
 
@@ -112,6 +127,17 @@ def resolve_project(project: str | Path) -> ProjectContext:
         project_file=project_file,
         project_root=project_file.parent,
     )
+
+
+def inspect_project(project: str | Path) -> ProjectInspection:
+    """Inspect project-local library tables without preparing or writing changes."""
+
+    context = resolve_project(project)
+    tables = (
+        _inspect_table(context.project_root / "sym-lib-table", "sym_lib_table"),
+        _inspect_table(context.project_root / "fp-lib-table", "fp_lib_table"),
+    )
+    return ProjectInspection(context=context, tables=tables)
 
 
 def project_relative_path(context: ProjectContext, path: str | Path) -> str:
@@ -266,6 +292,46 @@ def _plan_table_update(
         action="update",
         expected_sha256=_sha256_bytes(original),
         content=encoded,
+    )
+
+
+def _inspect_table(path: Path, root_name: str) -> ProjectLibraryTableInspection:
+    if path.is_symlink():
+        raise ProjectRegistrationError(
+            "PROJECT_TABLE_LINK_REJECTED",
+            "project library tables must not be symbolic links",
+        )
+    if not path.exists():
+        return ProjectLibraryTableInspection(
+            path=path,
+            root_name=root_name,
+            exists=False,
+            sha256=None,
+            entries=(),
+        )
+    if not path.is_file():
+        raise ProjectRegistrationError(
+            "PROJECT_TABLE_INVALID",
+            "project library table path is not a regular file",
+        )
+    try:
+        original = path.read_bytes()
+    except OSError:
+        raise ProjectRegistrationError(
+            "PROJECT_TABLE_READ_FAILED",
+            "project library table could not be read",
+        ) from None
+    text, _has_bom = _decode_table(original)
+    document = _parse_table(text, root_name)
+    _validate_table_version(document)
+    entries = tuple(_library_entries(document.forms))
+    _validate_existing_entries(entries)
+    return ProjectLibraryTableInspection(
+        path=path,
+        root_name=root_name,
+        exists=True,
+        sha256=_sha256_bytes(original),
+        entries=entries,
     )
 
 
@@ -654,10 +720,13 @@ __all__ = [
     "LibraryEntry",
     "LibraryTableUpdate",
     "ProjectContext",
+    "ProjectInspection",
+    "ProjectLibraryTableInspection",
     "ProjectRegistrationError",
     "ProjectRegistrationPlan",
     "ProjectRegistrationResult",
     "apply_project_registration",
+    "inspect_project",
     "plan_project_registration",
     "project_relative_path",
     "resolve_project",

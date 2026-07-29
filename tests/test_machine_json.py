@@ -129,7 +129,8 @@ def test_readme_and_contract_document_machine_boundaries() -> None:
     assert "does not prompt, open a browser, or launch KiCad" in contract
     assert "The process exit code always equals the JSON `exit_code`" in contract
     assert "unknown top-level and nested fields" in contract
-    assert "Phase B" in contract
+    assert "`--json-events`" in contract
+    assert "machine-event-v1.schema.json" in contract
 
 
 def test_acquire_machine_json_emits_one_document_without_version_banner(

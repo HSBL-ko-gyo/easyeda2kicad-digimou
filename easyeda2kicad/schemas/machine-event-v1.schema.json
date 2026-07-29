@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/schemas/machine-event-v1.schema.json",
+  "title": "easyeda2kicad acquire JSON event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_schema_version",
+    "request_id",
+    "sequence",
+    "type",
+    "payload"
+  ],
+  "properties": {
+    "event_schema_version": {
+      "const": "1"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "type": {
+      "enum": [
+        "started",
+        "provider",
+        "cad",
+        "validation",
+        "project",
+        "completed"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "type": {
+          "const": "started"
+        },
+        "payload": {
+          "$ref": "#/$defs/started"
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "provider"
+        },
+        "payload": {
+          "$ref": "#/$defs/provider"
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "cad"
+        },
+        "payload": {
+          "$ref": "#/$defs/cad"
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "validation"
+        },
+        "payload": {
+          "$ref": "#/$defs/validation"
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "project"
+        },
+        "payload": {
+          "$ref": "#/$defs/project"
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "completed"
+        },
+        "payload": {
+          "$ref": "#/$defs/completed"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "const": "acquire"
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "status",
+        "diagnostic_code"
+      ],
+      "properties": {
+        "provider": {
+          "enum": [
+            "lcsc",
+            "digikey",
+            "mouser"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "diagnostic_code": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "cad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_source",
+        "verification_status",
+        "discovery_status"
+      ],
+      "properties": {
+        "selected_source": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "verification_status": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "discovery_status": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "warning_codes",
+        "error_codes",
+        "action_codes"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "warning_codes": {
+          "$ref": "#/$defs/codeList"
+        },
+        "error_codes": {
+          "$ref": "#/$defs/codeList"
+        },
+        "action_codes": {
+          "$ref": "#/$defs/codeList"
+        }
+      }
+    },
+    "codeList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changes"
+      ],
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/projectChange"
+          }
+        }
+      }
+    },
+    "projectChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "path_base",
+        "action",
+        "nickname",
+        "uri"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path_base": {
+          "const": "project"
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      }
+    },
+    "completed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result"
+      ],
+      "properties": {
+        "result": {
+          "$ref": "#/$defs/machineResultEnvelope"
+        }
+      }
+    },
+    "machineResultEnvelope": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "request_id",
+        "command",
+        "status",
+        "exit_code",
+        "identity",
+        "providers",
+        "cad",
+        "jlcpcb",
+        "artifacts",
+        "project_changes",
+        "warnings",
+        "errors",
+        "actions_required"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "command": {
+          "const": "acquire"
+        },
+        "status": {
+          "enum": [
+            "SUCCEEDED",
+            "SUCCEEDED_WITH_WARNINGS",
+            "ACTION_REQUIRED",
+            "FAILED"
+          ]
+        },
+        "exit_code": {
+          "enum": [
+            0,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            70
+          ]
+        }
+      }
+    }
+  }
+}

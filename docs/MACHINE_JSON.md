@@ -116,8 +116,78 @@ Consumers should select behavior from `schema_version`, `status`, `exit_code`,
 and typed codes, not terminal prose. They should verify every returned artifact
 hash before using it.
 
-## Current phase boundary
+## JSON Lines events
 
-Phase A provides the one-document `acquire --machine-json` result. JSON Lines
-events and the read-only `capabilities`, `inspect-project`, `plan-acquire`, and
-`verify-artifacts` commands are Phase B and are not claimed here.
+Use `--json-events` instead of `--machine-json` to receive UTF-8 JSON Lines:
+
+```bash
+python -m easyeda2kicad acquire \
+  --manufacturer "Texas Instruments" \
+  --mpn OPA333AIDBVR \
+  --providers lcsc,digikey \
+  --offline \
+  --json-events
+```
+
+Every event contains `event_schema_version=1`, the same 32-character request
+ID, a sequence starting at 1, a fixed type, and a type-specific payload. Event
+types are `started`, `provider`, `cad`, `validation`, `project`, and
+`completed`. The last event always embeds the same machine-result v1 document
+under `payload.result`, including provider failures, manual handoffs, invalid
+requests, interruptions, and bounded internal failures.
+
+`--machine-json` and `--json-events` are mutually exclusive. Validate each
+event with `easyeda2kicad/schemas/machine-event-v1.schema.json`, then validate
+the final `payload.result` with `machine-result-v1.schema.json`.
+
+## Read-only discovery
+
+Four JSON-only commands expose safe planning and inspection data:
+
+- `capabilities` reports supported providers, CAD source handoff behavior, and
+  authentication state as booleans only.
+- `inspect-project --project PATH` parses project-local library tables and
+  returns project-relative paths, hashes, and entries without changing them.
+- `plan-acquire` accepts identity, provider, CAD, requirement, and optional
+  project-registration inputs, then reports planned network/write stages
+  without provider requests or filesystem writes.
+- `verify-artifacts --result FILE` verifies the relative artifact paths and
+  SHA-256 values in a machine-result document. Supply `--project-root`,
+  `--output-root`, or `--cwd-root` for the corresponding `path_base`.
+
+Their result schema is
+`easyeda2kicad/schemas/headless-result-v1.schema.json`. Global paths, secret
+values, raw responses, and credential variable names are not returned.
+The commands always emit JSON, while also accepting `--machine-json` for an
+explicit machine-mode spelling. `inspect-project PROJECT` and
+`verify-artifacts RESULT` are positional aliases for `--project PROJECT` and
+`--result RESULT`.
+
+Example:
+
+```bash
+python -m easyeda2kicad capabilities
+python -m easyeda2kicad inspect-project --project ./board.kicad_pro
+python -m easyeda2kicad plan-acquire \
+  --manufacturer "Texas Instruments" \
+  --mpn OPA333AIDBVR \
+  --providers lcsc,digikey \
+  --offline
+python -m easyeda2kicad verify-artifacts \
+  --result ./result.json \
+  --output-root ./libs
+```
+
+The independent standard-library example verifies the same hashes without
+importing this package:
+
+```bash
+python examples/verify_machine_artifacts.py \
+  result.json \
+  --base output=./libs
+```
+
+Read-only commands never contact a provider, prompt, launch a browser/KiCad, or
+write project/artifact files. `plan-acquire` can return proposed table changes,
+but applying them still requires the separate acquisition command and its
+explicit `--register-project-libraries` opt-in.

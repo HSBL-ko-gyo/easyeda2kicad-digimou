@@ -673,8 +673,30 @@ and `70` unexpected internal failure. The process exit always equals the JSON
 The checked-in and packaged schema is
 `easyeda2kicad/schemas/machine-result-v1.schema.json`. See
 [Machine JSON contract](docs/MACHINE_JSON.md) for the complete field,
-path-base, exit-code, and versioning rules. JSON Lines events and read-only
-discovery commands are planned for Phase B and are not claimed yet.
+path-base, exit-code, and versioning rules.
+
+For a versioned JSON Lines stream, replace `--machine-json` with
+`--json-events`. Events use one request ID, a sequence starting at 1, and the
+fixed types `started`, `provider`, `cad`, `validation`, `project`, and
+`completed`. The final event embeds the same schema-v1 result.
+
+The following commands are JSON-only and read-only:
+
+```bash
+python -m easyeda2kicad capabilities
+python -m easyeda2kicad inspect-project --project ./board.kicad_pro
+python -m easyeda2kicad plan-acquire --manufacturer "Texas Instruments" --mpn OPA333AIDBVR --providers lcsc,digikey --offline
+python -m easyeda2kicad verify-artifacts --result ./result.json --output-root ./libs
+```
+
+`capabilities` and `plan-acquire` expose authentication state only as
+configured/missing booleans. They never return key names or values.
+`inspect-project` and `plan-acquire` do not write files. In a repository
+checkout, independently check artifact hashes from another process with
+`python examples/verify_machine_artifacts.py result.json --base output=./libs`.
+These four commands are always JSON; an explicit `--machine-json` is also
+accepted, and `inspect-project PROJECT` / `verify-artifacts RESULT` are aliases
+for their named path options.
 
 By default, all libraries are saved in `~/Documents/Kicad/easyeda2kicad/` (Linux/macOS) or `C:/Users/your_name/Documents/Kicad/easyeda2kicad/` (Windows), with:
 

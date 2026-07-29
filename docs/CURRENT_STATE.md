@@ -416,8 +416,7 @@ optional-provider `PARTIAL`/status-0 behavior is unchanged.
   `--require-jlcpcb-resolution`, and `--require-project-registration` with
   stable exit codes 0, 2–8, and 70.
 - Checked in and packaged `machine-result-v1.schema.json`, with an explicit
-  compatibility/versioning policy. Phase B events and read-only discovery
-  commands remain outstanding, so Issue #9 stays open.
+  compatibility/versioning policy.
 
 | Gate | Result |
 | --- | --- |
@@ -429,6 +428,36 @@ optional-provider `PARTIAL`/status-0 behavior is unchanged.
 | Build and Twine check | PASS for sdist and wheel |
 | Schema present once in sdist and wheel | PASS |
 | Changed source and unpacked distribution secret/path scan | PASS |
+
+## Issue #9 Phase B headless discovery and events
+
+- Added `acquire --json-events` with versioned UTF-8 JSON Lines, one request ID,
+  monotonic sequence numbers, fixed event types, and a final `completed` event
+  containing the Phase A result. Invalid requests, provider/manual-action
+  failures, interruptions, and bounded internal failures retain a typed final
+  result.
+- Added JSON-only `capabilities`, `inspect-project`, `plan-acquire`, and
+  `verify-artifacts` commands. Capability/plan output exposes authentication
+  state only as booleans; it never returns secret names or values.
+- Project inspection and acquisition planning are read-only. Planned project
+  registration returns `${KIPRJMOD}` changes without creating or modifying
+  tables. Artifact verification rejects absolute/traversal/symlink paths and
+  compares SHA-256.
+- Added closed event/headless schemas and an independent standard-library hash
+  verification example. Cached semantic reruns retain the same artifact hashes
+  and result after excluding the per-invocation request ID.
+
+| Gate | Result |
+| --- | --- |
+| Event/read-only/schema/security focused tests | `22 passed` |
+| Related machine/project/doc focused tests | `88 passed` |
+| Python 3.12.13 full pytest | `943 passed, 75 skipped` |
+| Real offline JSON Lines subprocess | PASS, exit 6 / final `OFFLINE_CACHE_MISS` |
+| Ruff lint / format | PASS, 90 files |
+| Python 3.12 strict mypy | PASS, 90 source files |
+| Build and Twine check | PASS for sdist and wheel |
+| Three schemas present once in sdist and wheel | PASS |
+| Changed source and distribution secret/path scan | PASS |
 
 ## Remaining
 
