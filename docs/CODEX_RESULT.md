@@ -248,7 +248,9 @@ source, manifests, cache keys, diagnostics, or logs.
 
 DigiKey access tokens stay in memory. The Mouser key is placed only in the
 official request URL at transport time and is scrubbed from errors/cache data.
-Missing credentials produce visible `AUTH_MISSING` diagnostics and do not stop
+At the provider adapter boundary, missing credentials raise `AUTH_MISSING`.
+Current CLI orchestration publishes that policy capability as
+`GUEST_LOOKUP_UNSUPPORTED` with a sanitized setup URL and does not stop
 available providers or verified CAD.
 
 ## 10. Real API execution status

@@ -174,9 +174,14 @@ other 4xx responses are not retried. Error messages include provider, category,
 and status, but not request headers, body credentials, access token, or full
 Mouser URL.
 
-Missing credentials produce an explicit provider authentication error. The
-merge records a partial result and continues other requested providers; it does
-not pretend that the provider returned `NOT_FOUND`.
+Missing DigiKey/Mouser credentials produce
+`GUEST_LOOKUP_UNSUPPORTED`, a sanitized official setup URL, and no HTTP request.
+The implementation does not fall back to product-page scraping. The merge
+records a partial result and continues other requested providers; it does not
+pretend that the provider returned `NOT_FOUND`. `--require-providers` changes
+only the final CLI requirement check, not provider selection or acquisition:
+every provider explicitly selected by `--providers` must have a normalized
+record or the command returns nonzero after writing requested manifests.
 
 ## Cache semantics
 
