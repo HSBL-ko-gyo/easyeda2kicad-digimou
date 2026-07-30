@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 # Global imports
+import shutil
+import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Optional, Set
 
 import pytest
@@ -244,35 +245,35 @@ def test_git_path_reader_stops_and_reaps_at_limit(
         def close(self) -> None:
             self.closed = True
 
+    class FakeProcess:
+        def __init__(self, stdout: ChunkedOutput) -> None:
+            self.stdout = stdout
+            self.returncode: Optional[int] = None
+            self.terminated = False
+            self.waited = False
+
+        def poll(self) -> Optional[int]:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self, timeout: Optional[float] = None) -> int:
+            del timeout
+            self.waited = True
+            if self.returncode is None:
+                self.returncode = 0
+            return self.returncode
+
+        def kill(self) -> None:
+            self.terminate()
+
     stdout = ChunkedOutput(output)
-    process = SimpleNamespace(
-        stdout=stdout,
-        returncode=None,
-        terminated=False,
-        waited=False,
-    )
+    process = FakeProcess(stdout)
 
-    def poll() -> Optional[int]:
-        return process.returncode
-
-    def terminate() -> None:
-        process.terminated = True
-        process.returncode = -15
-
-    def wait(timeout: Optional[float] = None) -> int:
-        del timeout
-        process.waited = True
-        if process.returncode is None:
-            process.returncode = 0
-        return process.returncode
-
-    process.poll = poll
-    process.terminate = terminate
-    process.wait = wait
-    process.kill = terminate
-
-    monkeypatch.setattr(monitor.shutil, "which", lambda _name: "git")
-    monkeypatch.setattr(monitor.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(shutil, "which", lambda _name: "git")
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
 
     with pytest.raises(
         ConsistencyCheckError,

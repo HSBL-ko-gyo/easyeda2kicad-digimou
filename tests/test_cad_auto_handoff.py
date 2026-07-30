@@ -523,8 +523,8 @@ def test_cli_total_easyeda_miss_expands_beyond_metadata_providers(
 def test_missing_requested_artifact_matrix(
     arguments: dict[str, bool],
     status: str,
-    symbol: object | None,
-    footprint: object | None,
+    symbol: Any | None,
+    footprint: Any | None,
     expected: tuple[str, ...],
 ) -> None:
     assert (
