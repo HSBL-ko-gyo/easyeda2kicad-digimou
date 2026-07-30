@@ -101,6 +101,10 @@ class EasyedaApi:
                         legacy_data = f.read()
                     json.loads(legacy_data)
                     data = legacy_data
+                    # Upgrade a valid legacy cache after it has been decoded.
+                    # This keeps compatibility with v1.0.1 while ensuring the
+                    # cache is UTF-8 for every subsequent reader.
+                    self._write_to_cache(cache_path, legacy_data, binary=False)
             logging.debug(f"Cache hit: {cache_path}")
             return data
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
