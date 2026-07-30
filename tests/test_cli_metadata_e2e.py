@@ -3,6 +3,7 @@ from __future__ import annotations
 # Global imports
 import io
 import json
+import logging
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -226,8 +227,25 @@ def test_metadata_cad_parser_action_matrix(
     expected_calls: list[str],
 ) -> None:
     calls: list[str] = []
-    symbol = SimpleNamespace(info=SimpleNamespace(name="PART"))
-    footprint = SimpleNamespace(info=SimpleNamespace(name="SOT-23"))
+    symbol = SimpleNamespace(
+        info=SimpleNamespace(name="PART"),
+        pins=[
+            SimpleNamespace(
+                settings=SimpleNamespace(spice_pin_number="1"),
+            )
+        ],
+        sub_symbols=[],
+    )
+    footprint = SimpleNamespace(
+        info=SimpleNamespace(name="SOT-23"),
+        pads=[
+            SimpleNamespace(
+                number="1",
+                hole_radius=0.0,
+                is_plated=True,
+            )
+        ],
+    )
 
     class SymbolImporter:
         def __init__(self, **_kwargs: Any) -> None:
@@ -282,10 +300,27 @@ def test_unrequested_cad_parser_cannot_fail_requested_action(
             pass
 
         def get_symbol(self) -> Any:
-            return SimpleNamespace(info=SimpleNamespace(name="PART"))
+            return SimpleNamespace(
+                info=SimpleNamespace(name="PART"),
+                pins=[
+                    SimpleNamespace(
+                        settings=SimpleNamespace(spice_pin_number="1"),
+                    )
+                ],
+                sub_symbols=[],
+            )
 
         def get_footprint(self) -> Any:
-            return SimpleNamespace(info=SimpleNamespace(name="SOT-23"))
+            return SimpleNamespace(
+                info=SimpleNamespace(name="SOT-23"),
+                pads=[
+                    SimpleNamespace(
+                        number="1",
+                        hole_radius=0.0,
+                        is_plated=True,
+                    )
+                ],
+            )
 
     class FailingImporter:
         def __init__(self, **_kwargs: Any) -> None:
@@ -662,6 +697,49 @@ def test_provider_errors_are_logged_without_manifest_or_conflict_output(
     assert "MOUSER_API_KEY" in caplog.text
     assert "API results are unavailable without valid credentials" in caplog.text
     assert "https://www.mouser.com/api-search/" in caplog.text
+
+
+def test_human_logging_redacts_all_configured_provider_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configured_values = {
+        "DIGIKEY_CLIENT_ID": "human-log-digikey-id-secret",
+        "DIGIKEY_CLIENT_SECRET": "human-log-digikey-client-secret",
+        "MOUSER_API_KEY": "human-log-mouser-key-secret",
+    }
+    for name, value in configured_values.items():
+        monkeypatch.setenv(name, value)
+
+    def run(_arguments: dict[str, Any]) -> int:
+        message_arguments = tuple(configured_values.values())
+        for handler in logging.getLogger().handlers:
+            record = logging.LogRecord(
+                name=__name__,
+                level=logging.ERROR,
+                pathname=__file__,
+                lineno=0,
+                msg="provider diagnostic contained %s %s %s",
+                args=message_arguments,
+                exc_info=None,
+            )
+            handler.handle(record)
+        return 0
+
+    monkeypatch.setattr(cli, "_run_metadata_mode", run)
+
+    exit_code = cli.main(["--mpn", "OPA333AIDBVR", "--symbol", "--debug"])
+
+    captured = capsys.readouterr()
+    rendered = captured.out + captured.err + caplog.text
+    assert exit_code == 0
+    assert "[REDACTED]" in rendered
+    for configured_value in configured_values.values():
+        assert configured_value not in rendered
+        assert all(
+            configured_value not in record.getMessage() for record in caplog.records
+        )
 
 
 def test_explicit_datasheet_failure_keeps_verified_cad_status(

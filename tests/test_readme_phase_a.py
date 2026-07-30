@@ -14,7 +14,7 @@ def test_readme_never_recommends_the_upstream_pypi_install_command() -> None:
 
     assert "python -m pip install easyeda2kicad\n" not in readme
     assert "python -m pip install easyeda2kicad " not in readme
-    assert "pip install ./easyeda2kicad_digimou-1.1.0b2-py3-none-any.whl" in readme
+    assert "pip install ./easyeda2kicad_digimou-1.1.0b3-py3-none-any.whl" in readme
     assert "python -m pip install -e ." in readme
     assert "generic distribution from\nPyPI installs the separate upstream" in readme
 
@@ -51,7 +51,7 @@ def test_readme_capability_matrix_states_current_product_boundaries() -> None:
     assert "`--cad-source` selects CAD" in flattened
     assert "never silently falls back to EasyEDA" in flattened
     assert "DigiKey-linked CAD" in section
-    assert "Mouser / SamacSys" in section
+    assert "Mouser-linked CAD" in section
     assert "`distributor`, `delivery_partner`, and `model_creator`" in flattened
     assert "does not provide complete DigiKey or Mouser CAD support" in flattened
     assert "2026-07-30" in section
@@ -176,9 +176,11 @@ def test_readme_documents_safe_provider_cad_handoffs_and_import() -> None:
     assert "review the applicable terms" in flattened
     assert "Same Sky `MJ-2523-SMT-TR`" in section
     assert "KiCad CLI 7/9/10 and KiCad" in flattened
-    assert "### Discover the Mouser / SamacSys CAD handoff" in section
-    assert "--manufacturer Rectron" in section
-    assert "--mpn FM220A-W" in section
+    assert "### Discover the Mouser CAD handoff" in section
+    assert '--manufacturer "Texas Instruments"' in section
+    assert "--mpn LM358DR" in section
+    assert "`delivery_partner`" in section
+    assert "`model_creator`" in section
     assert "never falls back to EasyEDA" in flattened
     assert "still required" in flattened
     assert "--cad-package ./downloads/official-ultralibrarian-kicad.zip" in section
@@ -235,7 +237,7 @@ def test_readme_covers_jlcpcb_statuses_and_kicad_gui_acceptance() -> None:
     assert "3D Viewer" in kicad
     assert "rotated, offset, or scaled incorrectly" in kicad
     assert "${KIPRJMOD}/..." in kicad
-    assert "real Mouser/SamacSys proof remains outstanding" in kicad
+    assert "real Mouser-linked proof remains outstanding" in kicad
 
 
 def test_machine_troubleshooting_and_advanced_links_are_present() -> None:

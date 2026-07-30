@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import AbstractSet, Optional, Sequence, Tuple
@@ -32,6 +33,9 @@ DEFAULT_CLI_PATHS = (
     "easyeda2kicad/__main__.py",
 )
 DEFAULT_PACKAGE_ROOTS = ("easyeda2kicad_digimou", "easyeda2kicad")
+PUBLIC_OPTION = re.compile(r"^--[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
+MAX_REPORTED_OPTIONS = 40
+MAX_CHANGED_PATHS = 10_000
 
 
 class ConsistencyCheckError(RuntimeError):
@@ -158,10 +162,9 @@ def evaluate_consistency(
     )
     readme_changed = README_PATH in changed
 
-    generic_feature_signal = bool(added_surface_files or feature_subjects)
     newly_exposed_surface_is_documented = bool(new_options) and not undocumented_options
     generic_documentation_gap = (
-        generic_feature_signal
+        production_changed
         and not readme_changed
         and not newly_exposed_surface_is_documented
     )
@@ -205,12 +208,78 @@ def _run_git(repository: Path, *arguments: str) -> str:
 def _git_paths(
     repository: Path, base: str, head: str, *, added_only: bool = False
 ) -> Tuple[str, ...]:
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        raise ConsistencyCheckError("git executable was not found on PATH")
     arguments = ["diff", "--name-only", "-z"]
     if added_only:
         arguments.append("--diff-filter=A")
     arguments.extend([base, head, "--"])
-    output = _run_git(repository, *arguments)
-    return tuple(path for path in output.split("\0") if path)
+
+    with tempfile.TemporaryFile() as stderr:
+        try:
+            process = subprocess.Popen(  # noqa: S603 - fixed executable, no shell
+                [git_executable, *arguments],
+                cwd=repository,
+                stdout=subprocess.PIPE,
+                stderr=stderr,
+            )
+        except OSError as error:
+            raise ConsistencyCheckError(f"git diff failed: {error}") from error
+
+        if process.stdout is None:
+            _stop_process(process)
+            raise ConsistencyCheckError("git diff stdout could not be captured")
+
+        paths: list[str] = []
+        pending = b""
+        try:
+            while chunk := process.stdout.read(64 * 1024):
+                fields = (pending + chunk).split(b"\0")
+                pending = fields.pop()
+                for field in fields:
+                    if not field:
+                        continue
+                    paths.append(field.decode("utf-8"))
+                    if len(paths) > MAX_CHANGED_PATHS:
+                        _stop_process(process)
+                        raise ConsistencyCheckError(
+                            "revision range exceeds the safe changed-path "
+                            "inspection limit"
+                        )
+            if pending:
+                paths.append(pending.decode("utf-8"))
+            return_code = process.wait()
+        except UnicodeDecodeError as error:
+            _stop_process(process)
+            raise ConsistencyCheckError(
+                "git diff returned a non-UTF-8 repository path"
+            ) from error
+        finally:
+            process.stdout.close()
+            if process.poll() is None:
+                _stop_process(process)
+
+        if return_code != 0:
+            stderr.seek(0)
+            detail = stderr.read().decode("utf-8", errors="replace").strip()
+            raise ConsistencyCheckError(
+                f"git {' '.join(arguments)} failed: {detail or return_code}"
+            )
+    return tuple(paths)
+
+
+def _stop_process(process: subprocess.Popen[bytes]) -> None:
+    """Terminate and reap a bounded Git reader without leaving a child behind."""
+
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
 
 
 def _git_file(repository: Path, revision: str, path: str) -> str:
@@ -242,14 +311,11 @@ def inspect_repository(repository: Path, base: str, head: str) -> Analysis:
     _run_git(root, "rev-parse", "--verify", f"{head}^{{commit}}")
 
     changed_paths = _git_paths(root, base, head)
+    if len(changed_paths) > MAX_CHANGED_PATHS:
+        raise ConsistencyCheckError(
+            "revision range exceeds the safe changed-path inspection limit"
+        )
     added_paths = _git_paths(root, base, head, added_only=True)
-    subjects = tuple(
-        subject
-        for subject in _run_git(
-            root, "log", "--format=%s", f"{base}..{head}"
-        ).splitlines()
-        if subject
-    )
     readme = _git_file(root, head, README_PATH)
     cli_path, head_source = _find_cli_source(root, head, DEFAULT_CLI_PATHS)
     head_options = extract_public_cli_options(head_source)
@@ -273,7 +339,7 @@ def inspect_repository(repository: Path, base: str, head: str) -> Analysis:
         readme=readme,
         changed_paths=changed_paths,
         added_paths=added_paths,
-        commit_subjects=subjects,
+        commit_subjects=(),
         package_roots=package_roots,
     )
 
@@ -282,9 +348,22 @@ def _yes_no(value: bool) -> str:
     return "yes" if value else "no"
 
 
+def _format_public_options(options: Sequence[str]) -> str:
+    safe = [
+        option
+        if PUBLIC_OPTION.fullmatch(option) is not None
+        else "[unsafe option omitted]"
+        for option in options[:MAX_REPORTED_OPTIONS]
+    ]
+    if len(options) > MAX_REPORTED_OPTIONS:
+        safe.append(f"and {len(options) - MAX_REPORTED_OPTIONS} more")
+    return ", ".join(f"`{option}`" for option in safe)
+
+
 def render_report(analysis: Analysis, base: str, head: str) -> str:
     """Render a concise Markdown report suitable for a GitHub issue."""
 
+    del base, head
     status = (
         "README consistency gap detected"
         if analysis.inconsistent
@@ -293,24 +372,23 @@ def render_report(analysis: Analysis, base: str, head: str) -> str:
     lines = [
         f"# {status}",
         "",
-        f"- Revision range: `{base}..{head}`",
+        "- Revision range: verified Git commits recorded by the issue marker",
         f"- README.md changed: `{_yes_no(analysis.readme_changed)}`",
     ]
 
     if analysis.new_options:
         lines.append(
-            "- New public CLI options: "
-            + ", ".join(f"`{option}`" for option in analysis.new_options)
+            "- New public CLI options: " + _format_public_options(analysis.new_options)
         )
     if analysis.added_surface_files:
         lines.append(
-            "- New user-facing files: "
-            + ", ".join(f"`{path}`" for path in analysis.added_surface_files)
+            "- New user-facing production files: "
+            + str(len(analysis.added_surface_files))
         )
     if analysis.feature_subjects:
-        lines.extend(
-            ["", "## Feature signals", ""]
-            + [f"- `{subject}`" for subject in analysis.feature_subjects]
+        lines.append(
+            "- Feature-style commit subjects detected: "
+            + str(len(analysis.feature_subjects))
         )
 
     if analysis.inconsistent:
@@ -318,19 +396,15 @@ def render_report(analysis: Analysis, base: str, head: str) -> str:
         if analysis.undocumented_options:
             lines.append(
                 "- Public CLI options absent from README.md: "
-                + ", ".join(f"`{option}`" for option in analysis.undocumented_options)
+                + _format_public_options(analysis.undocumented_options)
             )
         if analysis.removed_documented_options:
             lines.append(
                 "- Removed CLI options still present in README.md: "
-                + ", ".join(
-                    f"`{option}`" for option in analysis.removed_documented_options
-                )
+                + _format_public_options(analysis.removed_documented_options)
             )
         if analysis.generic_documentation_gap:
-            lines.append(
-                "- A feature signal changed production code without a README.md update."
-            )
+            lines.append("- Production code changed without a README.md review update.")
         lines.extend(
             [
                 "",
@@ -357,10 +431,14 @@ def render_report(analysis: Analysis, base: str, head: str) -> str:
         path for path in analysis.changed_paths if _is_production_path(path)
     ]
     if production_paths:
-        lines.extend(["", "## Production files in scope", ""])
-        lines.extend(f"- `{path}`" for path in production_paths[:30])
-        if len(production_paths) > 30:
-            lines.append(f"- and {len(production_paths) - 30} more files")
+        lines.extend(
+            [
+                "",
+                "## Production scope",
+                "",
+                f"- Changed production files: {len(production_paths)}",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 

@@ -765,16 +765,30 @@ def _discover_auto_cad_handoff(
                 offline=offline,
             )
         attempts.append(discovery)
-        available = {
-            artifact
+        matching_sources = [
+            candidate
             for candidate in discovery.available_sources
-            for artifact in candidate.artifact_kinds
-        }
-        if discovery.status == CAD_MANUAL_DOWNLOAD_REQUIRED and required.issubset(
-            available
-        ):
-            return _auto_handoff_result(discovery)
-    return _auto_handoff_result(attempts[0]) if attempts else None
+            if required.issubset(candidate.artifact_kinds)
+        ]
+        if discovery.status == CAD_MANUAL_DOWNLOAD_REQUIRED and matching_sources:
+            return _auto_handoff_result(
+                discovery,
+                required_artifacts=tuple(required),
+            )
+    if not attempts:
+        return None
+    if not required:
+        return _auto_handoff_result(attempts[0])
+    auth_attempt = next(
+        (attempt for attempt in attempts if attempt.status == CAD_AUTH_REQUIRED),
+        None,
+    )
+    if auth_attempt is not None:
+        return _auto_handoff_result(
+            auth_attempt,
+            required_artifacts=tuple(required),
+        )
+    return _auto_unavailable_result(result, tuple(required))
 
 
 def discover_auto_cad_fallback(
@@ -822,7 +836,12 @@ def discover_auto_cad_fallback(
     return discovery
 
 
-def _auto_handoff_result(discovery: CadDiscoveryResult) -> CadDiscoveryResult:
+def _auto_handoff_result(
+    discovery: CadDiscoveryResult,
+    *,
+    required_artifacts: Sequence[str] = (),
+) -> CadDiscoveryResult:
+    required = frozenset(required_artifacts)
     request = discovery.request
     auto_request = (
         CadRequest(
@@ -846,6 +865,21 @@ def _auto_handoff_result(discovery: CadDiscoveryResult) -> CadDiscoveryResult:
             "available for auto selection"
         )
     )
+    available_sources: List[CadSourceAvailability] = []
+    if required:
+        for source in discovery.available_sources:
+            if not required.issubset(source.artifact_kinds):
+                continue
+            filtered_source = CadSourceAvailability.from_dict(source.to_dict())
+            filtered_source.artifact_kinds = sorted(required)
+            available_sources.append(filtered_source)
+        missing_artifacts = [] if available_sources else sorted(required)
+    else:
+        available_sources = [
+            CadSourceAvailability.from_dict(source.to_dict())
+            for source in discovery.available_sources
+        ]
+        missing_artifacts = list(discovery.missing_artifacts)
     return CadDiscoveryResult(
         requested_source="auto",
         status=discovery.status,
@@ -856,11 +890,42 @@ def _auto_handoff_result(discovery: CadDiscoveryResult) -> CadDiscoveryResult:
             detail=detail,
             setup_url=(action.setup_url if action is not None else None),
         ),
-        available_sources=[
-            CadSourceAvailability.from_dict(source.to_dict())
-            for source in discovery.available_sources
-        ],
-        missing_artifacts=list(discovery.missing_artifacts),
+        available_sources=available_sources,
+        missing_artifacts=missing_artifacts,
+    )
+
+
+def _auto_unavailable_result(
+    result: MetadataResolution,
+    required_artifacts: Sequence[str],
+) -> CadDiscoveryResult:
+    """Return a neutral result when no one provider offers every required kind."""
+
+    exact_manufacturer = _clean(result.trusted_manufacturer)
+    exact_mpn = _clean(result.trusted_mpn)
+    request = (
+        CadRequest(
+            manufacturer=exact_manufacturer,
+            mpn=exact_mpn,
+            source="auto",
+        )
+        if exact_manufacturer is not None and exact_mpn is not None
+        else None
+    )
+    missing = sorted(set(required_artifacts))
+    return CadDiscoveryResult(
+        requested_source="auto",
+        status=CAD_DOWNLOAD_UNAVAILABLE,
+        request=request,
+        provenance=CadProvenance(retrieval_mode="official-provider-handoff"),
+        action_required=CadActionRequired(
+            code=CAD_DOWNLOAD_UNAVAILABLE,
+            detail=(
+                "No single product-specific provider handoff advertises every "
+                "required EasyEDA replacement artifact ({0})".format(", ".join(missing))
+            ),
+        ),
+        missing_artifacts=missing,
     )
 
 
@@ -1108,7 +1173,7 @@ def _external_cad_not_acquired(
 
     partners = {
         "digikey": (None, "DigiKey-linked official"),
-        "mouser": ("samacsys", "Mouser / SamacSys"),
+        "mouser": (None, "Mouser-linked official"),
     }
     delivery_partner, label = partners[source]
     provenance = CadProvenance(

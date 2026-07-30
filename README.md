@@ -1,11 +1,11 @@
 # easyeda2kicad +DigiMou
 
-> **Public beta `1.1.0b2` — unofficial derivative.** This repository modifies
+> **Public beta `1.1.0b3` — unofficial derivative.** This repository modifies
 > [uPesy/easyeda2kicad.py](https://github.com/uPesy/easyeda2kicad.py). See
 > [NOTICE](NOTICE) for attribution. It is not an official DigiKey, Mouser,
 > LCSC, EasyEDA, or upstream release.
 
-[![Public beta](https://img.shields.io/badge/public_beta-1.1.0b2-orange)](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases/tag/v1.1.0b2)
+[![Public beta](https://img.shields.io/badge/public_beta-1.1.0b3-orange)](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases/tag/v1.1.0b3)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](setup.py)
 
@@ -24,7 +24,7 @@ EasyEDA.
 | --- | --- | --- | --- | --- |
 | LCSC / JLCPCB + EasyEDA | Anonymous exact LCSC/JLCPCB catalogue lookup | Automated EasyEDA symbol, footprint, and 3D download | No account | Public OPA333AIDBVR and LM321MF/NOPB runs, 2026-07-22 |
 | DigiKey-linked CAD | Product Information V4 API | Product-specific discovery of manufacturer, Ultra Librarian, and other linked sources; verified full or manufacturer footprint+3D package import | User-owned DigiKey developer app for metadata; source agreements and limits remain provider-controlled | Authenticated Same Sky MJ-2523-SMT-TR source discovery plus AD5314BRM real-package import, KiCad CLI 7/9/10, and KiCad 10 GUI, 2026-07-30 |
-| Mouser / SamacSys | Search API V2 | Official Product Detail handoff, then user-owned MyMouser/SamacSys or Library Loader export | User-owned Mouser API key and download session | Adapter/fixture coverage only; credentialed FM220A-W package and final GUI proof are not yet complete |
+| Mouser-linked CAD | Search API V2 | Exact Product Detail handoff without guessing the page's ECAD provider; validated package import after separate source and format proof | User-owned Mouser API key; any account or agreement required by the ECAD source the user selects | Adapter/fixture coverage only; a real Mouser-linked package and final GUI proof are not yet complete |
 
 ```text
 exact manufacturer + full MPN
@@ -36,12 +36,14 @@ exact manufacturer + full MPN
 
 The Manifest records `distributor`, `delivery_partner`, and `model_creator`
 separately. DigiKey is not recorded as the creator of an Ultra Librarian
-model, and Mouser is not recorded as the creator of a SamacSys model.
+model. A Mouser Product Detail URL alone does not prove a delivery partner or
+model creator.
 
-Local Ultra Librarian/SamacSys import is implemented, but provider website
-search, login, agreement acceptance, and download automation are not. Mouser's
-real-package path and final dual-provider E2E remain open. Therefore this
-project does not provide complete DigiKey or Mouser CAD support.
+Validated local package import is implemented for Ultra Librarian, SamacSys,
+and manufacturer-provided packages, but provider website search, login,
+agreement acceptance, and download automation are not. Mouser's real-package
+path and final dual-provider E2E remain open. Therefore this project does not
+provide complete DigiKey or Mouser CAD support.
 
 Exact manufacturer and full-MPN checks are fail-closed. The legacy
 `--lcsc_id` workflow and its output remain supported.
@@ -53,11 +55,11 @@ This path needs internet access but no distributor account.
 ### 1. Install this fork
 
 Download the wheel from the
-[v1.1.0b2 GitHub pre-release](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases/tag/v1.1.0b2),
+[v1.1.0b3 GitHub pre-release](https://github.com/HSBL-ko-gyo/easyeda2kicad-digimou/releases/tag/v1.1.0b3),
 then install that file with the Python environment that will run the CLI:
 
 ```bash
-python -m pip install ./easyeda2kicad_digimou-1.1.0b2-py3-none-any.whl
+python -m pip install ./easyeda2kicad_digimou-1.1.0b3-py3-none-any.whl
 ```
 
 For a repository checkout:
@@ -407,26 +409,31 @@ misidentified as Ultra Librarian. The earlier AD5314BRM Ultra Librarian path
 remains validated with a real package in KiCad CLI 7/9/10 and KiCad 10 GUI.
 Guest availability and download limits can change.
 
-### Discover the Mouser / SamacSys CAD handoff
+### Discover the Mouser CAD handoff
 
 ```bash
 python -m easyeda2kicad_digimou \
-  --manufacturer Rectron \
-  --mpn FM220A-W \
+  --manufacturer "Texas Instruments" \
+  --mpn LM358DR \
   --providers mouser \
   --cad-source mouser \
-  --manifest-json ./build/FM220A-W-handoff.json
+  --manifest-json ./build/LM358DR-mouser-handoff.json
 ```
 
 The CLI uses only Search API V2 and returns the exact sanitized Mouser Product
-Detail URL. It never fetches or scrapes that page. Use your own MyMouser or
-SamacSys/Library Loader session to request/export the package. SamacSys
-automated search, login, request, and download are intentionally not
-implemented. Explicit `--cad-source mouser` never falls back to EasyEDA.
+Detail URL. It never fetches or scrapes that page and does not infer whether
+the current ECAD source is the manufacturer, SnapMagic, SamacSys, or another
+provider. At this stage, `distributor` is `mouser`, while `delivery_partner`
+and `model_creator` remain unset until separate package or evidence validation.
+Explicit `--cad-source mouser` never falls back to EasyEDA.
 
-The FM220A-W adapter and handoff have deterministic tests, but a credentialed
-real package, KiCad CLI project import, and final KiCad GUI check are still
-required. No replacement part was chosen.
+Open the Product Detail page yourself, review the ECAD source it currently
+offers, and import only a supported native KiCad package whose source and
+format can be validated. As checked on 2026-07-30, the public LM358DR page
+identified Texas Instruments as the manufacturer and listed a SnapMagic
+symbol/footprint under Models. That page observation is not inferred from the
+API handoff or recorded as SamacSys provenance. A real package, KiCad CLI
+project import, and final KiCad GUI check are still required.
 
 ### Import a locally downloaded CAD package
 
@@ -445,13 +452,13 @@ python -m easyeda2kicad_digimou \
   --manifest-json ./build/AD5314BRM-import.json
 ```
 
-SamacSys example uses:
+Mouser-linked example, when the package is actually from SamacSys:
 
 ```text
 --cad-source mouser
 --cad-package ./downloads/official-samacsys-kicad.zip
 --cad-package-format samacsys-kicad
---cad-package-evidence ./downloads/FM220A-W.evidence.json
+--cad-package-evidence ./downloads/LM358DR.evidence.json
 ```
 
 Manufacturer-provided footprint plus STEP/WRL packages use:
@@ -483,7 +490,7 @@ private responses must not be committed.
 ### Deterministic automatic CAD source selection
 
 `auto` uses verified EasyEDA first, then a validated DigiKey-linked package,
-then validated Mouser/SamacSys packages:
+then validated Mouser-linked packages:
 
 ```bash
 python -m easyeda2kicad_digimou \
@@ -491,7 +498,7 @@ python -m easyeda2kicad_digimou \
   --mpn "EXACT-MPN-INCLUDING-SUFFIX" \
   --cad-source auto \
   --cad-candidate digikey=./downloads/ultralibrarian-kicad.zip \
-  --cad-candidate mouser=./downloads/samacsys-kicad.zip \
+  --cad-candidate mouser=./downloads/mouser-linked-kicad.zip \
   --full \
   --output ./libs/provider_parts \
   --manifest-json ./build/auto-selection.json
@@ -507,11 +514,11 @@ EasyEDA wins only when it can safely export every requested artifact. With
 `--cad-source auto`, a missing or invalid requested symbol or footprint, a
 pin/pad mismatch, or a missing requested 3D model continues to DigiKey and then
 Mouser CAD discovery even when they were not selected as metadata providers. A
-provider is preferred only when its product-specific handoff advertises the
-missing artifact kinds. A validated local `--cad-candidate` can then be
-selected and imported automatically; an interactive login, agreement, or
-package request remains a typed manual handoff and is never bypassed or
-scraped.
+provider is preferred only when one product-specific handoff advertises every
+missing artifact kind; artifact kinds from separate packages are never
+combined. A validated local `--cad-candidate` can then be selected and imported
+automatically; an interactive login, agreement, or package request remains a
+typed manual handoff and is never bypassed or scraped.
 
 ## Registering libraries in one KiCad project
 
@@ -521,7 +528,7 @@ selected project and pass `--register-project-libraries`:
 ```bash
 python -m easyeda2kicad_digimou \
   --full \
-  --lcsc_id C2040 \
+  --lcsc_id C21190 \
   --output ./myproject/libs/my_lib \
   --project ./myproject/board.kicad_pro \
   --register-project-libraries
@@ -532,7 +539,7 @@ PowerShell:
 ```powershell
 python -m easyeda2kicad_digimou `
   --full `
-  --lcsc_id C2040 `
+  --lcsc_id C21190 `
   --output C:\work\myproject\libs\my_lib `
   --project C:\work\myproject\board.kicad_pro `
   --register-project-libraries
@@ -555,7 +562,7 @@ Preview without network, CAD output, or table writes:
 ```bash
 python -m easyeda2kicad_digimou \
   --full \
-  --lcsc_id C2040 \
+  --lcsc_id C21190 \
   --output ./myproject/libs/my_lib \
   --project ./myproject \
   --register-project-libraries \
@@ -607,12 +614,10 @@ electrically/mechanically correct.
 
 For DigiKey, the real AD5314BRM package passed this symbol/pin,
 footprint/pad/courtyard, and 3D model/alignment checklist in KiCad 10 on
-2026-07-29. The corresponding real Mouser/SamacSys proof remains outstanding
+2026-07-29. The corresponding real Mouser-linked proof remains outstanding
 and must not be inferred from fixtures.
 
 ## Machine JSON for automation
-
-### Machine JSON for automation
 
 Use the additive `acquire` subcommand for one stable result:
 
@@ -692,12 +697,12 @@ diagnostics to stderr and still passes through secret redaction.
 Legacy commands remain valid:
 
 ```bash
-python -m easyeda2kicad_digimou --full --lcsc_id C2040
-python -m easyeda2kicad_digimou --symbol --lcsc_id C2040
-python -m easyeda2kicad_digimou --footprint --lcsc_id C2040
-python -m easyeda2kicad_digimou --3d --lcsc_id C2040
-python -m easyeda2kicad_digimou --full --lcsc_id C2040 C20197 C163691
-python -m easyeda2kicad_digimou --svg --lcsc_id C2040 --output ./libs/my_lib
+python -m easyeda2kicad_digimou --full --lcsc_id C21190
+python -m easyeda2kicad_digimou --symbol --lcsc_id C21190
+python -m easyeda2kicad_digimou --footprint --lcsc_id C21190
+python -m easyeda2kicad_digimou --3d --lcsc_id C21190
+python -m easyeda2kicad_digimou --full --lcsc_id C21190 C25804 C14663
+python -m easyeda2kicad_digimou --svg --lcsc_id C21190 --output ./libs/my_lib
 ```
 
 Default output is under the user's `Documents/Kicad/easyeda2kicad` directory.
@@ -728,7 +733,7 @@ Architecture and reference documentation:
 - [Footprint command reference](docs/CMD_FOOTPRINT.md)
 - [Symbol command reference](docs/CMD_SYMBOL.md)
 - [3D command reference](docs/CMD_3D_MODEL.md)
-- [Release notes](docs/releases/v1.1.0b2.md)
+- [Release notes](docs/releases/v1.1.0b3.md)
 
 ## License and warranty
 

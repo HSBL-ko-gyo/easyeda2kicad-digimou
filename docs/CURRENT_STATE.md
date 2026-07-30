@@ -1,6 +1,6 @@
 # Current state
 
-Last updated: 2026-07-29 (Asia/Tokyo)
+Last updated: 2026-07-30 (Asia/Tokyo)
 
 ## Current phase
 
@@ -18,7 +18,7 @@ provider packages. Mouser real-package proof and final multi-source live
 completion remain outstanding. Issue #8 has its credentialed live-test
 infrastructure but remains open until both provider runs pass.
 
-The `1.1.0b2` candidate also resolves Issue #11's install-time collision.
+The `1.1.0b2` release resolved Issue #11's install-time collision.
 Distribution `easyeda2kicad-digimou`, command `easyeda2kicad-digimou`, and
 Python package `easyeda2kicad_digimou` no longer overwrite upstream's
 `easyeda2kicad` files or command. Generated KiCad library naming and the legacy
@@ -30,13 +30,22 @@ links, safely inspects the exact public model page when the API media response
 has no CAD links, and supports hash-bound partial intake of a manufacturer
 KiCad footprint plus STEP/WRL with an explicit missing-symbol result.
 
-RC2 remains closed as **CANARY PASS / RELEASE BLOCKED** with its two-re-audit
-limit unchanged. RC3 remains preserved as **CANARY PASS / RELEASE APPROVED**.
-The subsequent public-beta field-table audit found and fixed runtime issues.
-Its distinct corrective RC and release-prep re-audit 1 both passed Oracle with
-no release blocker. Version and package/release metadata are prepared for
-`1.1.0b1`; only the final doc-only delta, commit/tag, and external publication
-gates remain.
+The `1.1.0b3` candidate adds three post-b2 improvements. The default-branch
+README monitor checks public CLI changes and production paths, and can open a
+bounded deduplicated follow-up issue without republishing raw commit subjects
+or paths. Automatic CAD selection now continues from missing or invalid
+EasyEDA artifacts to product-specific DigiKey and Mouser discovery, including
+when those distributors were not selected as metadata providers; one source
+must advertise every missing artifact kind. Missing or rejected provider API
+credentials now produce actionable human output naming the exact environment
+variables and official setup URLs without prompting for, echoing, or
+persisting secrets, and all human log handlers redact configured values.
+
+Historical RC2 remains closed as **CANARY PASS / RELEASE BLOCKED**, RC3 remains
+preserved as **CANARY PASS / RELEASE APPROVED**, and the public-beta
+field-table/release-prep cycle remains preserved as **RELEASE READY** for b1.
+Those approvals are not reused for `1.1.0b3`; the b3 candidate receives its own
+release-candidate validation and audit record before publication.
 
 ## Completed
 
@@ -580,15 +589,37 @@ optional-provider `PARTIAL`/status-0 behavior is unchanged.
   separate, checked-in C2040 compatibility fixture instead of reconstructing
   unspecified upstream resources.
 
-## 1.1.0b2 pre-release status and next action
+## 1.1.0b2 pre-release record
 
-The candidate is intentionally releasable without claiming Mouser completion.
-Issues #7 and #8 remain open, the README/release notes identify the missing
-credentialed package/GUI/live proof, and explicit Mouser CAD never falls back
+The release was intentionally published without claiming Mouser completion.
+Issues #7 and #8 remained open, the README/release notes identified the missing
+credentialed package/GUI/live proof, and explicit Mouser CAD did not fall back
 to EasyEDA.
 
-No Oracle Pro model was used or requested. After the Issue #11/release-prep PR
-passes GitHub CI and CodeQL and is merged into the actual default branch,
-create annotated tag `v1.1.0b2`, build from that exact tag, verify hashes and
-installed identity again, and publish only a manual GitHub pre-release with
-wheel, sdist, release notes, CLI help, and checksums. Do not publish to PyPI.
+No Oracle Pro model was used or requested. `v1.1.0b2` was published only as a
+GitHub pre-release with wheel, sdist, release notes, CLI help, and checksums;
+it was not published to PyPI.
+
+## 1.1.0b3 pre-release candidate
+
+This candidate keeps the b2 install identity and existing CLI spelling. It adds
+no command-line option. Its release delta consists of the README consistency
+monitor, artifact-level automatic CAD fallback, actionable provider API
+credential guidance, the refreshed README, and the corresponding version and
+release documentation.
+
+The local candidate reports `1010 passed, 77 skipped`; Ruff lint/format, strict
+mypy, sdist/wheel build, Twine validation, package-content inspection, and an
+isolated wheel install all pass. The initial non-Pro Oracle audit passed its
+source canary and reported five release blockers plus three should-fix items.
+All eight were reproduced and fixed. Re-audit 1 confirmed those corrections
+and found one additional parsed-but-empty artifact boundary; that blocker and
+the accompanying bounded-monitor recommendation are fixed. Final re-audit 2
+confirmed the product blocker resolved and identified that the changed-path
+limit still occurred after full subprocess capture. Its exact minimum fix,
+which explicitly required no further Oracle review, now streams NUL-delimited
+paths, stops at the first over-limit entry, and terminates/reaps Git. A focused
+80-test matrix covers fallback, empty electrical artifacts, provenance,
+credential-redaction, and monitor boundaries. The remaining release gates are
+GitHub CI and CodeQL on the release PR and exact-commit artifact publication
+as `v1.1.0b3`. Publish only a GitHub pre-release; do not publish to PyPI.

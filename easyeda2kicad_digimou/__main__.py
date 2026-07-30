@@ -235,23 +235,34 @@ def is_electrical_footprint_pad(pad: Any) -> bool:
     return float(hole_radius) <= 0 or bool(getattr(pad, "is_plated", False))
 
 
-def verify_symbol_footprint_pins(
-    symbol: EeSymbol, footprint: EeFootprint
-) -> tuple[bool, set[str], set[str]]:
-    """Compare electrical symbol pins with plated, numbered footprint pads."""
-    symbol_units = [symbol, *symbol.sub_symbols]
-    pin_numbers = {
+def _symbol_pin_numbers(symbol: EeSymbol) -> set[str]:
+    """Return the non-empty electrical pin numbers across all symbol units."""
+
+    return {
         pin.settings.spice_pin_number.strip()
-        for unit in symbol_units
+        for unit in [symbol, *symbol.sub_symbols]
         for pin in unit.pins
         if pin.settings.spice_pin_number.strip()
     }
-    pad_numbers = {
+
+
+def _footprint_pad_numbers(footprint: EeFootprint) -> set[str]:
+    """Return normalized numbered electrical pads, excluding NPTH mechanics."""
+
+    return {
         normalize_footprint_pad_number(pad.number)
         for pad in footprint.pads
         if is_electrical_footprint_pad(pad)
         and normalize_footprint_pad_number(pad.number)
     }
+
+
+def verify_symbol_footprint_pins(
+    symbol: EeSymbol, footprint: EeFootprint
+) -> tuple[bool, set[str], set[str]]:
+    """Compare electrical symbol pins with plated, numbered footprint pads."""
+    pin_numbers = _symbol_pin_numbers(symbol)
+    pad_numbers = _footprint_pad_numbers(footprint)
     return (
         bool(pin_numbers and pad_numbers and pin_numbers == pad_numbers),
         pin_numbers,
@@ -1361,6 +1372,25 @@ def _verify_metadata_cad(
             result.blocking_error = "INVALID_RESPONSE"
             return PARTIAL, symbol, None
 
+    invalid_artifacts: list[str] = []
+    if require_symbol and symbol is not None and not _symbol_pin_numbers(symbol):
+        invalid_artifacts.append("symbol")
+        symbol = None
+    if (
+        require_footprint
+        and footprint is not None
+        and not _footprint_pad_numbers(footprint)
+    ):
+        invalid_artifacts.append("footprint")
+        footprint = None
+    if invalid_artifacts:
+        result.provider_errors["cad_verification"] = (
+            "INVALID_RESPONSE: empty electrical artifact: "
+            + ", ".join(invalid_artifacts)
+        )
+        result.blocking_error = "INVALID_RESPONSE"
+        return PARTIAL, symbol, footprint
+
     if not (require_symbol and require_footprint):
         return VERIFIED, symbol, footprint
     if symbol is None or footprint is None:
@@ -1371,12 +1401,6 @@ def _verify_metadata_cad(
     compatible, pin_numbers, pad_numbers = verify_symbol_footprint_pins(
         symbol, footprint
     )
-    if not pin_numbers or not pad_numbers:
-        result.provider_errors["cad_verification"] = (
-            "INVALID_RESPONSE: empty symbol pin or plated pad set"
-        )
-        result.blocking_error = "INVALID_RESPONSE"
-        return PARTIAL, symbol, footprint
     if not compatible:
         result.provider_errors["cad_verification"] = (
             "CAD_PIN_PAD_MISMATCH: pins={0}; pads={1}".format(
@@ -1679,7 +1703,9 @@ def _resolve_metadata_request(
             metadata_api=metadata_api,
             offline=arguments["offline"],
             refresh_metadata=arguments["refresh_metadata"],
-            discover_auto_handoff=discover_auto_handoff,
+            discover_auto_handoff=(
+                discover_auto_handoff and arguments["cad_source"] != "auto"
+            ),
         )
     except MetadataServiceError as error:
         logging.error("%s", error)
@@ -2100,6 +2126,43 @@ class _MachineLogFormatter(logging.Formatter):
         return redact_configured_secret_text(super().format(record))
 
 
+class _ConfiguredSecretLogFilter(logging.Filter):
+    """Redact configured credentials before a handler retains a log record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        redacted = redact_configured_secret_text(message)
+        if redacted != message:
+            record.msg = redacted
+            record.args = ()
+        return True
+
+
+class _RedactingLogFormatter(logging.Formatter):
+    """Preserve a handler's formatter while redacting its rendered text."""
+
+    def __init__(self, delegate: logging.Formatter) -> None:
+        super().__init__()
+        self._delegate = delegate
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_configured_secret_text(self._delegate.format(record))
+
+
+def _protect_human_log_handler(handler: logging.Handler) -> None:
+    if not any(
+        isinstance(current_filter, _ConfiguredSecretLogFilter)
+        for current_filter in handler.filters
+    ):
+        handler.addFilter(_ConfiguredSecretLogFilter())
+    formatter = handler.formatter or logging.Formatter(
+        fmt="[{levelname}] {message}",
+        style="{",
+    )
+    if not isinstance(formatter, _RedactingLogFormatter):
+        handler.setFormatter(_RedactingLogFormatter(formatter))
+
+
 def _restore_machine_logging(
     previous_level: int,
     previous_handlers: list[logging.Handler],
@@ -2370,6 +2433,8 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
             logging.Formatter(fmt="[{levelname}] {message}", style="{")
         )
         root_logger.addHandler(handler)
+    for root_handler in root_logger.handlers:
+        _protect_human_log_handler(root_handler)
 
     if not valid_arguments(arguments=arguments):
         return 1

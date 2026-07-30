@@ -123,7 +123,7 @@ def test_readme_and_contract_document_machine_boundaries() -> None:
     readme = README_PATH.read_text(encoding="utf-8")
     contract = MACHINE_DOC_PATH.read_text(encoding="utf-8")
 
-    assert "### Machine JSON for automation" in readme
+    assert "## Machine JSON for automation" in readme
     assert "stdout is exactly one schema-v1 UTF-8 JSON document" in readme
     assert "`path_base=project|output|cwd`" in readme
     assert "`--require-provider`" in readme
