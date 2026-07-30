@@ -14,6 +14,8 @@ import pytest
 
 from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
 
+ISSUE_35_MANUFACTURER = "Nexperia(安世)"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -77,8 +79,26 @@ class TestCacheRoundtripText:
     def test_write_json_pretty_prints(self, api_with_cache: EasyedaApi) -> None:
         path = api_with_cache._get_cache_path("test_json", "json")
         api_with_cache._write_to_cache(path, '{"a":1}')
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
         assert "\n" in content  # pretty-printed
+
+    def test_non_ascii_json_is_written_as_utf8(
+        self, api_with_cache: EasyedaApi
+    ) -> None:
+        path = api_with_cache._get_cache_path("C406049", "json")
+        payload = {
+            "success": True,
+            "result": {"manufacturer": ISSUE_35_MANUFACTURER},
+        }
+
+        api_with_cache._write_to_cache(
+            path,
+            json.dumps(payload, ensure_ascii=False),
+        )
+
+        raw = path.read_bytes()
+        assert ISSUE_35_MANUFACTURER.encode("utf-8") in raw
+        assert json.loads(raw.decode("utf-8")) == payload
 
     def test_write_invalid_json_falls_back_to_plain(
         self, api_with_cache: EasyedaApi
@@ -210,6 +230,9 @@ class TestOfflineMode:
 
         assert api.get_info_from_easyeda_api("C-CP932") == payload
         assert api.last_error is None
+        migrated = api._get_cache_path("C-CP932", "json").read_bytes()
+        assert "日本電気".encode("utf-8") in migrated
+        assert json.loads(migrated.decode("utf-8")) == payload
 
     def test_invalid_legacy_cp932_json_cache_is_rejected_offline(
         self, tmp_path: Path
@@ -396,14 +419,23 @@ class TestGetInfoNetworkPath:
     ) -> None:
         api = EasyedaApi(use_cache=True)
         api.cache_dir = tmp_path
-        payload = {"success": True, "result": {"dataStr": "cached"}}
-        body = json.dumps(payload).encode()
+        payload = {
+            "success": True,
+            "result": {
+                "dataStr": "cached",
+                "manufacturer": ISSUE_35_MANUFACTURER,
+            },
+        }
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         monkeypatch.setattr(
             "urllib.request.urlopen", lambda *a, **kw: _fake_response(body)
         )
-        api.get_info_from_easyeda_api("C44444")
-        cache_file = api._get_cache_path("C44444", "json")
-        assert cache_file.exists()
+        assert api.get_info_from_easyeda_api("C406049") == payload
+
+        cache_file = api._get_cache_path("C406049", "json")
+        cached = cache_file.read_bytes()
+        assert ISSUE_35_MANUFACTURER.encode("utf-8") in cached
+        assert json.loads(cached.decode("utf-8")) == payload
 
     @pytest.mark.parametrize(
         "invalid_envelope",

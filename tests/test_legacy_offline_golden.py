@@ -9,6 +9,7 @@ cannot change its semantics.
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import urllib.request
 from pathlib import Path
@@ -17,6 +18,7 @@ from typing import NoReturn
 import pytest
 
 from easyeda2kicad_digimou.__main__ import main
+from easyeda2kicad_digimou.easyeda.easyeda_api import EasyedaApi
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "legacy"
@@ -25,6 +27,7 @@ GOLDEN_ROOT = FIXTURE_ROOT / "golden"
 SYMBOL_GOLDEN = GOLDEN_ROOT / "legacy_c2040.kicad_sym"
 FOOTPRINT_NAME = "LQFN-56_L7.0-W7.0-P0.4-EP.kicad_mod"
 FOOTPRINT_GOLDEN = GOLDEN_ROOT / FOOTPRINT_NAME
+ISSUE_35_MANUFACTURER = "Nexperia(安世)"
 
 CANONICAL_SHA256 = {
     "legacy_c2040.kicad_sym": (
@@ -102,3 +105,55 @@ def test_legacy_c2040_cli_is_offline_and_matches_upstream_golden(
         )
 
     assert not output.with_suffix(".3dshapes").exists()
+
+
+def test_issue_35_non_ascii_manufacturer_stays_utf8_through_cache_and_symbol(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A Japanese Windows code page must not affect cache or symbol bytes."""
+
+    payload = json.loads(CAD_FIXTURE.read_text(encoding="utf-8"))
+    payload["result"]["dataStr"]["head"]["c_para"]["Manufacturer"] = (
+        ISSUE_35_MANUFACTURER
+    )
+
+    cache_dir = tmp_path / ".easyeda_cache"
+    api = EasyedaApi(use_cache=True)
+    api.cache_dir = cache_dir
+    cache_path = api._get_cache_path("C406049", "json")
+    api._write_to_cache(
+        cache_path,
+        json.dumps(payload, ensure_ascii=False),
+        binary=False,
+    )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(urllib.request, "urlopen", _unexpected_network)
+
+    output = tmp_path / "AJMT06"
+    exit_code = main(
+        [
+            "--lcsc_id",
+            "C406049",
+            "--symbol",
+            "--output",
+            str(output),
+            "--overwrite",
+            "--use-cache",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.err == ""
+
+    cache_bytes = cache_path.read_bytes()
+    symbol_bytes = output.with_suffix(".kicad_sym").read_bytes()
+    expected = ISSUE_35_MANUFACTURER.encode("utf-8")
+    assert expected in cache_bytes
+    assert expected in symbol_bytes
+    assert "����".encode("utf-8") not in symbol_bytes
+    assert json.loads(cache_bytes.decode("utf-8")) == payload
+    assert ISSUE_35_MANUFACTURER in symbol_bytes.decode("utf-8")
